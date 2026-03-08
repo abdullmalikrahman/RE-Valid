@@ -1,0 +1,11 @@
+FROM postgis/postgis:16-3.5
+
+# Install TimescaleDB on top of PostGIS (Debian bookworm)
+RUN apt-get update && apt-get install -y --no-install-recommends gnupg curl lsb-release \
+    && curl -fsSL https://packagecloud.io/timescale/timescaledb/gpgkey \
+       | gpg --dearmor -o /usr/share/keyrings/timescaledb.gpg \
+    && echo "deb [signed-by=/usr/share/keyrings/timescaledb.gpg] https://packagecloud.io/timescale/timescaledb/debian/ $(lsb_release -cs) main" \
+       > /etc/apt/sources.list.d/timescaledb.list \
+    && apt-get update \
+    && apt-get install -y --no-install-recommends timescaledb-2-postgresql-16 \
+    && rm -rf /var/lib/apt/lists/*

@@ -1,0 +1,58 @@
+services:
+  # PostgreSQL + PostGIS + TimescaleDB
+  db:
+    build:
+      context: .
+      dockerfile: Dockerfile.db
+    image: re-valid-db:local
+    container_name: re_valid_db
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: ${POSTGRES_DB:-revalid}
+      POSTGRES_USER: ${POSTGRES_USER:-revalid}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-revalidpassword}
+    ports:
+      - "5432:5432"
+    volumes:
+      - pg_data:/var/lib/postgresql/data
+      - ./backend/db/init:/docker-entrypoint-initdb.d
+    command: ["postgres", "-c", "shared_preload_libraries=timescaledb"]
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-revalid}"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  # Redis (message broker + cache for Celery)
+  redis:
+    image: redis:7-alpine
+    container_name: re_valid_redis
+    restart: unless-stopped
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis_data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  # MQTT Broker (Eclipse Mosquitto)
+  mqtt:
+    image: eclipse-mosquitto:2
+    container_name: re_valid_mqtt
+    restart: unless-stopped
+    ports:
+      - "1883:1883"   # MQTT
+      - "9001:9001"   # WebSocket
+    volumes:
+      - ./mqtt/config:/mosquitto/config
+      - mqtt_data:/mosquitto/data
+      - mqtt_log:/mosquitto/log
+
+volumes:
+  pg_data:
+  redis_data:
+  mqtt_data:
+  mqtt_log:
