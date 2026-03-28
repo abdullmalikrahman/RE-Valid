@@ -74,9 +74,10 @@ export default function LaporanPage() {
                     </span>
                     <select className="w-full bg-gray-50 dark:bg-[#111a22] border border-gray-200 dark:border-border-dark rounded-lg py-2 pl-9 pr-8 text-sm text-slate-900 dark:text-white focus:ring-1 focus:ring-primary focus:border-primary outline-none transition-all appearance-none">
                       <option>Semua Lokasi</option>
-                      <option>Stasiun Meteorologi Alpha (Jawa Barat)</option>
-                      <option>Pos Pengamatan Beta (Sumatera Selatan)</option>
-                      <option>Area Potensial Gamma (Nusa Tenggara)</option>
+                      <option>Stasiun Cimahi Utara (CMH-001)</option>
+                      <option>Pos Pesisir Pangandaran (PGD-023)</option>
+                      <option>Stasiun Subang Utara (SBG-105)</option>
+                      <option>Pos Pegunungan Wayang (GWY-089)</option>
                     </select>
                     <span className="absolute right-3 top-2.5 text-slate-400 material-symbols-outlined text-[18px] pointer-events-none">
                       expand_more
@@ -138,8 +139,7 @@ export default function LaporanPage() {
                     Catatan Sistem
                   </h4>
                   <p className="text-xs text-slate-600 dark:text-blue-100/70 leading-relaxed">
-                    Data terakhir diperbarui pada 10 Oktober 2024. Perhitungan MCP menggunakan
-                    referensi satelit NASA POWER.
+                    Data terakhir diperbarui pada 10 Oktober 2024. Referensi MCP: ERA5 (ECMWF). Atlas baseline: GWA/GSA. Data observasi lapangan digunakan sebagai acuan validasi.
                   </p>
                 </div>
               </div>
@@ -158,6 +158,35 @@ export default function LaporanPage() {
               <p className="text-sm font-medium text-green-800 dark:text-green-200">
                 Laporan berhasil disiapkan. Silakan pilih format di bawah.
               </p>
+            </div>
+
+            {/* PDF contents list */}
+            <div className="bg-white dark:bg-card-dark border border-gray-200 dark:border-border-dark rounded-xl p-5">
+              <div className="flex items-center gap-2 mb-4">
+                <span className="material-symbols-outlined text-primary text-[20px]">list_alt</span>
+                <h4 className="text-sm font-bold text-slate-900 dark:text-white">Isi Laporan PDF</h4>
+              </div>
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-y-3 gap-x-6">
+                {([
+                  { icon: 'sensors', label: 'Identitas Stasiun & Lokasi', desc: 'Nama, ID, koordinat, tipe, ketinggian' },
+                  { icon: 'date_range', label: 'Periode Pengukuran', desc: 'Rentang tanggal, durasi overlap data' },
+                  { icon: 'ssid_chart', label: 'Hasil Validasi', desc: 'RMSE, MAE, Bias, R², ketersediaan data' },
+                  { icon: 'auto_graph', label: 'Hasil MCP', desc: 'Metode, faktor koreksi, AEP terkoreksi' },
+                  { icon: 'bolt', label: 'Estimasi Energi', desc: 'AEP P50/P90, kapasitas, distribusi Weibull' },
+                  { icon: 'layers', label: 'Faktor Kesesuaian GIS-MCDA', desc: 'Skor per kriteria, peta overlay prioritas' },
+                  { icon: 'block', label: 'Constraint Utama', desc: 'Jarak grid, kawasan lindung, aksesibilitas' },
+                  { icon: 'info', label: 'Asumsi & Keterbatasan', desc: 'Kapasitas turbin, CF referensi, scope studi' },
+                  { icon: 'database', label: 'Sumber Data', desc: 'ERA5 (ECMWF), GWA/GSA, observasi lapangan' },
+                ] as { icon: string; label: string; desc: string }[]).map((item) => (
+                  <div key={item.label} className="flex items-start gap-2.5">
+                    <span className="material-symbols-outlined text-primary/70 text-[16px] mt-0.5 shrink-0">{item.icon}</span>
+                    <div>
+                      <p className="text-xs font-semibold text-slate-800 dark:text-slate-200">{item.label}</p>
+                      <p className="text-[11px] text-slate-500 dark:text-text-secondary">{item.desc}</p>
+                    </div>
+                  </div>
+                ))}
+              </div>
             </div>
 
             <h3 className="text-lg font-bold text-slate-900 dark:text-white">

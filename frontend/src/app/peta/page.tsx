@@ -43,10 +43,10 @@ export default function PetaPage() {
                     />
                     <div>
                       <p className="text-slate-700 dark:text-white text-[15px] font-medium leading-none group-hover:text-primary transition-colors">
-                        Lapisan Dasar Atlas
+                        Atlas Angin/Surya (Mentah)
                       </p>
                       <p className="text-slate-500 dark:text-[#92adc9] text-[13px] mt-1.5">
-                        Citra satelit &amp; medan
+                        Data mentah GWA &amp; ERA5 (ECMWF)
                       </p>
                     </div>
                   </label>
@@ -58,10 +58,24 @@ export default function PetaPage() {
                     />
                     <div>
                       <p className="text-slate-700 dark:text-white text-[15px] font-medium leading-none group-hover:text-primary transition-colors">
-                        Hasil Validasi
+                        Data Observasi / Stasiun
                       </p>
                       <p className="text-slate-500 dark:text-[#92adc9] text-[13px] mt-1.5">
-                        Penanda stasiun &amp; metrik
+                        Penanda stasiun &amp; metrik pengukuran lapangan
+                      </p>
+                    </div>
+                  </label>
+                  <label className="flex items-start gap-3 py-2 cursor-pointer group border-t border-slate-200 dark:border-[#233648]/50">
+                    <input
+                      className="mt-1 h-4 w-4 rounded border-slate-300 dark:border-[#324d67] bg-transparent"
+                      type="checkbox"
+                    />
+                    <div>
+                      <p className="text-slate-700 dark:text-white text-[15px] font-medium leading-none group-hover:text-primary transition-colors">
+                        Hasil Koreksi Bias
+                      </p>
+                      <p className="text-slate-500 dark:text-[#92adc9] text-[13px] mt-1.5">
+                        Atlas pasca koreksi MCP/ERA5
                       </p>
                     </div>
                   </label>
@@ -280,11 +294,11 @@ export default function PetaPage() {
             </div>
 
             <div className="flex-1 overflow-y-auto p-5 space-y-5">
-              {/* Informasi Lokasi */}
+              {/* Informasi Analisis */}
               <div>
                 <h3 className="text-[15px] font-semibold text-slate-900 dark:text-white mb-3 flex items-center gap-2">
                   <span className="material-symbols-outlined text-primary text-[20px]">info</span>
-                  Informasi Lokasi
+                  Informasi Analisis
                 </h3>
                 <div className="bg-slate-50 dark:bg-[#111a22] rounded-lg border border-slate-200 dark:border-[#233648] divide-y divide-slate-200 dark:divide-[#233648] text-[13px]">
                   <div className="flex justify-between items-center px-3 py-2.5">
@@ -296,65 +310,45 @@ export default function PetaPage() {
                     <span className="font-medium text-slate-800 dark:text-slate-100">Angin, Iradiasi</span>
                   </div>
                   <div className="flex justify-between items-center px-3 py-2.5">
-                    <span className="text-slate-500 dark:text-[#92adc9]">Status Lokasi</span>
-                    <span className="bg-green-500/10 text-green-500 border border-green-500/30 text-[11px] font-bold px-2 py-0.5 rounded-full">
-                      ● Prioritas
-                    </span>
-                  </div>
-                  <div className="flex justify-between items-center px-3 py-2.5">
-                    <span className="text-slate-500 dark:text-[#92adc9]">Skor Kesesuaian</span>
-                    <span className="font-bold text-slate-900 dark:text-white">92/100 — <span className="text-green-500">Tinggi</span></span>
-                  </div>
-                  <div className="flex justify-between items-center px-3 py-2.5">
                     <span className="text-slate-500 dark:text-[#92adc9]">Status MCP</span>
                     <span className="bg-primary/10 text-primary border border-primary/30 text-[11px] font-bold px-2 py-0.5 rounded-full">
                       ✓ Selesai
                     </span>
                   </div>
-                </div>
-              </div>
-
-              {/* Station photo */}
-              <div className="rounded-lg overflow-hidden h-40 w-full relative group">
-                <div
-                  className="absolute inset-0 bg-cover bg-center transition-transform duration-500 group-hover:scale-110"
-                  style={{
-                    backgroundImage:
-                      'url("https://lh3.googleusercontent.com/aida-public/AB6AXuDK5cPck2Vgbc4BE2byk0Y9pu-0X4cN9o_3wr6sBOYVHeKfQH9mNDF2nY_jFZHQDfbGZDTU-Yg9toH7jivbBetN2Sh30wi-mKfFSCmHpZcJARkibHpZk1nTHa7KyP_3ZQnFKuIiyIMdd3DHtvyaIi1oiVT3u33xsct6fFhshXnupxhGSotOLb_zglubNeDQGEcf3uFbC0VuS9BrLAVLN2zA9mDDqbU-C0ZnMJJk0fl9leFRwR1dv4h3AgarMrU0e8UW5sizr8uzAlE1")',
-                  }}
-                />
-                <div className="absolute bottom-2 right-2 bg-black/60 text-white text-[11px] px-2.5 py-1 rounded backdrop-blur-sm">
-                  Foto Lokasi
+                  <div className="flex justify-between items-center px-3 py-2.5">
+                    <span className="text-slate-500 dark:text-[#92adc9]">Sumber Referensi</span>
+                    <span className="font-medium text-slate-800 dark:text-slate-100">ERA5 (ECMWF)</span>
+                  </div>
                 </div>
               </div>
 
               {/* Validation metrics */}
               <div>
-                <h3 className="text-[16px] font-semibold text-slate-900 dark:text-white mb-4 flex items-center gap-2">
-                  <span className="material-symbols-outlined text-primary text-[22px]">query_stats</span>
+                <h3 className="text-[15px] font-semibold text-slate-900 dark:text-white mb-3 flex items-center gap-2">
+                  <span className="material-symbols-outlined text-primary text-[20px]">query_stats</span>
                   Metrik Validasi
                 </h3>
-                <div className="grid grid-cols-2 gap-4">
-                  <div className="bg-slate-50 dark:bg-[#111a22] p-4 rounded-lg border border-slate-200 dark:border-[#233648]">
-                    <p className="text-[13px] text-slate-500 dark:text-[#92adc9]">Skor</p>
-                    <p className="text-2xl font-bold text-slate-900 dark:text-white">92%</p>
+                <div className="bg-slate-50 dark:bg-[#111a22] rounded-lg border border-slate-200 dark:border-[#233648] divide-y divide-slate-200 dark:divide-[#233648] text-[13px]">
+                  <div className="flex justify-between items-center px-3 py-2.5">
+                    <span className="text-slate-500 dark:text-[#92adc9]">Skor Kesesuaian</span>
+                    <span className="font-bold text-green-500">92/100 — Tinggi</span>
                   </div>
-                  <div className="bg-slate-50 dark:bg-[#111a22] p-4 rounded-lg border border-slate-200 dark:border-[#233648]">
-                    <p className="text-[13px] text-slate-500 dark:text-[#92adc9]">RMSE</p>
-                    <p className="text-2xl font-bold text-slate-900 dark:text-white">0.45</p>
+                  <div className="flex justify-between items-center px-3 py-2.5">
+                    <span className="text-slate-500 dark:text-[#92adc9]">RMSE</span>
+                    <span className="font-bold text-slate-900 dark:text-white">0.45 m/s</span>
                   </div>
-                  <div className="bg-slate-50 dark:bg-[#111a22] p-4 rounded-lg border border-slate-200 dark:border-[#233648]">
-                    <p className="text-[13px] text-slate-500 dark:text-[#92adc9]">Bias</p>
-                    <p className="text-2xl font-bold text-emerald-500">+0.12</p>
+                  <div className="flex justify-between items-center px-3 py-2.5">
+                    <span className="text-slate-500 dark:text-[#92adc9]">Bias</span>
+                    <span className="font-bold text-emerald-500">+0.12 m/s</span>
                   </div>
-                  <div className="bg-slate-50 dark:bg-[#111a22] p-4 rounded-lg border border-slate-200 dark:border-[#233648]">
-                    <p className="text-[13px] text-slate-500 dark:text-[#92adc9]">R²</p>
-                    <p className="text-2xl font-bold text-slate-900 dark:text-white">0.89</p>
+                  <div className="flex justify-between items-center px-3 py-2.5">
+                    <span className="text-slate-500 dark:text-[#92adc9]">R²</span>
+                    <span className="font-bold text-slate-900 dark:text-white">0.89</span>
                   </div>
                 </div>
               </div>
 
-              {/* Energy potential — simplified, no decorative bars */}
+              {/* Energy potential */}
               <div>
                 <h3 className="text-[15px] font-semibold text-slate-900 dark:text-white mb-3 flex items-center gap-2">
                   <span className="material-symbols-outlined text-yellow-500 text-[20px]">bolt</span>
@@ -373,6 +367,47 @@ export default function PetaPage() {
                     <span className="text-slate-500 dark:text-[#92adc9]">AEP Estimasi (P50)</span>
                     <span className="font-bold text-primary">12,450 MWh</span>
                   </div>
+                </div>
+              </div>
+
+              {/* Faktor Penentu Kesesuaian */}
+              <div>
+                <h3 className="text-[15px] font-semibold text-slate-900 dark:text-white mb-3 flex items-center gap-2">
+                  <span className="material-symbols-outlined text-amber-500 text-[20px]">checklist</span>
+                  Faktor Penentu Kesesuaian
+                </h3>
+                <div className="bg-slate-50 dark:bg-[#111a22] rounded-lg border border-slate-200 dark:border-[#233648] divide-y divide-slate-200 dark:divide-[#233648] text-[13px]">
+                  {[
+                    { label: 'Potensi angin/surya', value: 'Tinggi', ok: true },
+                    { label: 'Dekat jaringan listrik', value: 'Ya (< 5 km)', ok: true },
+                    { label: 'Kawasan lindung', value: 'Tidak', ok: true },
+                    { label: 'Buffer permukiman', value: 'Aman (> 500m)', ok: true },
+                    { label: 'Akses jalan', value: 'Cukup', ok: true },
+                    { label: 'Elevasi/topografi', value: 'Sesuai (< 15°)', ok: true },
+                  ].map((f) => (
+                    <div key={f.label} className="flex justify-between items-center px-3 py-2.5">
+                      <span className="text-slate-500 dark:text-[#92adc9]">{f.label}</span>
+                      <span className={`font-medium text-[12px] ${f.ok ? 'text-green-500' : 'text-red-400'}`}>
+                        {f.ok ? '✓' : '✗'} {f.value}
+                      </span>
+                    </div>
+                  ))}
+                </div>
+              </div>
+
+              {/* Station photo — optional, at bottom */}
+              <div>
+                <h3 className="text-[13px] font-semibold text-slate-500 dark:text-[#92adc9] mb-2 uppercase tracking-wide">
+                  Foto Lokasi
+                </h3>
+                <div className="rounded-lg overflow-hidden h-32 w-full relative group">
+                  <div
+                    className="absolute inset-0 bg-cover bg-center transition-transform duration-500 group-hover:scale-110"
+                    style={{
+                      backgroundImage:
+                        'url("https://lh3.googleusercontent.com/aida-public/AB6AXuDK5cPck2Vgbc4BE2byk0Y9pu-0X4cN9o_3wr6sBOYVHeKfQH9mNDF2nY_jFZHQDfbGZDTU-Yg9toH7jivbBetN2Sh30wi-mKfFSCmHpZcJARkibHpZk1nTHa7KyP_3ZQnFKuIiyIMdd3DHtvyaIi1oiVT3u33xsct6fFhshXnupxhGSotOLb_zglubNeDQGEcf3uFbC0VuS9BrLAVLN2zA9mDDqbU-C0ZnMJJk0fl9leFRwR1dv4h3AgarMrU0e8UW5sizr8uzAlE1")',
+                    }}
+                  />
                 </div>
               </div>
             </div>

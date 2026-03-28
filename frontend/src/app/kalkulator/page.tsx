@@ -44,8 +44,7 @@ export default function KalkulatorPage() {
                 Kalkulator Energi &amp; Ekonomi
               </h1>
               <p className="text-slate-600 dark:text-[#92adc9] text-sm font-normal leading-relaxed">
-                Simulasi estimasi produksi energi tahunan dan indikator kelayakan ekonomi (LCOE,
-                NPV, ROI) untuk proyek energi terbarukan.
+                Simulasi estimasi produksi energi tahunan dan indikator ekonomi awal untuk screening lokasi proyek energi terbarukan.
               </p>
               {/* Screening disclaimer — expanded callout */}
               <div className="bg-yellow-500/10 border border-yellow-500/30 rounded-lg px-4 py-3 mt-1">
@@ -388,24 +387,6 @@ export default function KalkulatorPage() {
               </div>
               <div className="bg-white dark:bg-card-dark rounded-xl p-4 border border-gray-200 dark:border-border-dark relative overflow-hidden group">
                 <div className="absolute right-0 top-0 p-3 opacity-10 group-hover:opacity-20 transition-opacity">
-                  <span className="material-symbols-outlined text-[56px] text-green-500">
-                    account_balance_wallet
-                  </span>
-                </div>
-                <p className="text-xs text-slate-500 dark:text-text-secondary font-medium uppercase tracking-wide mb-1.5">
-                  NPV (Nilai Kini Bersih)
-                </p>
-                <div className="flex items-baseline gap-1">
-                  <h4 className="text-2xl font-black text-slate-900 dark:text-white">12.5</h4>
-                  <span className="text-xs font-bold text-slate-400">M USD</span>
-                </div>
-                <div className="flex items-center gap-1 mt-2 text-green-500 text-xs font-medium">
-                  <span className="material-symbols-outlined text-[16px]">check_circle</span>
-                  <span>Layak</span>
-                </div>
-              </div>
-              <div className="bg-white dark:bg-card-dark rounded-xl p-4 border border-gray-200 dark:border-border-dark relative overflow-hidden group">
-                <div className="absolute right-0 top-0 p-3 opacity-10 group-hover:opacity-20 transition-opacity">
                   <span className="material-symbols-outlined text-[56px] text-purple-500">
                     timelapse
                   </span>
@@ -418,8 +399,29 @@ export default function KalkulatorPage() {
                   <span className="text-xs font-bold text-slate-400">Tahun</span>
                 </div>
                 <div className="flex items-center gap-1 mt-2 text-purple-400 text-xs font-medium">
+                  <span className="material-symbols-outlined text-[16px]">check_circle</span>
+                  <span>Di bawah umur proyek</span>
+                </div>
+              </div>
+              <div className="bg-white dark:bg-card-dark rounded-xl p-4 border border-gray-200 dark:border-border-dark border-dashed relative overflow-hidden group opacity-80">
+                <div className="absolute right-0 top-0 p-3 opacity-10 group-hover:opacity-20 transition-opacity">
+                  <span className="material-symbols-outlined text-[56px] text-green-500">
+                    account_balance_wallet
+                  </span>
+                </div>
+                <div className="flex items-center gap-2 mb-1.5">
+                  <p className="text-xs text-slate-500 dark:text-text-secondary font-medium uppercase tracking-wide">
+                    NPV / ROI
+                  </p>
+                  <span className="text-[9px] font-bold px-1.5 py-0.5 rounded bg-slate-100 dark:bg-slate-700 text-slate-400 uppercase">Sekunder</span>
+                </div>
+                <div className="flex items-baseline gap-1">
+                  <h4 className="text-2xl font-black text-slate-900 dark:text-white">12.5</h4>
+                  <span className="text-xs font-bold text-slate-400">M USD</span>
+                </div>
+                <div className="flex items-center gap-1 mt-2 text-slate-400 text-xs font-medium">
                   <span className="material-symbols-outlined text-[16px]">info</span>
-                  <span>ROI: 14.5%</span>
+                  <span>ROI: 14.5% — Estimasi awal</span>
                 </div>
               </div>
             </div>

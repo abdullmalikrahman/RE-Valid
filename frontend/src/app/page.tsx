@@ -5,7 +5,7 @@ const features = [
     href: '/peta',
     icon: 'map',
     title: 'Peta Utama',
-    desc: 'Visualisasi spasial stasiun meteorologi dan potensi EBT berbasis WebGIS.',
+    desc: 'Visualisasi spasial stasiun meteorologi, atlas angin/surya, dan prioritas GIS-MCDA di Jawa Barat.',
     color: 'text-sky-400',
     border: 'border-sky-800',
   },
@@ -21,7 +21,7 @@ const features = [
     href: '/kalkulator',
     icon: 'calculate',
     title: 'Kalkulator EBT',
-    desc: 'Simulasi screening LCOE, NPV, dan kelayakan ekonomi proyek energi.',
+    desc: 'Estimasi AEP, LCOE kasar, dan indikator ekonomi awal (pre-feasibility) proyek EBT.',
     color: 'text-emerald-400',
     border: 'border-emerald-800',
   },
@@ -67,13 +67,13 @@ export default function Home() {
           Platform Validasi Energi Terbarukan &mdash; Jawa Barat
         </div>
 
-        <h1 className="text-3xl lg:text-4xl font-extrabold tracking-tight mb-3 max-w-2xl leading-tight">
-          Sistem Pendukung Keputusan{' '}
-          <span className="text-primary">EBT</span> Berbasis WebGIS
+        <h1 className="text-3xl lg:text-4xl font-extrabold tracking-tight mb-3 max-w-3xl leading-tight">
+          Platform WebGIS untuk Validasi Potensi{' '}
+          <span className="text-primary">Energi Angin dan Surya</span> di Jawa Barat
         </h1>
         <p className="text-sm text-text-secondary max-w-xl mb-8">
-          Validasi potensi angin dan surya menggunakan data lapangan, analisis statistik
-          MCP/R&sup2;, dan pemodelan ekonomi untuk perencanaan proyek energi terbarukan.
+          Validasi data lapangan stasiun meteorologi, analisis statistik MCP/R&sup2;,
+          dan indikator energi &amp; ekonomi awal untuk screening lokasi proyek EBT.
         </p>
 
         <div className="flex gap-3 flex-wrap justify-center mb-12">
