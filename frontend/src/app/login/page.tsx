@@ -27,8 +27,9 @@ export default function LoginPage() {
               Validasi Potensi EBT Berbasis WebGIS untuk Jawa Barat
             </h1>
             <p className="text-gray-300 text-sm leading-relaxed max-w-md">
-              Sistem validasi data lapangan stasiun meteorologi, analisis statistik MCP/R²,
-              dan prioritas lokasi berbasis GIS-MCDA untuk Jawa Barat.
+              Platform Sistem Pendukung Keputusan untuk validasi potensi angin dan surya
+              menggunakan data lapangan, analisis statistik MCP/R², peta interaktif PostGIS,
+              dan pemodelan kelayakan LCOE/NPV.
             </p>
             <div className="mt-6 flex flex-wrap gap-3">
               <span className="inline-flex items-center gap-1.5 px-3 py-1 bg-white/10 rounded-full text-xs text-gray-200">
@@ -66,10 +67,10 @@ export default function LoginPage() {
 
             <div className="mb-6">
               <h2 className="text-2xl font-bold text-gray-900 dark:text-white mb-1.5">
-                Login Operator dan Admin
+                Akses Portal
               </h2>
               <p className="text-sm text-gray-500 dark:text-gray-400">
-                Digunakan untuk pengelolaan stasiun, monitoring IoT, validasi, MCP, dan laporan.
+                Masuk untuk menggunakan platform RE-Valid.
               </p>
             </div>
 
