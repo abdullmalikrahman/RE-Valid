@@ -43,8 +43,6 @@ export default function AnalisisPage() {
                 <select suppressHydrationWarning className="w-full bg-gray-50 dark:bg-[#111a22] border border-gray-200 dark:border-border-dark rounded-lg px-3 py-2 text-xs font-medium text-slate-900 dark:text-white focus:outline-none focus:border-primary focus:ring-1 focus:ring-primary appearance-none pr-8">
                   <option>Pos Pegunungan Wayang (Bandung Selatan)</option>
                   <option>Stasiun Cimahi Utara (Cimahi)</option>
-                  <option>Pos Pesisir Pangandaran (Pangandaran)</option>
-                  <option>Stasiun Subang Utara (Subang)</option>
                 </select>
                 <span className="material-symbols-outlined absolute right-2 top-2 text-slate-400 pointer-events-none text-[18px]">
                   expand_more
@@ -374,11 +372,6 @@ export default function AnalisisPage() {
                   ))}
                 </tbody>
               </table>
-            </div>
-            <div className="px-4 py-2.5 border-t border-gray-100 dark:border-slate-800">
-              <p className="text-[10px] text-slate-400 dark:text-slate-500 leading-relaxed">
-                * Nilai target merupakan evaluasi internal penelitian untuk keperluan screening pre-feasibility. Bukan acuan standar eksternal.
-              </p>
             </div>
           </div>
 
