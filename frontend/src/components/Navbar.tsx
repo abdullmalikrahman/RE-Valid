@@ -35,13 +35,13 @@ export default function Navbar() {
                   className={
                     isActive
                       ? 'text-slate-900 dark:text-white text-[13px] font-bold'
-                      : 'text-slate-500 dark:text-[#92adc9] text-[13px] font-medium hover:text-slate-900 dark:hover:text-white transition-colors'
+                      : 'text-slate-500 dark:text-text-secondary text-[13px] font-medium hover:text-slate-900 dark:hover:text-white transition-colors'
                   }
                 >
                   {item.label}
                 </Link>
                 {isActive && (
-                  <div className="absolute -bottom-[15px] w-full h-[2px] bg-primary rounded-t-full" />
+                  <div className="absolute -bottom-3.75 w-full h-0.5 bg-primary rounded-t-full" />
                 )}
               </div>
             );
@@ -53,7 +53,7 @@ export default function Navbar() {
         <div className="flex items-center gap-2">
           <Link
             href="/admin"
-            className="text-[13px] text-slate-500 dark:text-[#92adc9] hover:text-slate-900 dark:hover:text-white transition-colors font-medium"
+            className="text-[13px] text-slate-500 dark:text-text-secondary hover:text-slate-900 dark:hover:text-white transition-colors font-medium"
           >
             Admin
           </Link>
