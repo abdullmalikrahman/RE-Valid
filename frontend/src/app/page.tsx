@@ -25,14 +25,6 @@ const features = [
     color: 'text-emerald-400',
     border: 'border-emerald-800',
   },
-  {
-    href: '/laporan',
-    icon: 'description',
-    title: 'Unduh Laporan',
-    desc: 'Ekspor laporan validasi dalam format PDF, CSV, atau GeoJSON.',
-    color: 'text-amber-400',
-    border: 'border-amber-800',
-  },
 ];
 
 export default function Home() {
@@ -94,7 +86,7 @@ export default function Home() {
         </div>
 
         {/* Feature grid */}
-        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 max-w-5xl w-full">
+        <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 max-w-3xl w-full">
           {features.map((f) => (
             <Link
               key={f.href}
