@@ -1,0 +1,189 @@
+// ─── Jawa Barat station data ──────────────────────────────────────────────────
+
+export type StationStatus = 'prioritas' | 'kandidat' | 'tidak_sesuai';
+
+export interface Station {
+  id: string;
+  name: string;
+  lat: number;
+  lon: number;
+  region: string;
+  altitude: number; // meters
+  status: StationStatus;
+  score: number; // 0-100
+  lastUpdate: string;
+  period: string;
+  variables: string;
+  mcpStatus: 'selesai' | 'berjalan' | 'pending';
+  rmse: number;
+  bias: number;
+  r2: number;
+  windSpeed: number; // m/s avg
+  irradiation: number; // kWh/m²/day
+  aep: number; // MWh/year estimated
+  photo?: string;
+}
+
+export const stations: Station[] = [
+  {
+    id: 'GWY-089',
+    name: 'Pos Pegunungan Wayang',
+    lat: -7.2184,
+    lon: 107.6452,
+    region: 'Bandung Selatan, Jawa Barat',
+    altitude: 1820,
+    status: 'prioritas',
+    score: 92,
+    lastUpdate: '5 mnt lalu',
+    period: 'Jan 2023 – Des 2023',
+    variables: 'Angin, Iradiasi',
+    mcpStatus: 'selesai',
+    rmse: 1.45,
+    bias: 1.2,
+    r2: 0.89,
+    windSpeed: 6.8,
+    irradiation: 5.1,
+    aep: 14200,
+  },
+  {
+    id: 'CMH-001',
+    name: 'Stasiun Cimahi Utara',
+    lat: -6.8712,
+    lon: 107.5432,
+    region: 'Cimahi, Jawa Barat',
+    altitude: 752,
+    status: 'prioritas',
+    score: 87,
+    lastUpdate: '8 mnt lalu',
+    period: 'Jan 2023 – Des 2023',
+    variables: 'Angin, Iradiasi',
+    mcpStatus: 'selesai',
+    rmse: 1.82,
+    bias: -0.8,
+    r2: 0.84,
+    windSpeed: 6.2,
+    irradiation: 4.8,
+    aep: 12450,
+  },
+  {
+    id: 'PGD-023',
+    name: 'Pos Pesisir Pangandaran',
+    lat: -7.7041,
+    lon: 108.6508,
+    region: 'Pangandaran, Jawa Barat',
+    altitude: 12,
+    status: 'kandidat',
+    score: 71,
+    lastUpdate: '2 jam lalu',
+    period: 'Mar 2023 – Des 2023',
+    variables: 'Angin, Iradiasi',
+    mcpStatus: 'berjalan',
+    rmse: 2.31,
+    bias: 4.7,
+    r2: 0.71,
+    windSpeed: 5.4,
+    irradiation: 4.6,
+    aep: 9800,
+  },
+  {
+    id: 'SBG-105',
+    name: 'Stasiun Subang Utara',
+    lat: -6.5891,
+    lon: 107.7621,
+    region: 'Subang, Jawa Barat',
+    altitude: 48,
+    status: 'tidak_sesuai',
+    score: 44,
+    lastUpdate: '4 hari lalu',
+    period: '—',
+    variables: 'Surya',
+    mcpStatus: 'pending',
+    rmse: 0,
+    bias: 0,
+    r2: 0,
+    windSpeed: 3.2,
+    irradiation: 4.2,
+    aep: 0,
+  },
+  {
+    id: 'GRT-056',
+    name: 'Stasiun Garut Selatan',
+    lat: -7.4833,
+    lon: 107.8717,
+    region: 'Garut, Jawa Barat',
+    altitude: 730,
+    status: 'kandidat',
+    score: 76,
+    lastUpdate: '45 mnt lalu',
+    period: 'Feb 2023 – Des 2023',
+    variables: 'Angin, Iradiasi',
+    mcpStatus: 'selesai',
+    rmse: 1.93,
+    bias: 2.1,
+    r2: 0.81,
+    windSpeed: 5.9,
+    irradiation: 4.9,
+    aep: 11100,
+  },
+  {
+    id: 'TSM-034',
+    name: 'Pos Tasikmalaya Timur',
+    lat: -7.3544,
+    lon: 108.2248,
+    region: 'Tasikmalaya, Jawa Barat',
+    altitude: 368,
+    status: 'kandidat',
+    score: 68,
+    lastUpdate: '1.5 jam lalu',
+    period: 'Jan 2023 – Sep 2023',
+    variables: 'Angin',
+    mcpStatus: 'berjalan',
+    rmse: 2.54,
+    bias: 3.8,
+    r2: 0.74,
+    windSpeed: 5.1,
+    irradiation: 4.5,
+    aep: 8700,
+  },
+];
+
+// ─── Wind speed heatmap grid (simplified for Jawa Barat bbox) ─────────────────
+// Each point: [lat, lon, intensity 0-1]
+export const windHeatPoints: [number, number, number][] = [
+  // High wind: Pegunungan Wayang area
+  [-7.20, 107.64, 0.95], [-7.22, 107.62, 0.92], [-7.24, 107.66, 0.88],
+  [-7.18, 107.60, 0.83], [-7.26, 107.68, 0.79],
+  // Garut highlands
+  [-7.45, 107.87, 0.82], [-7.50, 107.90, 0.78], [-7.48, 107.85, 0.76],
+  // Cimahi-Bandung area
+  [-6.87, 107.54, 0.75], [-6.90, 107.57, 0.71], [-6.93, 107.50, 0.68],
+  // Pangandaran coast
+  [-7.70, 108.65, 0.64], [-7.72, 108.68, 0.61], [-7.68, 108.62, 0.58],
+  // Subang lowlands - low wind
+  [-6.58, 107.76, 0.32], [-6.55, 107.80, 0.28], [-6.60, 107.72, 0.30],
+  // Tasikmalaya
+  [-7.35, 108.22, 0.60], [-7.38, 108.25, 0.57], [-7.32, 108.20, 0.55],
+  // Scattered mid-points
+  [-7.00, 107.70, 0.65], [-7.10, 107.80, 0.62], [-6.95, 107.65, 0.58],
+  [-7.30, 107.95, 0.70], [-7.15, 108.00, 0.67],
+  [-6.80, 107.90, 0.45], [-7.60, 108.40, 0.52], [-7.05, 108.10, 0.59],
+];
+
+// ─── Solar irradiation heatmap grid ──────────────────────────────────────────
+export const solarHeatPoints: [number, number, number][] = [
+  // High solar: Pangandaran coast & Subang
+  [-7.70, 108.65, 0.92], [-7.68, 108.62, 0.88], [-7.72, 108.68, 0.85],
+  [-6.58, 107.76, 0.86], [-6.55, 107.80, 0.83], [-6.60, 107.72, 0.80],
+  // Garut selatan
+  [-7.48, 107.87, 0.82], [-7.50, 107.90, 0.79],
+  // Tasikmalaya
+  [-7.35, 108.22, 0.78], [-7.38, 108.25, 0.75],
+  // Cimahi - moderate
+  [-6.87, 107.54, 0.74], [-6.90, 107.57, 0.70],
+  // Pegunungan - lower solar (clouds)
+  [-7.22, 107.64, 0.60], [-7.24, 107.66, 0.55], [-7.20, 107.62, 0.58],
+  // Mid-range
+  [-7.00, 107.70, 0.72], [-7.10, 107.80, 0.68], [-6.95, 107.65, 0.65],
+  [-7.30, 107.95, 0.76], [-7.15, 108.00, 0.73],
+  [-6.80, 107.90, 0.69], [-7.60, 108.40, 0.80], [-7.05, 108.10, 0.71],
+];
