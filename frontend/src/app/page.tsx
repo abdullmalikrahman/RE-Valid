@@ -1,4 +1,6 @@
 import Link from 'next/link';
+import Navbar from '@/components/Navbar';
+import Footer from '@/components/Footer';
 
 const features = [
   {
@@ -29,28 +31,8 @@ const features = [
 
 export default function Home() {
   return (
-    <div className="min-h-screen bg-background-dark text-white flex flex-col">
-      {/* Header */}
-      <header className="h-16 flex items-center justify-between px-8 border-b border-border-dark">
-        <Link href="/" className="flex items-center gap-2">
-          <span className="material-symbols-outlined text-primary">bolt</span>
-          <span className="text-lg font-bold tracking-tight">RE-Valid</span>
-        </Link>
-        <div className="flex items-center gap-4">
-          <Link
-            href="/admin"
-            className="text-sm text-text-secondary hover:text-white transition-colors"
-          >
-            Admin
-          </Link>
-          <Link
-            href="/login"
-            className="text-sm bg-primary hover:bg-blue-600 text-white px-4 py-2 rounded-lg transition-colors font-medium"
-          >
-            Masuk
-          </Link>
-        </div>
-      </header>
+    <div className="min-h-screen bg-background-dark text-white flex flex-col font-display">
+      <Navbar />
 
       {/* Hero */}
       <main className="flex-1 flex flex-col items-center justify-center px-6 py-14 text-center">
@@ -78,7 +60,7 @@ export default function Home() {
           </Link>
           <Link
             href="/analisis"
-            className="inline-flex items-center gap-2 px-5 py-2.5 bg-card-dark hover:bg-[#243040] text-white font-semibold rounded-xl border border-border-dark transition-all text-sm"
+            className="inline-flex items-center gap-2 px-5 py-2.5 bg-card-dark hover:bg-panel-dark text-white font-semibold rounded-xl border border-border-dark transition-all text-sm"
           >
             <span className="material-symbols-outlined text-[18px]">analytics</span>
             Mulai Analisis
@@ -105,14 +87,7 @@ export default function Home() {
         </div>
       </main>
 
-      {/* Footer */}
-      <footer className="border-t border-border-dark px-8 py-4 flex items-center justify-between">
-        <p className="text-xs text-text-secondary">&copy; 2026 RE-Valid. Semua hak dilindungi.</p>
-        <div className="flex gap-6 text-xs text-text-secondary">
-          <Link href="#" className="hover:text-white transition-colors">Kebijakan Privasi</Link>
-          <Link href="#" className="hover:text-white transition-colors">Syarat &amp; Ketentuan</Link>
-        </div>
-      </footer>
+      <Footer />
     </div>
   );
 }
