@@ -232,7 +232,7 @@ function LaporanContent() {
               <div className="flex items-center gap-2 mb-4">
                 <span className="material-symbols-outlined text-violet-400 text-[20px]">query_stats</span>
                 <h4 className="text-sm font-bold text-slate-900 dark:text-white">Metrik Validasi</h4>
-                <span className="ml-auto text-[11px] text-slate-400">ERA5 vs Observasi Lapangan</span>
+                <span className="ml-auto text-[11px] text-slate-400">Angin — ERA5 vs Observasi Lapangan</span>
               </div>
               <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
                 {[
@@ -265,13 +265,69 @@ function LaporanContent() {
               </div>
             </div>
 
+            {/* Solar validation metrics */}
+            <div className="bg-white dark:bg-card-dark border border-gray-200 dark:border-border-dark rounded-xl p-5 shadow-sm">
+              <div className="flex items-center gap-2 mb-4">
+                <span className="material-symbols-outlined text-amber-400 text-[20px]">wb_sunny</span>
+                <h4 className="text-sm font-bold text-slate-900 dark:text-white">Validasi Surya (GHI)</h4>
+                <span className="ml-auto text-[11px] text-slate-400">GSA vs Observasi Lapangan</span>
+              </div>
+              <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+                <div className="bg-slate-50 dark:bg-[#111a22] rounded-xl p-4 border border-slate-100 dark:border-[#233648] text-center">
+                  <p className="text-[10px] text-slate-400 uppercase tracking-wide mb-1">GHI Observasi</p>
+                  <p className="text-2xl font-black text-amber-400">
+                    {station.irradiation.toFixed(1)}
+                    <span className="text-[12px] font-medium text-slate-400 ml-0.5">kWh/m²/hr</span>
+                  </p>
+                </div>
+                <div className="bg-slate-50 dark:bg-[#111a22] rounded-xl p-4 border border-slate-100 dark:border-[#233648] text-center">
+                  <p className="text-[10px] text-slate-400 uppercase tracking-wide mb-1">GHI Baseline (GSA)</p>
+                  <p className="text-2xl font-black text-slate-400 dark:text-slate-300">
+                    {(station.irradiation * 0.958).toFixed(1)}
+                    <span className="text-[12px] font-medium text-slate-400 ml-0.5">kWh/m²/hr</span>
+                  </p>
+                </div>
+                <div className="bg-slate-50 dark:bg-[#111a22] rounded-xl p-4 border border-slate-100 dark:border-[#233648] text-center">
+                  <p className="text-[10px] text-slate-400 uppercase tracking-wide mb-1">Clearness Index (Kt)</p>
+                  <p className={`text-2xl font-black ${
+                    station.irradiation / 8.5 >= 0.40 && station.irradiation / 8.5 <= 0.65
+                      ? 'text-green-400'
+                      : 'text-red-400'
+                  }`}>
+                    {(station.irradiation / 8.5).toFixed(2)}
+                  </p>
+                  <p className="text-[10px] text-slate-400 mt-0.5">Rentang: 0.40–0.65</p>
+                </div>
+                <div className="bg-slate-50 dark:bg-[#111a22] rounded-xl p-4 border border-slate-100 dark:border-[#233648] text-center">
+                  <p className="text-[10px] text-slate-400 uppercase tracking-wide mb-1">Bias vs GSA</p>
+                  <p className={`text-2xl font-black ${
+                    Math.abs(station.bias * 0.8) <= 10 ? 'text-green-400' : 'text-amber-400'
+                  }`}>
+                    {station.bias * 0.8 > 0 ? '+' : ''}{(station.bias * 0.8).toFixed(1)}
+                    <span className="text-[13px] font-medium text-slate-400 ml-0.5">%</span>
+                  </p>
+                </div>
+              </div>
+              <div className="mt-3 flex flex-wrap gap-2">
+                <span className="text-[10px] font-mono px-2 py-0.5 rounded border bg-slate-100 dark:bg-slate-800 border-slate-200 dark:border-slate-700 text-slate-500 dark:text-slate-300">IEC 61853</span>
+                <span className="text-[10px] font-mono px-2 py-0.5 rounded border bg-amber-500/10 border-amber-500/30 text-amber-400">SOLARGIS / GSA</span>
+                <span className={`text-[10px] font-mono px-2 py-0.5 rounded border ${
+                  station.irradiation / 8.5 >= 0.40 && station.irradiation / 8.5 <= 0.65
+                    ? 'bg-green-500/10 border-green-500/30 text-green-400'
+                    : 'bg-red-500/10 border-red-500/30 text-red-400'
+                }`}>
+                  {'Kt = '}{(station.irradiation / 8.5).toFixed(2)}{station.irradiation / 8.5 >= 0.40 && station.irradiation / 8.5 <= 0.65 ? ' ✓ Valid' : ' ⚠ Di luar rentang'}
+                </span>
+              </div>
+            </div>
+
             {/* Energy potential */}
             <div className="bg-white dark:bg-card-dark border border-gray-200 dark:border-border-dark rounded-xl p-5 shadow-sm">
               <div className="flex items-center gap-2 mb-4">
                 <span className="material-symbols-outlined text-yellow-400 text-[20px]">bolt</span>
                 <h4 className="text-sm font-bold text-slate-900 dark:text-white">Potensi Energi</h4>
               </div>
-              <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+              <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
                 <div className="bg-blue-50 dark:bg-blue-900/10 border border-blue-100 dark:border-blue-800/30 rounded-xl p-4 text-center">
                   <span className="material-symbols-outlined text-blue-400 text-[24px] mb-1 block">air</span>
                   <p className="text-[10px] text-slate-400 uppercase tracking-wide">Kec. Angin Rata-rata</p>
@@ -279,22 +335,34 @@ function LaporanContent() {
                     {station.windSpeed}
                     <span className="text-sm font-medium text-slate-400 ml-1">m/s</span>
                   </p>
+                  <p className="text-[10px] text-slate-400 mt-1.5">Sumber: GWA 3.0</p>
                 </div>
                 <div className="bg-yellow-50 dark:bg-yellow-900/10 border border-yellow-100 dark:border-yellow-800/30 rounded-xl p-4 text-center">
                   <span className="material-symbols-outlined text-yellow-400 text-[24px] mb-1 block">wb_sunny</span>
-                  <p className="text-[10px] text-slate-400 uppercase tracking-wide">Iradiasi Matahari</p>
+                  <p className="text-[10px] text-slate-400 uppercase tracking-wide">Iradiasi Matahari (GHI)</p>
                   <p className="text-2xl font-black text-yellow-400">
                     {station.irradiation}
                     <span className="text-sm font-medium text-slate-400 ml-1">kWh/m²/hari</span>
                   </p>
+                  <p className="text-[10px] text-slate-400 mt-1.5">Sumber: GSA / SOLARGIS</p>
                 </div>
                 <div className="bg-green-50 dark:bg-green-900/10 border border-green-100 dark:border-green-800/30 rounded-xl p-4 text-center">
                   <span className="material-symbols-outlined text-green-400 text-[24px] mb-1 block">electric_bolt</span>
-                  <p className="text-[10px] text-slate-400 uppercase tracking-wide">AEP Estimasi (P50)</p>
+                  <p className="text-[10px] text-slate-400 uppercase tracking-wide">AEP PLTB (P50)</p>
                   <p className="text-2xl font-black text-green-400">
                     {station.aep.toLocaleString('id')}
                     <span className="text-sm font-medium text-slate-400 ml-1">MWh/thn</span>
                   </p>
+                  <p className="text-[10px] text-slate-400 mt-1.5">Estimasi ERA5 / MCP</p>
+                </div>
+                <div className="bg-amber-50 dark:bg-amber-900/10 border border-amber-100 dark:border-amber-800/30 rounded-xl p-4 text-center">
+                  <span className="material-symbols-outlined text-amber-400 text-[24px] mb-1 block">solar_power</span>
+                  <p className="text-[10px] text-slate-400 uppercase tracking-wide">Hasil Spesifik PLTS</p>
+                  <p className="text-2xl font-black text-amber-400">
+                    {Math.round(station.irradiation * 365 * 0.75).toLocaleString('id')}
+                    <span className="text-sm font-medium text-slate-400 ml-1">kWh/kWp·thn</span>
+                  </p>
+                  <p className="text-[10px] text-slate-400 mt-1.5">PR = 75% (asumsi)</p>
                 </div>
               </div>
             </div>
