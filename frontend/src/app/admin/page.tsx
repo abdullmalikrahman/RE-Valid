@@ -155,7 +155,7 @@ function StationModal({ station, onClose, onSave }: ModalProps) {
           </div>
 
           <div className="flex flex-col gap-1.5">
-            <label className="text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wide">Skor GIS-MCDA (0â€“100)</label>
+            <label className="text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wide">Skor GIS-MCDA (0–100)</label>
             <div className="flex items-center gap-3">
               <input className="flex-1" max="100" min="0" type="range" value={form.score} onChange={(e) => setForm({ ...form, score: Number(e.target.value) })} />
               <span className="w-10 text-right text-sm font-bold text-gray-900 dark:text-white">{form.score}</span>
@@ -556,7 +556,7 @@ export default function AdminPage() {
                           </td>
                           <td className="px-6 py-3 font-mono text-xs text-gray-500 dark:text-gray-400">stations/{s.id}/data</td>
                           <td className="px-6 py-3 text-xs text-gray-600 dark:text-gray-300">{s.lastUpdate}</td>
-                          <td className="px-6 py-3 text-xs text-gray-600 dark:text-gray-300">{online ? '10 mnt' : 'â€”'}</td>
+                          <td className="px-6 py-3 text-xs text-gray-600 dark:text-gray-300">{online ? '10 mnt' : '—'}</td>
                           <td className="px-6 py-3">
                             {online ? (
                               <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-medium bg-green-100 text-green-800 dark:bg-green-900/30 dark:text-green-400">
@@ -601,8 +601,8 @@ export default function AdminPage() {
                   <tbody className="divide-y divide-gray-200 dark:divide-border-dark">
                     {[
                       { id: 'job-4a2f', type: 'MCP Analysis', loc: 'GWY-089', started: '14:31 WIB', status: 'running' },
-                      { id: 'job-7c1e', type: 'MCP Analysis', loc: 'CMH-001', started: 'â€”', status: 'queued' },
-                      { id: 'job-9d3b', type: 'Laporan PDF', loc: 'PGD-023', started: 'â€”', status: 'queued' },
+                      { id: 'job-7c1e', type: 'MCP Analysis', loc: 'CMH-001', started: '—', status: 'queued' },
+                      { id: 'job-9d3b', type: 'Laporan PDF', loc: 'PGD-023', started: '—', status: 'queued' },
                     ].map((job) => (
                       <tr key={job.id} className="hover:bg-gray-50 dark:hover:bg-white/5">
                         <td className="px-6 py-3 font-mono text-xs text-gray-500 dark:text-gray-400">{job.id}</td>

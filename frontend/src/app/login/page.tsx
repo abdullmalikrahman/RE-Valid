@@ -9,7 +9,7 @@ export default function LoginPage() {
   return (
     <div className="bg-gray-100 dark:bg-background-dark text-gray-900 dark:text-gray-100 h-screen overflow-hidden flex flex-col antialiased font-display">
       <main className="w-full h-screen grid grid-cols-1 lg:grid-cols-2">
-        {/* Left â€” hero panel */}
+        {/* Left — hero panel */}
         <div className="relative hidden lg:flex flex-col justify-end h-full w-full bg-black overflow-hidden">
           {/* eslint-disable-next-line @next/next/no-img-element */}
           <img
@@ -52,7 +52,7 @@ export default function LoginPage() {
           </div>
         </div>
 
-        {/* Right â€” login form */}
+        {/* Right — login form */}
         <div className="flex flex-col justify-center items-center w-full h-full bg-white dark:bg-surface-dark p-6 sm:p-10 lg:p-16 relative border-l border-gray-200 dark:border-border-dark overflow-y-auto">
           <div className="w-full max-w-md mx-auto">
             {/* Logo */}
