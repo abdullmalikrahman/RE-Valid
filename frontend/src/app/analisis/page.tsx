@@ -5,7 +5,7 @@ import { useSearchParams, useRouter } from 'next/navigation';
 import Link from 'next/link';
 import Navbar from '@/components/Navbar';
 import Footer from '@/components/Footer';
-import { stations } from '@/lib/stationData';
+import { useStations } from '@/hooks/useStations';
 
 const mcpStatusLabel: Record<string, Record<string, string>> = {
   wind: { selesai: 'Analisis MCP Selesai', berjalan: 'Analisis MCP Berjalan', pending: 'Belum Dijalankan' },
@@ -24,6 +24,7 @@ const mcpIcon: Record<string, string> = {
 };
 
 function AnalisisContent() {
+  const { stations } = useStations();
   const searchParams = useSearchParams();
   const router = useRouter();
   const stationId = searchParams.get('station') ?? stations[0].id;

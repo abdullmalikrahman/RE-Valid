@@ -2,7 +2,7 @@
 
 import { useState } from 'react';
 import Link from 'next/link';
-import { stations as initialStations } from '@/lib/stationData';
+import { useStations } from '@/hooks/useStations';
 
 // Local editable station shape
 type AdminStation = {
@@ -183,8 +183,9 @@ function StationModal({ station, onClose, onSave }: ModalProps) {
 
 //  Main Page
 export default function AdminPage() {
+  const { stations: initialStations } = useStations();
   const [stationList, setStationList] = useState<AdminStation[]>(
-    initialStations.map((s) => ({
+    () => initialStations.map((s) => ({
       id: s.id,
       name: s.name,
       lat: s.lat,

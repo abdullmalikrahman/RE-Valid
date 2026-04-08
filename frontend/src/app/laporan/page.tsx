@@ -5,7 +5,7 @@ import { useSearchParams, useRouter } from 'next/navigation';
 import Link from 'next/link';
 import Navbar from '@/components/Navbar';
 import Footer from '@/components/Footer';
-import { stations } from '@/lib/stationData';
+import { useStations } from '@/hooks/useStations';
 
 const statusLabel: Record<string, string> = {
   prioritas: 'Prioritas',
@@ -32,6 +32,7 @@ const mcpBadge: Record<string, string> = {
 };
 
 function LaporanContent() {
+  const { stations } = useStations();
   const searchParams = useSearchParams();
   const router = useRouter();
   const stationId = searchParams.get('station') ?? stations[0].id;

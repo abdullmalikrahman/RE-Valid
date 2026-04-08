@@ -1,15 +1,24 @@
-from fastapi import APIRouter
+from fastapi import APIRouter, Depends, HTTPException, status
+from sqlalchemy.ext.asyncio import AsyncSession
+
+from app.core.database import get_db
+from app.crud.station import get_all_stations, get_station_by_id
+from app.schemas.station import StationResponse
 
 router = APIRouter()
 
 
-@router.get("/stations")
-async def get_stations():
-    """List all monitoring stations."""
-    return {"stations": []}
+@router.get("", response_model=list[StationResponse])
+async def list_stations(db: AsyncSession = Depends(get_db)):
+    return await get_all_stations(db)
 
 
-@router.get("/stations/{station_id}")
-async def get_station(station_id: int):
-    """Get a single station by ID."""
-    return {"station_id": station_id}
+@router.get("/{station_id}", response_model=StationResponse)
+async def get_station(station_id: str, db: AsyncSession = Depends(get_db)):
+    station = await get_station_by_id(db, station_id)
+    if not station:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Stasiun tidak ditemukan",
+        )
+    return station

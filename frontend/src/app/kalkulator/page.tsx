@@ -4,10 +4,11 @@ import { useState, useMemo } from 'react';
 import Link from 'next/link';
 import Navbar from '@/components/Navbar';
 import Footer from '@/components/Footer';
-import { stations } from '@/lib/stationData';
+import { useStations } from '@/hooks/useStations';
 
 export default function KalkulatorPage() {
   // --- Energy type toggle ---
+  const { stations } = useStations();
   const [energyType, setEnergyType] = useState<'wind' | 'solar'>('wind');
   const isWind = energyType === 'wind';
 

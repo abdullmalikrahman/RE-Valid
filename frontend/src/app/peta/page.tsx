@@ -4,7 +4,8 @@ import dynamic from 'next/dynamic';
 import Link from 'next/link';
 import { useState, useCallback } from 'react';
 import Navbar from '@/components/Navbar';
-import { stations, windHeatPoints, solarHeatPoints, type Station } from '@/lib/stationData';
+import { windHeatPoints, solarHeatPoints, type Station } from '@/lib/stationData';
+import { useStations } from '@/hooks/useStations';
 
 // Leaflet must be client-side only (no SSR)
 const LeafletMap = dynamic(() => import('@/components/LeafletMap'), {
@@ -304,6 +305,7 @@ function AnalisisModal({ onClose }: { onClose: () => void }) {
 
 // --- Main page ---
 export default function PetaPage() {
+  const { stations } = useStations();
   const [selectedStation, setSelectedStation] = useState<Station | null>(null);
   const [activeLayer, setActiveLayer] = useState<HeatLayer>('none');
   // Lapisan Aktif
