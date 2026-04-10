@@ -1,6 +1,6 @@
 ﻿'use client';
 
-import { useState } from 'react';
+import { useRef, useState } from 'react';
 import Link from 'next/link';
 import { useStations } from '@/hooks/useStations';
 
@@ -207,6 +207,13 @@ export default function AdminPage() {
   const [editStation, setEditStation] = useState<AdminStation | null>(null);
   const [deleteId, setDeleteId] = useState<string | null>(null);
 
+  // CSV upload state
+  const [csvStation, setCsvStation] = useState('');
+  const [csvFile, setCsvFile] = useState<File | null>(null);
+  const [csvUploading, setCsvUploading] = useState(false);
+  const [csvResult, setCsvResult] = useState<{ type: 'success' | 'error'; message: string } | null>(null);
+  const csvInputRef = useRef<HTMLInputElement>(null);
+
   //  Derived â”€â”€
   const filtered = stationList.filter((s) => {
     const matchQuery =
@@ -243,6 +250,36 @@ export default function AdminPage() {
   function handleDelete(id: string) {
     setStationList((list) => list.filter((s) => s.id !== id));
     setDeleteId(null);
+  }
+
+  async function handleCsvUpload() {
+    if (!csvStation || !csvFile) return;
+    setCsvUploading(true);
+    setCsvResult(null);
+    try {
+      const formData = new FormData();
+      formData.append('file', csvFile);
+      const res = await fetch(
+        `${process.env.NEXT_PUBLIC_API_URL ?? 'http://localhost:8000'}/api/v1/measurements/upload?station_id=${encodeURIComponent(csvStation)}`,
+        { method: 'POST', body: formData },
+      );
+      const json = await res.json();
+      if (!res.ok) {
+        const detail = json.detail?.message ?? json.detail ?? 'Upload gagal';
+        setCsvResult({ type: 'error', message: typeof detail === 'string' ? detail : JSON.stringify(detail) });
+      } else {
+        setCsvResult({
+          type: 'success',
+          message: `Berhasil: ${json.inserted} baris dimasukkan, ${json.skipped} baris dilewati (duplikat).${json.parse_errors?.length ? ` ${json.parse_errors.length} baris error.` : ''}`,
+        });
+        setCsvFile(null);
+        if (csvInputRef.current) csvInputRef.current.value = '';
+      }
+    } catch {
+      setCsvResult({ type: 'error', message: 'Tidak dapat terhubung ke server. Pastikan FastAPI sedang berjalan.' });
+    } finally {
+      setCsvUploading(false);
+    }
   }
 
   return (
@@ -626,6 +663,77 @@ export default function AdminPage() {
                     ))}
                   </tbody>
                 </table>
+              </div>
+            </div>
+
+            {/* CSV Upload */}
+            <div className="bg-white dark:bg-surface-dark rounded-xl border border-gray-200 dark:border-border-dark overflow-hidden shadow-sm">
+              <div className="px-6 py-4 border-b border-gray-200 dark:border-border-dark flex items-center gap-2">
+                <span className="material-symbols-outlined text-green-400 text-[20px]">upload_file</span>
+                <h2 className="text-base font-bold text-gray-900 dark:text-white">Upload Data CSV</h2>
+              </div>
+              <div className="p-6 grid grid-cols-1 md:grid-cols-2 gap-6">
+                {/* Left: form */}
+                <div className="flex flex-col gap-4">
+                  <div className="flex flex-col gap-1.5">
+                    <label className="text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wide">Pilih Stasiun</label>
+                    <select
+                      value={csvStation}
+                      onChange={(e) => { setCsvStation(e.target.value); setCsvResult(null); }}
+                      className="bg-gray-50 dark:bg-input-bg-dark border border-gray-300 dark:border-border-dark rounded-lg px-3 py-2 text-sm text-gray-900 dark:text-white focus:outline-none focus:border-primary"
+                    >
+                      <option value="">-- Pilih stasiun --</option>
+                      {stationList.map((s) => (
+                        <option key={s.id} value={s.id}>{s.name} ({s.id})</option>
+                      ))}
+                    </select>
+                  </div>
+                  <div className="flex flex-col gap-1.5">
+                    <label className="text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wide">File CSV</label>
+                    <input
+                      ref={csvInputRef}
+                      type="file"
+                      accept=".csv"
+                      onChange={(e) => { setCsvFile(e.target.files?.[0] ?? null); setCsvResult(null); }}
+                      className="block w-full text-sm text-gray-600 dark:text-gray-300 file:mr-3 file:py-2 file:px-4 file:rounded-lg file:border-0 file:text-xs file:font-medium file:bg-primary/10 file:text-primary hover:file:bg-primary/20 cursor-pointer bg-gray-50 dark:bg-input-bg-dark border border-gray-300 dark:border-border-dark rounded-lg"
+                    />
+                    {csvFile && (
+                      <p className="text-xs text-gray-400">{csvFile.name} · {(csvFile.size / 1024).toFixed(1)} KB</p>
+                    )}
+                  </div>
+                  <button
+                    onClick={handleCsvUpload}
+                    disabled={!csvStation || !csvFile || csvUploading}
+                    className="inline-flex items-center justify-center gap-2 px-4 py-2.5 bg-primary hover:bg-blue-600 disabled:opacity-50 disabled:cursor-not-allowed text-white rounded-lg text-sm font-medium transition-colors"
+                  >
+                    {csvUploading
+                      ? <><span className="material-symbols-outlined text-[18px] animate-spin">refresh</span>Mengunggah...</>
+                      : <><span className="material-symbols-outlined text-[18px]">cloud_upload</span>Upload &amp; Simpan ke Database</>
+                    }
+                  </button>
+                  {csvResult && (
+                    <div className={`flex items-start gap-2 p-3 rounded-lg text-sm ${csvResult.type === 'success' ? 'bg-green-500/10 text-green-400 border border-green-500/20' : 'bg-red-500/10 text-red-400 border border-red-500/20'}`}>
+                      <span className="material-symbols-outlined text-[18px] shrink-0 mt-0.5">{csvResult.type === 'success' ? 'check_circle' : 'error'}</span>
+                      <span>{csvResult.message}</span>
+                    </div>
+                  )}
+                </div>
+                {/* Right: format guide */}
+                <div className="flex flex-col gap-3">
+                  <p className="text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wide">Format CSV yang Diterima</p>
+                  <div className="bg-gray-50 dark:bg-input-bg-dark rounded-lg p-4 border border-gray-200 dark:border-border-dark overflow-x-auto">
+                    <pre className="text-[11px] text-gray-600 dark:text-green-400 font-mono leading-relaxed whitespace-pre">{`measured_at,wind_speed,wind_dir,ghi,dni,temperature,humidity,pressure
+2024-01-01T00:00:00,5.2,180,350.5,290.0,25.3,78.0,1012.5
+2024-01-02T00:00:00,6.1,175,380.0,310.0,26.1,75.0,1011.0`}</pre>
+                  </div>
+                  <ul className="space-y-1.5 text-xs text-gray-500 dark:text-gray-400">
+                    <li className="flex items-start gap-1.5"><span className="text-primary font-bold shrink-0">•</span><span><code className="text-primary">measured_at</code> — wajib, format ISO-8601 (misal <code>2024-01-01T00:00:00</code>)</span></li>
+                    <li className="flex items-start gap-1.5"><span className="text-gray-400 font-bold shrink-0">•</span><span><code className="text-gray-400">wind_speed</code> m/s · <code className="text-gray-400">wind_dir</code> derajat (0–360)</span></li>
+                    <li className="flex items-start gap-1.5"><span className="text-gray-400 font-bold shrink-0">•</span><span><code className="text-gray-400">ghi</code> / <code className="text-gray-400">dni</code> W/m² · <code className="text-gray-400">temperature</code> °C · <code className="text-gray-400">humidity</code> % · <code className="text-gray-400">pressure</code> hPa</span></li>
+                    <li className="flex items-start gap-1.5"><span className="text-gray-400 font-bold shrink-0">•</span><span>Kolom numerik bersifat opsional — kosongkan jika tidak ada data</span></li>
+                    <li className="flex items-start gap-1.5"><span className="text-gray-400 font-bold shrink-0">•</span><span>Baris duplikat (stasiun + tanggal sama) otomatis dilewati</span></li>
+                  </ul>
+                </div>
               </div>
             </div>
 

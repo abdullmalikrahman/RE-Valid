@@ -1,6 +1,6 @@
 'use client';
 
-import { Suspense } from 'react';
+import { Suspense, useRef, useState } from 'react';
 import { useSearchParams, useRouter } from 'next/navigation';
 import Link from 'next/link';
 import Navbar from '@/components/Navbar';
@@ -38,12 +38,136 @@ function LaporanContent() {
   const stationId = searchParams.get('station') ?? stations[0].id;
   const station = stations.find((s) => s.id === stationId) ?? stations[0];
 
+  const reportRef = useRef<HTMLDivElement>(null);
+  const [exporting, setExporting] = useState<'pdf' | 'csv' | 'geojson' | null>(null);
+
   const mcdaFactors = [
     { label: 'Potensi EBT', pct: Math.min(100, station.score + 5) },
     { label: 'Topografi', pct: station.altitude > 500 ? 80 : 55 },
     { label: 'Aksesibilitas', pct: station.altitude > 1000 ? 55 : 75 },
     { label: 'Infrastruktur', pct: Math.max(30, station.score - 15) },
   ];
+
+  async function handleExportPDF() {
+    if (!reportRef.current) return;
+    setExporting('pdf');
+    try {
+      const [{ default: jsPDF }, { default: html2canvas }] = await Promise.all([
+        import('jspdf'),
+        import('html2canvas'),
+      ]);
+      const canvas = await html2canvas(reportRef.current, {
+        scale: 2,
+        useCORS: true,
+        backgroundColor: '#0f1923',
+        logging: false,
+      });
+      const imgData = canvas.toDataURL('image/png');
+      const pdf = new jsPDF({ orientation: 'portrait', unit: 'mm', format: 'a4' });
+      const pageW = pdf.internal.pageSize.getWidth();
+      const pageH = pdf.internal.pageSize.getHeight();
+      const imgW = pageW - 20; // 10mm margin each side
+      const imgH = (canvas.height * imgW) / canvas.width;
+      let yPos = 10;
+      let remaining = imgH;
+      while (remaining > 0) {
+        pdf.addImage(imgData, 'PNG', 10, yPos, imgW, imgH);
+        remaining -= (pageH - 20);
+        if (remaining > 0) {
+          pdf.addPage();
+          yPos = 10 - (imgH - remaining);
+        }
+      }
+      pdf.save(`RE-Valid_Laporan_${station.id}_${new Date().toISOString().slice(0, 10)}.pdf`);
+    } finally {
+      setExporting(null);
+    }
+  }
+
+  function handleExportCSV() {
+    setExporting('csv');
+    const rows = [
+      ['Field', 'Value'],
+      ['Station ID', station.id],
+      ['Nama', station.name],
+      ['Wilayah', station.region],
+      ['Latitude', station.lat],
+      ['Longitude', station.lon],
+      ['Ketinggian (m)', station.altitude],
+      ['Status', station.status],
+      ['Periode', station.period],
+      ['Variabel', station.variables],
+      [],
+      ['--- Metrik Validasi Angin ---', ''],
+      ['Kecepatan Angin Rata-rata (m/s)', station.windSpeed],
+      ['RMSE (m/s)', station.rmse],
+      ['Bias (%)', station.bias],
+      ['R²', station.r2],
+      ['Skor GIS-MCDA (/100)', station.score],
+      [],
+      ['--- Validasi Surya ---'],
+      ['GHI Observasi (kWh/m²/hari)', station.irradiation],
+      ['GHI Baseline GSA (kWh/m²/hari)', (station.irradiation * 0.958).toFixed(2)],
+      ['Clearness Index (Kt)', (station.irradiation / 8.5).toFixed(2)],
+      [],
+      ['--- Potensi Energi ---'],
+      ['AEP PLTB P50 (MWh/thn)', station.aep],
+      ['Hasil Spesifik PLTS (kWh/kWp·thn)', Math.round(station.irradiation * 365 * 0.75)],
+      [],
+      ['--- Faktor GIS-MCDA ---'],
+      ...mcdaFactors.map((f) => [f.label, `${f.pct}%`]),
+      [],
+      ['Diekspor pada', new Date().toLocaleString('id-ID')],
+      ['Sumber', 'RE-Valid DSS — ERA5/GWA/GSA'],
+    ];
+    const csv = rows.map((r) => r.map((v) => `"${String(v ?? '').replace(/"/g, '""')}"`).join(',')).join('\n');
+    const blob = new Blob(['\uFEFF' + csv], { type: 'text/csv;charset=utf-8;' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `RE-Valid_Data_${station.id}_${new Date().toISOString().slice(0, 10)}.csv`;
+    a.click();
+    URL.revokeObjectURL(url);
+    setExporting(null);
+  }
+
+  function handleExportGeoJSON() {
+    setExporting('geojson');
+    const geojson = {
+      type: 'FeatureCollection',
+      features: [
+        {
+          type: 'Feature',
+          geometry: { type: 'Point', coordinates: [station.lon, station.lat] },
+          properties: {
+            id: station.id,
+            name: station.name,
+            region: station.region,
+            altitude_m: station.altitude,
+            status: station.status,
+            score: station.score,
+            wind_speed_ms: station.windSpeed,
+            ghi_kwh_m2_day: station.irradiation,
+            aep_mwh_yr: station.aep,
+            rmse: station.rmse,
+            bias_pct: station.bias,
+            r2: station.r2,
+            period: station.period,
+            exported_at: new Date().toISOString(),
+            source: 'RE-Valid DSS',
+          },
+        },
+      ],
+    };
+    const blob = new Blob([JSON.stringify(geojson, null, 2)], { type: 'application/geo+json' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `RE-Valid_GeoJSON_${station.id}_${new Date().toISOString().slice(0, 10)}.geojson`;
+    a.click();
+    URL.revokeObjectURL(url);
+    setExporting(null);
+  }
 
   return (
     <div className="bg-background-light dark:bg-background-dark font-display text-slate-900 dark:text-white min-h-screen flex flex-col text-sm">
@@ -181,7 +305,7 @@ function LaporanContent() {
           </div>
 
           {/* Right: report content */}
-          <div className="lg:col-span-8 flex flex-col gap-6">
+          <div ref={reportRef} className="lg:col-span-8 flex flex-col gap-6">
             {/* Station identity */}
             <div className="bg-white dark:bg-card-dark border border-gray-200 dark:border-border-dark rounded-xl p-5 shadow-sm">
               <div className="flex items-start justify-between gap-4 mb-4">
@@ -408,61 +532,59 @@ function LaporanContent() {
             <div className="grid grid-cols-1 gap-4">
               {[
                 {
+                  key: 'pdf' as const,
                   icon: 'picture_as_pdf',
                   iconColor: 'text-red-500',
                   bgColor: 'bg-red-50 dark:bg-red-900/20',
                   title: 'Laporan Presentasi (PDF)',
-                  size: '2.4 MB',
                   desc: 'Dokumen siap cetak berisi ringkasan eksekutif, peta potensi, grafik validasi, dan rekomendasi strategis. Cocok untuk presentasi ke pemangku kepentingan.',
                   btnClass: 'bg-primary hover:bg-blue-600 text-white shadow-lg shadow-blue-500/20',
                   hoverBorder: 'hover:border-primary/50',
+                  onClick: handleExportPDF,
                 },
                 {
+                  key: 'csv' as const,
                   icon: 'table_view',
                   iconColor: 'text-green-600',
                   bgColor: 'bg-green-50 dark:bg-green-900/20',
-                  title: 'Data Analisis (CSV/Excel)',
-                  size: '850 KB',
-                  desc: 'Dataset lengkap deret waktu hasil validasi dan perhitungan MCP. Format terstruktur untuk analisis lanjutan di spreadsheet atau Python.',
-                  btnClass:
-                    'bg-white dark:bg-transparent border border-gray-300 dark:border-gray-600 text-slate-700 dark:text-white hover:bg-gray-50 dark:hover:bg-gray-800',
+                  title: 'Data Analisis (CSV)',
+                  desc: 'Dataset parameter validasi dan estimasi potensi energi. Format terstruktur untuk analisis lanjutan di spreadsheet atau Python.',
+                  btnClass: 'bg-white dark:bg-transparent border border-gray-300 dark:border-gray-600 text-slate-700 dark:text-white hover:bg-gray-50 dark:hover:bg-gray-800',
                   hoverBorder: 'hover:border-green-500/50',
+                  onClick: handleExportCSV,
                 },
                 {
+                  key: 'geojson' as const,
                   icon: 'map',
                   iconColor: 'text-purple-500',
                   bgColor: 'bg-purple-50 dark:bg-purple-900/20',
                   title: 'Data Geospasial (GeoJSON)',
-                  size: '1.2 MB',
-                  desc: 'Fitur geografis: titik stasiun, poligon wilayah potensi, dan hasil GIS-MCDA. Siap untuk QGIS, ArcGIS, atau aplikasi peta web.',
-                  btnClass:
-                    'bg-white dark:bg-transparent border border-gray-300 dark:border-gray-600 text-slate-700 dark:text-white hover:bg-gray-50 dark:hover:bg-gray-800',
+                  desc: 'Fitur geografis: titik stasiun beserta seluruh atribut validasi dan potensi energi. Siap untuk QGIS, ArcGIS, atau aplikasi peta web.',
+                  btnClass: 'bg-white dark:bg-transparent border border-gray-300 dark:border-gray-600 text-slate-700 dark:text-white hover:bg-gray-50 dark:hover:bg-gray-800',
                   hoverBorder: 'hover:border-purple-500/50',
+                  onClick: handleExportGeoJSON,
                 },
               ].map((item) => (
                 <div
                   key={item.title}
                   className={`group bg-white dark:bg-card-dark rounded-xl p-6 border border-gray-200 dark:border-border-dark ${item.hoverBorder} transition-all shadow-sm hover:shadow-md flex flex-col sm:flex-row items-start sm:items-center gap-5`}
                 >
-                  <div
-                    className={`size-14 rounded-xl ${item.bgColor} flex items-center justify-center shrink-0 group-hover:scale-105 transition-transform`}
-                  >
+                  <div className={`size-14 rounded-xl ${item.bgColor} flex items-center justify-center shrink-0 group-hover:scale-105 transition-transform`}>
                     <span className={`material-symbols-outlined ${item.iconColor} text-[32px]`}>{item.icon}</span>
                   </div>
                   <div className="flex-1">
-                    <div className="flex items-center gap-2 mb-1">
-                      <h4 className="text-base font-bold text-slate-900 dark:text-white">{item.title}</h4>
-                      <span className="text-[10px] font-bold px-1.5 py-0.5 rounded bg-gray-100 dark:bg-gray-700 text-gray-500 dark:text-gray-300">
-                        {item.size}
-                      </span>
-                    </div>
+                    <h4 className="text-base font-bold text-slate-900 dark:text-white mb-1">{item.title}</h4>
                     <p className="text-sm text-slate-500 dark:text-text-secondary leading-relaxed">{item.desc}</p>
                   </div>
                   <button
-                    className={`shrink-0 flex items-center gap-2 px-5 py-2.5 rounded-lg font-bold transition-all text-sm w-full sm:w-auto justify-center ${item.btnClass}`}
+                    onClick={item.onClick}
+                    disabled={exporting !== null}
+                    className={`shrink-0 flex items-center gap-2 px-5 py-2.5 rounded-lg font-bold transition-all text-sm w-full sm:w-auto justify-center disabled:opacity-60 disabled:cursor-wait ${item.btnClass}`}
                   >
-                    <span className="material-symbols-outlined text-[20px]">download</span>
-                    Unduh
+                    {exporting === item.key
+                      ? <><span className="material-symbols-outlined text-[20px] animate-spin">refresh</span>Memproses...</>
+                      : <><span className="material-symbols-outlined text-[20px]">download</span>Unduh</>
+                    }
                   </button>
                 </div>
               ))}
