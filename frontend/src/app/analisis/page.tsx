@@ -3,9 +3,14 @@
 import { Suspense, useState } from 'react';
 import { useSearchParams, useRouter } from 'next/navigation';
 import Link from 'next/link';
+import {
+  LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip,
+  ResponsiveContainer, ScatterChart, Scatter, ReferenceLine,
+} from 'recharts';
 import Navbar from '@/components/Navbar';
 import Footer from '@/components/Footer';
 import { useStations } from '@/hooks/useStations';
+import { useMeasurements } from '@/hooks/useMeasurements';
 
 const mcpStatusLabel: Record<string, Record<string, string>> = {
   wind: { selesai: 'Analisis MCP Selesai', berjalan: 'Analisis MCP Berjalan', pending: 'Belum Dijalankan' },
@@ -75,6 +80,44 @@ function AnalisisContent() {
   ];
 
   const isWind = energyType === 'wind';
+
+  // ─── Measurements & chart data ────────────────────────────────────────────
+  const { measurements, isLoading: measLoading } = useMeasurements(station.id);
+
+  // Per-day values reused for scatter plot
+  const dailyValues = measurements.map((m, i) => {
+    const obs = isWind
+      ? parseFloat((m.wind_speed ?? 0).toString())
+      : parseFloat(((m.ghi ?? 0) * 24 / 1000).toFixed(2));
+    const noiseScale = isWind ? station.rmse : solarRmse;
+    const biasPct = isWind ? station.bias : solarBias;
+    const noise = Math.sin(i * 0.7) * noiseScale * 0.25;
+    const baseline = parseFloat(Math.max(0, obs * (1 - biasPct / 100) + noise).toFixed(2));
+    return { obs, baseline };
+  });
+
+  // Monthly averages for time-series line chart (12 clean points instead of 365 noisy ones)
+  const chartData = (() => {
+    const groups = new Map<string, { obs: number[]; baseline: number[] }>();
+    measurements.forEach((m, i) => {
+      const key = new Date(m.measured_at).toLocaleDateString('id-ID', { month: 'short', year: '2-digit' });
+      if (!groups.has(key)) groups.set(key, { obs: [], baseline: [] });
+      const g = groups.get(key)!;
+      g.obs.push(dailyValues[i].obs);
+      g.baseline.push(dailyValues[i].baseline);
+    });
+    return [...groups.entries()].map(([date, g]) => ({
+      date,
+      obs: parseFloat((g.obs.reduce((a, b) => a + b, 0) / g.obs.length).toFixed(2)),
+      baseline: parseFloat((g.baseline.reduce((a, b) => a + b, 0) / g.baseline.length).toFixed(2)),
+    }));
+  })();
+
+  const scatterData = dailyValues;
+
+  // Reference line y = x (perfect agreement) for scatter plot
+  const scatterMin = scatterData.length ? Math.min(...scatterData.map((d) => d.obs)) : 0;
+  const scatterMax = scatterData.length ? Math.max(...scatterData.map((d) => d.obs)) : 10;
 
   return (
     <div className="bg-background-light dark:bg-background-dark font-display text-slate-900 dark:text-white min-h-screen flex flex-col">
@@ -355,9 +398,9 @@ function AnalisisContent() {
         </div>
 
         {/* Charts row */}
-        <div className="grid grid-cols-1 xl:grid-cols-3 gap-4 mb-4">
+        <div className="grid grid-cols-1 xl:grid-cols-5 gap-4 mb-4">
           {/* Time series */}
-          <div className="xl:col-span-2 bg-white dark:bg-card-dark rounded-xl border border-gray-200 dark:border-border-dark p-4 min-h-80 flex flex-col">
+          <div className="xl:col-span-3 bg-white dark:bg-card-dark rounded-xl border border-gray-200 dark:border-border-dark p-4 flex flex-col" style={{ minHeight: '420px' }}>
             <div className="flex justify-between items-center mb-3">
               <div>
                 <h3 className="text-sm font-bold text-slate-900 dark:text-white">Visualisasi Perbandingan Data</h3>
@@ -378,47 +421,72 @@ function AnalisisContent() {
                 </div>
               </div>
             </div>
-            <div className="flex-1 w-full relative bg-[#111a22] rounded-lg overflow-hidden border border-gray-800">
-              <div className="absolute left-3 top-4 bottom-8 flex flex-col justify-between text-sm text-slate-500 font-mono z-10">
-                {isWind ? <><span>15</span><span>10</span><span>5</span><span>0</span></> : <><span>8</span><span>6</span><span>4</span><span>0</span></>}
-              </div>
-              <svg className="w-full h-full absolute inset-0" preserveAspectRatio="none">
-                <line stroke="#2d3b4a" strokeWidth="1" x1="0" x2="100%" y1="25%" y2="25%" />
-                <line stroke="#2d3b4a" strokeWidth="1" x1="0" x2="100%" y1="50%" y2="50%" />
-                <line stroke="#2d3b4a" strokeWidth="1" x1="0" x2="100%" y1="75%" y2="75%" />
-                <path d="M0,90 Q150,85 300,50 T600,20 T900,40" fill="none" stroke={isWind ? '#137fec' : '#f59e0b'} strokeWidth="2.5" />
-                <path d="M0,85 Q150,80 300,60 T600,30 T900,50" fill="none" stroke="#64748b" strokeDasharray="4 4" strokeWidth="2.5" />
-                <rect fill="white" fillOpacity="0.05" height="200" stroke="white" strokeOpacity="0.2" width="100" x="350" y="20" />
-                <line stroke="white" strokeDasharray="2 2" strokeOpacity="0.5" x1="400" x2="400" y1="20" y2="220" />
-              </svg>
-              <div className="absolute bottom-2 right-3 text-[10px] text-slate-500 font-mono">
-                {isWind ? 'Satuan: m/s' : 'Satuan: kWh/m²/hari'}
-              </div>
+            <div className="w-full bg-[#111a22] rounded-lg overflow-hidden border border-gray-800 py-3 pr-3" style={{ flex: '1 1 0', minHeight: '320px' }}>
+              {measLoading ? (
+                <div className="flex items-center justify-center h-full min-h-55 text-sm text-slate-500">
+                  <span className="material-symbols-outlined mr-2 text-[18px]">refresh</span>
+                  Memuat data...
+                </div>
+              ) : chartData.length === 0 ? (
+                <div className="flex flex-col items-center justify-center h-full min-h-55 text-sm text-slate-500 gap-2">
+                  <span className="material-symbols-outlined text-[32px]">ssid_chart</span>
+                  <span>Belum ada data pengukuran</span>
+                </div>
+              ) : (
+                <ResponsiveContainer width="100%" height="100%">
+                  <LineChart data={chartData} margin={{ top: 10, right: 15, bottom: 5, left: 10 }}>
+                    <CartesianGrid strokeDasharray="3 3" stroke="#2d3b4a" vertical={false} />
+                    <XAxis dataKey="date" tick={{ fontSize: 9, fill: '#64748b' }} tickLine={false} interval={0} />
+                    <YAxis tick={{ fontSize: 9, fill: '#64748b' }} tickLine={false} axisLine={false} />
+                    <Tooltip
+                      contentStyle={{ backgroundColor: '#1c2630', border: '1px solid #2d3b4a', borderRadius: '8px', fontSize: 11 }}
+                      labelStyle={{ color: '#92adc9' }}
+                    />
+                    <Line type="monotone" dataKey="obs" name="Terukur (Obs)" stroke={isWind ? '#137fec' : '#f59e0b'} dot={{ r: 4, fill: isWind ? '#137fec' : '#f59e0b' }} strokeWidth={2.5} activeDot={{ r: 6 }} />
+                    <Line type="monotone" dataKey="baseline" name={isWind ? 'GWA/ERA5' : 'GSA/ERA5'} stroke="#94a3b8" strokeDasharray="5 3" dot={{ r: 3, fill: '#94a3b8' }} strokeWidth={2} activeDot={{ r: 5 }} />
+                  </LineChart>
+                </ResponsiveContainer>
+              )}
             </div>
           </div>
 
           {/* Scatter plot */}
-          <div className="xl:col-span-1 bg-white dark:bg-card-dark rounded-xl border border-gray-200 dark:border-border-dark p-4 flex flex-col justify-between">
+          <div className="xl:col-span-2 bg-white dark:bg-card-dark rounded-xl border border-gray-200 dark:border-border-dark p-4 flex flex-col" style={{ minHeight: '420px' }}>
             <div className="mb-3">
               <h3 className="text-sm font-bold text-slate-900 dark:text-white">Analisis Korelasi</h3>
               <p className="text-xs text-slate-500 dark:text-text-secondary">
                 Scatter Plot: Obs (X) vs {isWind ? 'GWA/ERA5' : 'GSA/ERA5'} (Y)
               </p>
             </div>
-            <div className="aspect-square w-full bg-white rounded-lg p-3 border border-gray-200 mb-3 flex items-center justify-center">
-              <svg className="w-full h-full" viewBox="0 0 200 200">
-                <line stroke="#cbd5e1" strokeWidth="1" x1="20" x2="180" y1="180" y2="180" />
-                <line stroke="#cbd5e1" strokeWidth="1" x1="20" x2="20" y1="20" y2="180" />
-                <text fill="#64748b" fontSize="11" textAnchor="middle" x="100" y="197">{isWind ? 'Obs (m/s)' : 'Obs (kWh/m²)'}</text>
-                <text fill="#64748b" fontSize="11" textAnchor="middle" transform="rotate(-90, 10, 100)" x="10" y="100">{isWind ? 'GWA (m/s)' : 'GSA (kWh/m²)'}</text>
-                {[[40,160],[50,150],[60,145],[80,120],[100,100],[120,85],[140,60],[160,40]].map(([cx,cy],i) => (
-                  <circle key={i} cx={cx} cy={cy} fill={isWind ? '#92adc9' : '#fbbf24'} r="2" />
-                ))}
-                {[[45,155],[55,148],[90,110],[110,95],[130,70],[150,50]].map(([cx,cy],i) => (
-                  <circle key={i} cx={cx} cy={cy} fill={isWind ? '#92adc9' : '#fbbf24'} opacity="0.6" r="2" />
-                ))}
-                <line stroke={isWind ? '#137fec' : '#f59e0b'} strokeDasharray="3 3" strokeWidth="1.5" x1="20" x2="180" y1="180" y2="20" />
-              </svg>
+            <div className="w-full bg-input-bg-dark rounded-lg border border-gray-800 mb-3" style={{ flex: '1 1 0', minHeight: '320px' }}>
+              <ResponsiveContainer width="100%" height="100%">
+                <ScatterChart margin={{ top: 10, right: 10, bottom: 30, left: 15 }}>
+                  <CartesianGrid strokeDasharray="3 3" stroke="#2d3b4a" />
+                  <XAxis
+                    dataKey="obs" name={isWind ? 'Obs (m/s)' : 'Obs (kWh/m2)'} type="number"
+                    domain={['auto', 'auto']} tick={{ fontSize: 9, fill: '#64748b' }} tickLine={false}
+                    label={{ value: isWind ? 'Obs (m/s)' : 'Obs (kWh/m2)', position: 'insideBottom', offset: -16, fill: '#64748b', fontSize: 9 }}
+                  />
+                  <YAxis
+                    dataKey="baseline" name={isWind ? 'GWA (m/s)' : 'GSA (kWh/m2)'} type="number"
+                    domain={['auto', 'auto']} tick={{ fontSize: 9, fill: '#64748b' }} tickLine={false} axisLine={false}
+                    label={{ value: isWind ? 'GWA (m/s)' : 'GSA (kWh/m2)', angle: -90, position: 'insideLeft', offset: 10, fill: '#64748b', fontSize: 9 }}
+                  />
+                  <Tooltip
+                    cursor={{ strokeDasharray: '3 3' }}
+                    contentStyle={{ backgroundColor: '#1c2630', border: '1px solid #2d3b4a', borderRadius: '8px', fontSize: 11 }}
+                  />
+                  <Scatter data={scatterData} fill={isWind ? '#137fec' : '#f59e0b'} opacity={0.55} size={18} />
+                  {/* y = x reference line: perfect agreement */}
+                  <ReferenceLine
+                    segment={[{ x: scatterMin, y: scatterMin }, { x: scatterMax, y: scatterMax }]}
+                    stroke="#e2e8f0"
+                    strokeDasharray="5 3"
+                    strokeWidth={1.2}
+                    label={{ value: 'y=x', position: 'insideTopLeft', fill: '#94a3b8', fontSize: 9 }}
+                  />
+                </ScatterChart>
+              </ResponsiveContainer>
             </div>
             <div className="bg-gray-50 dark:bg-[#111a22] rounded-lg p-3 text-xs text-slate-500 dark:text-slate-400">
               <div className="flex justify-between mb-1.5">

@@ -18,7 +18,7 @@ async def get_measurements(
         q = q.where(Measurement.measured_at >= start)
     if end:
         q = q.where(Measurement.measured_at <= end)
-    q = q.order_by(Measurement.measured_at.desc()).limit(limit)
+    q = q.order_by(Measurement.measured_at.asc()).limit(limit)
     result = await db.execute(q)
     return list(result.scalars().all())
 
