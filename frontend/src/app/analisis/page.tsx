@@ -36,6 +36,41 @@ function AnalisisContent() {
   const station = stations.find((s) => s.id === stationId) ?? stations[0];
 
   const [energyType, setEnergyType] = useState<'wind' | 'solar'>('wind');
+  const [taskState, setTaskState] = useState<'idle' | 'loading' | 'success' | 'error'>('idle');
+  const [taskMsg, setTaskMsg] = useState('');
+
+  async function runAnalysis() {
+    setTaskState('loading');
+    setTaskMsg('');
+    try {
+      const res = await fetch(`${process.env.NEXT_PUBLIC_API_URL}/api/v1/analyze`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ station_id: station.id, variable: isWind ? 'wind' : 'solar', n: 90 }),
+      });
+      if (!res.ok) throw new Error(await res.text());
+      const { task_id } = await res.json();
+
+      // Poll until done
+      const poll = async () => {
+        const r = await fetch(`${process.env.NEXT_PUBLIC_API_URL}/api/v1/analyze/${task_id}`);
+        const data = await r.json();
+        if (data.status === 'success') {
+          setTaskState('success');
+          setTaskMsg(`Selesai — RMSE: ${data.result.rmse}  Bias: ${data.result.bias}%  R²: ${data.result.r2}`);
+        } else if (data.status === 'failed') {
+          setTaskState('error');
+          setTaskMsg(data.error ?? 'Task gagal');
+        } else {
+          setTimeout(poll, 2000);
+        }
+      };
+      setTimeout(poll, 1500);
+    } catch (e: unknown) {
+      setTaskState('error');
+      setTaskMsg(e instanceof Error ? e.message : String(e));
+    }
+  }
 
   // ─── Wind derived ──────────────────────────────────────────────────────────
   const windLongTerm = (station.windSpeed * 1.046).toFixed(1);
@@ -137,18 +172,29 @@ function AnalisisContent() {
                   : 'Validasi iradiasi surya observasi vs ERA5/GSA, Clearness Index (Kt), dan estimasi AEP PLTS.'}
               </p>
             </div>
-            <div className="flex gap-2">
-              <Link
-                href={`/laporan?station=${station.id}`}
-                className="flex items-center gap-1.5 px-3 py-2 bg-transparent border border-gray-300 dark:border-gray-600 text-slate-700 dark:text-white rounded-lg hover:bg-gray-50 dark:hover:bg-white/5 transition-all text-xs font-medium"
-              >
-                <span className="material-symbols-outlined text-[16px]">download</span>
-                Ekspor Laporan
-              </Link>
-              <button className="flex items-center gap-1.5 px-3 py-2 bg-primary text-white rounded-lg hover:bg-blue-600 transition-all text-xs font-medium shadow-md shadow-blue-500/20">
-                <span className="material-symbols-outlined text-[16px]">{isWind ? 'science' : 'wb_sunny'}</span>
-                {isWind ? 'Jalankan Analisis MCP' : 'Jalankan Validasi GHI'}
-              </button>
+            <div className="flex flex-col items-end gap-2">
+              <div className="flex gap-2">
+                <Link
+                  href={`/laporan?station=${station.id}`}
+                  className="flex items-center gap-1.5 px-3 py-2 bg-transparent border border-gray-300 dark:border-gray-600 text-slate-700 dark:text-white rounded-lg hover:bg-gray-50 dark:hover:bg-white/5 transition-all text-xs font-medium"
+                >
+                  <span className="material-symbols-outlined text-[16px]">download</span>
+                  Ekspor Laporan
+                </Link>
+                <button
+                  onClick={runAnalysis}
+                  disabled={taskState === 'loading'}
+                  className="flex items-center gap-1.5 px-3 py-2 bg-primary text-white rounded-lg hover:bg-blue-600 disabled:opacity-60 disabled:cursor-not-allowed transition-all text-xs font-medium shadow-md shadow-blue-500/20"
+                >
+                  <span className={`material-symbols-outlined text-[16px] ${taskState === 'loading' ? 'animate-spin' : ''}`}>
+                    {taskState === 'loading' ? 'progress_activity' : isWind ? 'science' : 'wb_sunny'}
+                  </span>
+                  {taskState === 'loading' ? 'Memproses…' : isWind ? 'Jalankan Analisis MCP' : 'Jalankan Validasi GHI'}
+                </button>
+              </div>
+              {taskMsg && (
+                <p className={`text-[11px] ${taskState === 'error' ? 'text-red-400' : 'text-green-400'}`}>{taskMsg}</p>
+              )}
             </div>
           </div>
         </div>

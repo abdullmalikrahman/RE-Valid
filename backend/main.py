@@ -1,18 +1,36 @@
+import asyncio
+import logging
+from contextlib import asynccontextmanager
+
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
-from contextlib import asynccontextmanager
 
 from app.core.config import settings
 from app.api.v1.router import api_router
+from app.mqtt.client import set_event_loop, start_mqtt, stop_mqtt
+
+logging.basicConfig(level=logging.INFO)
+logger = logging.getLogger("main")
 
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     # Startup
-    print("RE-Valid API starting up...")
+    logger.info("RE-Valid API starting up...")
+    mqtt_client = None
+    try:
+        set_event_loop(asyncio.get_running_loop())
+        mqtt_client = start_mqtt()
+        logger.info("MQTT subscriber started")
+    except Exception as exc:
+        logger.warning("MQTT could not start (broker unreachable?): %s", exc)
+
     yield
+
     # Shutdown
-    print("RE-Valid API shutting down...")
+    if mqtt_client is not None:
+        stop_mqtt(mqtt_client)
+    logger.info("RE-Valid API shut down")
 
 
 app = FastAPI(

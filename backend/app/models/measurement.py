@@ -6,6 +6,7 @@ from sqlalchemy import (
     Numeric,
     PrimaryKeyConstraint,
     String,
+    TIMESTAMP,
 )
 from sqlalchemy.orm import Mapped, mapped_column
 
@@ -15,14 +16,14 @@ from app.core.database import Base
 class Measurement(Base):
     __tablename__ = "measurements"
 
-    id: Mapped[int] = mapped_column(BigInteger, nullable=False)
+    id: Mapped[int] = mapped_column(BigInteger, autoincrement=True, nullable=False)
     station_id: Mapped[str] = mapped_column(
         String(10),
         ForeignKey("stations.id", ondelete="CASCADE"),
         nullable=False,
         index=True,
     )
-    measured_at: Mapped[datetime] = mapped_column(nullable=False)
+    measured_at: Mapped[datetime] = mapped_column(TIMESTAMP(timezone=True), nullable=False)
 
     # Wind
     wind_speed: Mapped[float | None] = mapped_column(Numeric(6, 3))   # m/s
