@@ -1,6 +1,6 @@
 'use client';
 
-import { Suspense, useState } from 'react';
+import { Suspense, useState, useEffect } from 'react';
 import { useSearchParams, useRouter } from 'next/navigation';
 import Link from 'next/link';
 import {
@@ -29,7 +29,7 @@ const mcpIcon: Record<string, string> = {
 };
 
 function AnalisisContent() {
-  const { stations } = useStations();
+  const { stations, mutate } = useStations();
   const searchParams = useSearchParams();
   const router = useRouter();
   const stationId = searchParams.get('station') ?? stations[0].id;
@@ -38,26 +38,35 @@ function AnalisisContent() {
   const [energyType, setEnergyType] = useState<'wind' | 'solar'>('wind');
   const [taskState, setTaskState] = useState<'idle' | 'loading' | 'success' | 'error'>('idle');
   const [taskMsg, setTaskMsg] = useState('');
+  const [startDate, setStartDate] = useState('2023-01-01');
+  const [endDate, setEndDate] = useState('2023-12-31');
+
+  // Reset task feedback whenever the user switches station or energy type
+  useEffect(() => {
+    setTaskState('idle');
+    setTaskMsg('');
+  }, [station.id, energyType]);
 
   async function runAnalysis() {
     setTaskState('loading');
     setTaskMsg('');
     try {
-      const res = await fetch(`${process.env.NEXT_PUBLIC_API_URL}/api/v1/analyze`, {
+      const res = await fetch('/api/v1/analyze', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ station_id: station.id, variable: isWind ? 'wind' : 'solar', n: 90 }),
+        body: JSON.stringify({ station_id: station.id, variable: energyType, n: 90 }),
       });
       if (!res.ok) throw new Error(await res.text());
       const { task_id } = await res.json();
 
       // Poll until done
       const poll = async () => {
-        const r = await fetch(`${process.env.NEXT_PUBLIC_API_URL}/api/v1/analyze/${task_id}`);
+        const r = await fetch(`/api/v1/analyze/${task_id}`);
         const data = await r.json();
         if (data.status === 'success') {
           setTaskState('success');
           setTaskMsg(`Selesai — RMSE: ${data.result.rmse}  Bias: ${data.result.bias}%  R²: ${data.result.r2}`);
+          mutate();
         } else if (data.status === 'failed') {
           setTaskState('error');
           setTaskMsg(data.error ?? 'Task gagal');
@@ -78,17 +87,10 @@ function AnalisisContent() {
   const aepGross = station.aep;
   const aepNetP50 = Math.round(station.aep * 0.877);
   const aepNetP90 = Math.round(station.aep * 0.767);
-  const mae = parseFloat((station.rmse * 0.77).toFixed(2));
   const r2Quality = station.r2 >= 0.85 ? 'Tinggi' : station.r2 >= 0.70 ? 'Sedang' : 'Rendah';
   const r2Color = station.r2 >= 0.85 ? 'text-green-500' : station.r2 >= 0.70 ? 'text-amber-400' : 'text-red-400';
   const r2Bg = station.r2 >= 0.85 ? 'bg-green-500/10 text-green-500' : station.r2 >= 0.70 ? 'bg-amber-500/10 text-amber-400' : 'bg-red-500/10 text-red-400';
   const biasDisplay = (station.bias > 0 ? '+' : '') + station.bias.toFixed(1) + '%';
-  const windValidationRows = [
-    { metric: 'RMSE (m/s)', value: station.rmse.toFixed(2), target: '< 2.0', pass: station.rmse < 2.0 },
-    { metric: 'MAE (m/s)', value: mae.toFixed(2), target: '< 1.5', pass: mae < 1.5 },
-    { metric: 'Bias vs GWA (%)', value: biasDisplay, target: '± 5%', pass: Math.abs(station.bias) <= 5 },
-    { metric: 'Ketersediaan Data', value: station.mcpStatus !== 'pending' ? '98.5%' : '–', target: '> 90%', pass: station.mcpStatus !== 'pending' },
-  ];
 
   // ─── Solar derived ─────────────────────────────────────────────────────────
   // GHI baseline (ERA5/GSA slightly underestimates tropical GHI)
@@ -99,35 +101,24 @@ function AnalisisContent() {
   const ktLabel = ktIndex >= 0.55 ? 'Cerah' : ktIndex >= 0.40 ? 'Campuran' : 'Berawan';
   const ktColor = ktIndex >= 0.55 ? 'text-amber-400' : ktIndex >= 0.40 ? 'text-blue-400' : 'text-slate-400';
   const ktBg = ktIndex >= 0.55 ? 'bg-amber-500/10 text-amber-400' : ktIndex >= 0.40 ? 'bg-blue-500/10 text-blue-400' : 'bg-slate-500/10 text-slate-400';
-  // Solar RMSE/bias on GHI scale (kWh/m²/hari)
-  const solarRmse = parseFloat((station.rmse * 0.12 + 0.15).toFixed(2));
-  const solarMae = parseFloat((solarRmse * 0.77).toFixed(2));
-  const solarBias = parseFloat((station.bias * 0.9).toFixed(1));
-  const solarBiasDisplay = (solarBias > 0 ? '+' : '') + solarBias.toFixed(1) + '%';
   // AEP PLTS: GHI × 365 × PR (0.75) = MWh/MWp/year
   const aepSolarRef = Math.round(station.irradiation * 365 * 0.75);
   const aepSolarP90 = Math.round(aepSolarRef * 0.90);
-  const solarValidationRows = [
-    { metric: 'RMSE GHI (kWh/m²/hari)', value: solarRmse.toFixed(2), target: '< 0.50', pass: solarRmse < 0.50 },
-    { metric: 'MAE GHI (kWh/m²/hari)', value: solarMae.toFixed(2), target: '< 0.40', pass: solarMae < 0.40 },
-    { metric: 'Bias vs GSA (%)', value: solarBiasDisplay, target: '± 5%', pass: Math.abs(solarBias) <= 5 },
-    { metric: 'Clearness Index (Kt)', value: ktIndex.toFixed(2), target: '0.40–0.65', pass: ktIndex >= 0.40 && ktIndex <= 0.65 },
-  ];
 
   const isWind = energyType === 'wind';
 
   // ─── Measurements & chart data ────────────────────────────────────────────
-  const { measurements, isLoading: measLoading } = useMeasurements(station.id);
+  const { measurements, isLoading: measLoading } = useMeasurements(station.id, startDate, endDate);
 
   // Per-day values reused for scatter plot
-  const dailyValues = measurements.map((m, i) => {
+  // Baseline approximates ERA5/GWA (wind: +4.6%) or ERA5/GSA (solar: -4.2%)
+  // — same scaling used by the Celery validate_station_mcp task
+  const scaleFactor = isWind ? 1.046 : 0.958;
+  const dailyValues = measurements.map((m) => {
     const obs = isWind
       ? parseFloat((m.wind_speed ?? 0).toString())
       : parseFloat(((m.ghi ?? 0) * 24 / 1000).toFixed(2));
-    const noiseScale = isWind ? station.rmse : solarRmse;
-    const biasPct = isWind ? station.bias : solarBias;
-    const noise = Math.sin(i * 0.7) * noiseScale * 0.25;
-    const baseline = parseFloat(Math.max(0, obs * (1 - biasPct / 100) + noise).toFixed(2));
+    const baseline = parseFloat((obs * scaleFactor).toFixed(2));
     return { obs, baseline };
   });
 
@@ -154,6 +145,33 @@ function AnalisisContent() {
   const scatterMin = scatterData.length ? Math.min(...scatterData.map((d) => d.obs)) : 0;
   const scatterMax = scatterData.length ? Math.max(...scatterData.map((d) => d.obs)) : 10;
 
+  // MAE computed from real measurement data (mean absolute error obs vs baseline)
+  // Falls back to RMSE × 0.77 approximation while measurements are still loading
+  const mae = dailyValues.length > 0
+    ? parseFloat((dailyValues.reduce((s, d) => s + Math.abs(d.obs - d.baseline), 0) / dailyValues.length).toFixed(2))
+    : parseFloat((station.rmse * 0.77).toFixed(2));
+
+  // ─── Availability from actual measurements ──────────────────────────────────────
+  const availPct = measurements.length > 0
+    ? Math.round(measurements.filter((m) => (isWind ? m.wind_speed : m.ghi) !== null).length / measurements.length * 100)
+    : null;
+  const availDisplay = availPct !== null ? `${availPct}%` : '–';
+
+  // ─── Validation rows (computed after measurements) ──────────────────────────────
+  const windValidationRows = [
+    { metric: 'RMSE (m/s)', value: station.rmse.toFixed(2), target: '< 2.0', pass: station.rmse < 2.0 },
+    { metric: 'MAE (m/s)', value: mae.toFixed(2), target: '< 1.5', pass: mae < 1.5 },
+    { metric: 'Bias vs GWA (%)', value: biasDisplay, target: '± 5%', pass: Math.abs(station.bias) <= 5 },
+    { metric: 'Ketersediaan Data', value: availDisplay, target: '> 90%', pass: availPct !== null && availPct > 90 },
+  ];
+  const solarBiasDisplay = (station.bias > 0 ? '+' : '') + station.bias.toFixed(1) + '%';
+  const solarValidationRows = [
+    { metric: 'Korelasi Atlas (R²)', value: station.r2.toFixed(2), target: '> 0.70', pass: station.r2 > 0.70 },
+    { metric: 'Bias vs GSA (%)', value: solarBiasDisplay, target: '± 5%', pass: Math.abs(station.bias) <= 5 },
+    { metric: 'Clearness Index (Kt)', value: ktIndex.toFixed(2), target: '0.40–0.65', pass: ktIndex >= 0.40 && ktIndex <= 0.65 },
+    { metric: 'Ketersediaan Data', value: availDisplay, target: '> 90%', pass: availPct !== null && availPct > 90 },
+  ];
+
   return (
     <div className="bg-background-light dark:bg-background-dark font-display text-slate-900 dark:text-white min-h-screen flex flex-col">
       <Navbar />
@@ -178,8 +196,8 @@ function AnalisisContent() {
                   href={`/laporan?station=${station.id}`}
                   className="flex items-center gap-1.5 px-3 py-2 bg-transparent border border-gray-300 dark:border-gray-600 text-slate-700 dark:text-white rounded-lg hover:bg-gray-50 dark:hover:bg-white/5 transition-all text-xs font-medium"
                 >
-                  <span className="material-symbols-outlined text-[16px]">download</span>
-                  Ekspor Laporan
+                  <span className="material-symbols-outlined text-[16px]">description</span>
+                  Lihat Laporan
                 </Link>
                 <button
                   onClick={runAnalysis}
@@ -201,7 +219,7 @@ function AnalisisContent() {
 
         {/* Filter bar */}
         <div className="bg-white dark:bg-card-dark rounded-lg p-4 border border-gray-200 dark:border-border-dark mb-4">
-          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-5 gap-3 items-end">
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3 items-end">
             <div className="flex flex-col gap-1.5">
               <label className="text-[10px] font-bold text-slate-500 dark:text-slate-400 uppercase tracking-wider">Lokasi Stasiun</label>
               <div className="relative">
@@ -220,57 +238,16 @@ function AnalisisContent() {
             <div className="flex flex-col gap-1.5">
               <label className="text-[10px] font-bold text-slate-500 dark:text-slate-400 uppercase tracking-wider">Periode Data</label>
               <div className="flex items-center gap-1">
-                <input className="flex-1 min-w-0 bg-gray-50 dark:bg-[#111a22] border border-gray-200 dark:border-border-dark rounded-lg px-2 py-2 text-xs font-medium text-slate-900 dark:text-white focus:outline-none focus:border-primary focus:ring-1 focus:ring-primary" type="date" defaultValue="2023-01-01" />
+                <input className="flex-1 min-w-0 bg-gray-50 dark:bg-[#111a22] border border-gray-200 dark:border-border-dark rounded-lg px-2 py-2 text-xs font-medium text-slate-900 dark:text-white focus:outline-none focus:border-primary focus:ring-1 focus:ring-primary" type="date" value={startDate} onChange={(e) => setStartDate(e.target.value)} />
                 <span className="text-slate-500 text-[10px] shrink-0">&ndash;</span>
-                <input className="flex-1 min-w-0 bg-gray-50 dark:bg-[#111a22] border border-gray-200 dark:border-border-dark rounded-lg px-2 py-2 text-xs font-medium text-slate-900 dark:text-white focus:outline-none focus:border-primary focus:ring-1 focus:ring-primary" type="date" defaultValue="2023-12-31" />
-              </div>
-            </div>
-            <div className="flex flex-col gap-1.5">
-              <label className="text-[10px] font-bold text-slate-500 dark:text-slate-400 uppercase tracking-wider">Variabel</label>
-              <div className="relative">
-                <select className="w-full bg-gray-50 dark:bg-[#111a22] border border-gray-200 dark:border-border-dark rounded-lg px-3 py-2 text-xs font-medium text-slate-900 dark:text-white focus:outline-none focus:border-primary focus:ring-1 focus:ring-primary appearance-none pr-8">
-                  {isWind ? (
-                    <>
-                      <option>Kecepatan Angin (m/s)</option>
-                      <option>Arah Angin (deg)</option>
-                      <option>Temperatur (&deg;C)</option>
-                    </>
-                  ) : (
-                    <>
-                      <option>GHI (kWh/m&sup2;/hari)</option>
-                      <option>DNI (kWh/m&sup2;/hari)</option>
-                      <option>Suhu Panel (&deg;C)</option>
-                    </>
-                  )}
-                </select>
-                <span className="material-symbols-outlined absolute right-2 top-2 text-slate-400 pointer-events-none text-[18px]">expand_more</span>
-              </div>
-            </div>
-            <div className="flex flex-col gap-1.5">
-              <label className="text-[10px] font-bold text-slate-500 dark:text-slate-400 uppercase tracking-wider">
-                {isWind ? 'Metode MCP' : 'Metode Validasi'}
-              </label>
-              <div className="relative">
-                <select className="w-full bg-gray-50 dark:bg-[#111a22] border border-gray-200 dark:border-border-dark rounded-lg px-3 py-2 text-xs font-medium text-slate-900 dark:text-white focus:outline-none focus:border-primary focus:ring-1 focus:ring-primary appearance-none pr-8">
-                  {isWind ? (
-                    <>
-                      <option>Rasio Varians</option>
-                      <option>Regresi Linier</option>
-                      <option>Matriks (Matrix Method)</option>
-                    </>
-                  ) : (
-                    <>
-                      <option>Perbandingan Langsung</option>
-                      <option>Koreksi Bias</option>
-                      <option>TMY (Typical Met. Year)</option>
-                    </>
-                  )}
-                </select>
-                <span className="material-symbols-outlined absolute right-2 top-2 text-slate-400 pointer-events-none text-[18px]">expand_more</span>
+                <input className="flex-1 min-w-0 bg-gray-50 dark:bg-[#111a22] border border-gray-200 dark:border-border-dark rounded-lg px-2 py-2 text-xs font-medium text-slate-900 dark:text-white focus:outline-none focus:border-primary focus:ring-1 focus:ring-primary" type="date" value={endDate} onChange={(e) => setEndDate(e.target.value)} />
               </div>
             </div>
             <div>
-              <button onClick={() => router.push('/analisis')} className="w-full py-2 text-primary hover:text-white border border-primary/30 hover:bg-primary rounded-lg text-xs font-medium transition-all">
+              <button
+                onClick={() => { router.push('/analisis'); setStartDate('2023-01-01'); setEndDate('2023-12-31'); }}
+                className="w-full py-2 text-primary hover:text-white border border-primary/30 hover:bg-primary rounded-lg text-xs font-medium transition-all"
+              >
                 Reset Filter
               </button>
             </div>
@@ -505,6 +482,17 @@ function AnalisisContent() {
               </p>
             </div>
             <div className="w-full bg-input-bg-dark rounded-lg border border-gray-800 mb-3" style={{ flex: '1 1 0', minHeight: '320px' }}>
+              {measLoading ? (
+                <div className="flex items-center justify-center h-full min-h-55 text-sm text-slate-500">
+                  <span className="material-symbols-outlined mr-2 text-[18px]">refresh</span>
+                  Memuat data...
+                </div>
+              ) : scatterData.length === 0 ? (
+                <div className="flex flex-col items-center justify-center h-full min-h-55 text-sm text-slate-500 gap-2">
+                  <span className="material-symbols-outlined text-[32px]">scatter_plot</span>
+                  <span>Belum ada data pengukuran</span>
+                </div>
+              ) : (
               <ResponsiveContainer width="100%" height="100%">
                 <ScatterChart margin={{ top: 10, right: 10, bottom: 30, left: 15 }}>
                   <CartesianGrid strokeDasharray="3 3" stroke="#2d3b4a" />
@@ -533,11 +521,12 @@ function AnalisisContent() {
                   />
                 </ScatterChart>
               </ResponsiveContainer>
+              )}
             </div>
             <div className="bg-gray-50 dark:bg-[#111a22] rounded-lg p-3 text-xs text-slate-500 dark:text-slate-400">
               <div className="flex justify-between mb-1.5">
-                <span>Kecocokan Linear:</span>
-                <span className="font-mono">{isWind ? 'y = 0.92x + 0.3' : 'y = 0.96x + 0.1'}</span>
+                <span>Model baseline:</span>
+                <span className="font-mono">{isWind ? 'y = 1.046x (GWA)' : 'y = 0.958x (GSA)'}</span>
               </div>
               <div className={`flex justify-between items-center font-bold ${r2Color}`}>
                 <span>R² =</span>
@@ -753,29 +742,6 @@ function AnalisisContent() {
           </div>
         </div>
 
-        {/* Bottom action row */}
-        <div className="flex flex-wrap gap-3 items-center justify-between pb-2">
-          <Link href="/peta" className="flex items-center gap-1.5 text-xs text-slate-500 dark:text-slate-400 hover:text-primary transition-colors">
-            <span className="material-symbols-outlined text-[16px]">arrow_back</span>
-            Kembali ke Peta
-          </Link>
-          <div className="flex gap-2">
-            <Link
-              href={`/laporan?station=${station.id}`}
-              className="flex items-center gap-1.5 px-4 py-2 border border-gray-300 dark:border-border-dark text-slate-700 dark:text-white rounded-lg hover:bg-gray-50 dark:hover:bg-white/5 transition-all text-xs font-medium"
-            >
-              <span className="material-symbols-outlined text-[16px]">description</span>
-              Lihat Laporan Lengkap
-            </Link>
-            <Link
-              href={`/kalkulator?station=${station.id}`}
-              className="flex items-center gap-1.5 px-4 py-2 bg-primary text-white rounded-lg hover:bg-blue-600 transition-all text-xs font-medium"
-            >
-              <span className="material-symbols-outlined text-[16px]">calculate</span>
-              Lanjut ke Kalkulator
-            </Link>
-          </div>
-        </div>
       </main>
 
       <Footer />
