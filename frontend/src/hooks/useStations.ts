@@ -3,7 +3,7 @@ import { fetchStations } from '@/lib/api';
 import { stations as fallbackStations, type Station } from '@/lib/stationData';
 
 export function useStations() {
-  const { data, error, isLoading } = useSWR<Station[]>(
+  const { data, error, isLoading, mutate } = useSWR<Station[]>(
     '/api/v1/stations',
     fetchStations,
     { fallbackData: fallbackStations },
@@ -12,5 +12,6 @@ export function useStations() {
     stations: data ?? fallbackStations,
     isLoading,
     error,
+    mutate,
   };
 }

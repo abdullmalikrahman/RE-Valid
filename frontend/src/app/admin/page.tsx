@@ -1,6 +1,7 @@
 ﻿'use client';
 
 import { useRef, useState } from 'react';
+import { useRouter } from 'next/navigation';
 import Link from 'next/link';
 import { useStations } from '@/hooks/useStations';
 
@@ -46,11 +47,18 @@ function StatusBadge({ status }: { status: string }) {
   );
 }
 
-//  Add / Edit Modal 
+// Determines if a station has sent data recently (within 24 h)
+function isRecentlyActive(lastUpdate: string): boolean {
+  const parsed = new Date(lastUpdate);
+  if (isNaN(parsed.getTime())) return false;
+  return Date.now() - parsed.getTime() < 24 * 60 * 60 * 1000;
+}
+
+//  Add / Edit Modal
 type ModalProps = {
   station: AdminStation | null; // null = add mode
   onClose: () => void;
-  onSave: (data: Omit<AdminStation, 'score' | 'windSpeed' | 'irradiation' | 'lastUpdate' | 'mcpStatus'> & { score: number }) => void;
+  onSave: (data: Omit<AdminStation, 'score' | 'windSpeed' | 'irradiation' | 'lastUpdate' | 'mcpStatus'> & { score: number }) => Promise<string | undefined>;
 };
 
 function StationModal({ station, onClose, onSave }: ModalProps) {
@@ -66,6 +74,19 @@ function StationModal({ station, onClose, onSave }: ModalProps) {
   });
 
   const isEdit = station !== null;
+  const [isSaving, setIsSaving] = useState(false);
+  const [saveError, setSaveError] = useState<string | null>(null);
+
+  async function handleSubmit() {
+    setSaveError(null);
+    setIsSaving(true);
+    try {
+      const error = await onSave(form);
+      if (error) setSaveError(error);
+    } finally {
+      setIsSaving(false);
+    }
+  }
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm p-4">
@@ -74,7 +95,7 @@ function StationModal({ station, onClose, onSave }: ModalProps) {
           <h3 className="text-base font-bold text-gray-900 dark:text-white">
             {isEdit ? 'Edit Stasiun' : 'Tambah Stasiun Baru'}
           </h3>
-          <button onClick={onClose} className="p-1.5 rounded-lg text-gray-400 hover:text-gray-600 dark:hover:text-white hover:bg-gray-100 dark:hover:bg-gray-800 transition-colors">
+          <button onClick={onClose} disabled={isSaving} className="p-1.5 rounded-lg text-gray-400 hover:text-gray-600 dark:hover:text-white hover:bg-gray-100 dark:hover:bg-gray-800 disabled:opacity-40 disabled:cursor-not-allowed transition-colors">
             <span className="material-symbols-outlined text-[20px]">close</span>
           </button>
         </div>
@@ -163,17 +184,33 @@ function StationModal({ station, onClose, onSave }: ModalProps) {
           </div>
         </div>
         <div className="flex gap-3 px-6 pb-5">
+          {saveError && (
+            <div className="mb-0 -mt-2 w-full px-1">
+              <div className="flex items-center gap-2 px-3 py-2 rounded-lg bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800 text-red-700 dark:text-red-400 text-xs">
+                <span className="material-symbols-outlined text-[15px] shrink-0">error</span>
+                <span className="flex-1">{saveError}</span>
+              </div>
+            </div>
+          )}
+        </div>
+        <div className="flex gap-3 px-6 pb-5">
           <button
             onClick={onClose}
-            className="flex-1 h-10 rounded-lg border border-gray-300 dark:border-border-dark text-gray-600 dark:text-gray-300 text-sm font-medium hover:bg-gray-50 dark:hover:bg-gray-800 transition-colors"
+            disabled={isSaving}
+            className="flex-1 h-10 rounded-lg border border-gray-300 dark:border-border-dark text-gray-600 dark:text-gray-300 text-sm font-medium hover:bg-gray-50 dark:hover:bg-gray-800 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
           >
             Batal
           </button>
           <button
-            onClick={() => onSave(form)}
-            className="flex-1 h-10 rounded-lg bg-primary hover:bg-blue-600 text-white text-sm font-bold transition-colors"
+            onClick={handleSubmit}
+            disabled={isSaving}
+            className="flex-1 h-10 rounded-lg bg-primary hover:bg-blue-600 disabled:opacity-70 disabled:cursor-not-allowed text-white text-sm font-bold transition-colors flex items-center justify-center gap-2"
           >
-            {isEdit ? 'Simpan Perubahan' : 'Tambah Stasiun'}
+            {isSaving ? (
+              <><span className="material-symbols-outlined text-[16px] animate-spin">refresh</span>Menyimpan...</>
+            ) : (
+              isEdit ? 'Simpan Perubahan' : 'Tambah Stasiun'
+            )}
           </button>
         </div>
       </div>
@@ -183,29 +220,29 @@ function StationModal({ station, onClose, onSave }: ModalProps) {
 
 //  Main Page
 export default function AdminPage() {
-  const { stations: initialStations } = useStations();
-  const [stationList, setStationList] = useState<AdminStation[]>(
-    () => initialStations.map((s) => ({
-      id: s.id,
-      name: s.name,
-      lat: s.lat,
-      lon: s.lon,
-      region: s.region,
-      altitude: s.altitude,
-      status: s.status as AdminStation['status'],
-      score: s.score,
-      mcpStatus: s.mcpStatus,
-      windSpeed: s.windSpeed,
-      irradiation: s.irradiation,
-      lastUpdate: s.lastUpdate,
-    }))
-  );
+  const router = useRouter();
+  const { stations: initialStations, mutate } = useStations();
+  const stationList: AdminStation[] = initialStations.map((s) => ({
+    id: s.id,
+    name: s.name,
+    lat: s.lat,
+    lon: s.lon,
+    region: s.region,
+    altitude: s.altitude,
+    status: s.status as AdminStation['status'],
+    score: s.score,
+    mcpStatus: s.mcpStatus,
+    windSpeed: s.windSpeed,
+    irradiation: s.irradiation,
+    lastUpdate: s.lastUpdate,
+  }));
 
   const [query, setQuery] = useState('');
   const [filterStatus, setFilterStatus] = useState('');
   const [showAddModal, setShowAddModal] = useState(false);
   const [editStation, setEditStation] = useState<AdminStation | null>(null);
   const [deleteId, setDeleteId] = useState<string | null>(null);
+  const [crudError, setCrudError] = useState<string | null>(null);
 
   // CSV upload state
   const [csvStation, setCsvStation] = useState('');
@@ -214,7 +251,7 @@ export default function AdminPage() {
   const [csvResult, setCsvResult] = useState<{ type: 'success' | 'error'; message: string } | null>(null);
   const csvInputRef = useRef<HTMLInputElement>(null);
 
-  //  Derived â”€â”€
+  // Derived
   const filtered = stationList.filter((s) => {
     const matchQuery =
       !query ||
@@ -231,25 +268,75 @@ export default function AdminPage() {
     tidak: stationList.filter((s) => s.status === 'tidak_sesuai').length,
   };
 
-  //  Handlers 
-  function handleSave(form: Parameters<ModalProps['onSave']>[0]) {
-    if (editStation) {
-      setStationList((list) =>
-        list.map((s) => (s.id === editStation.id ? { ...s, ...form } : s))
-      );
-      setEditStation(null);
-    } else {
-      setStationList((list) => [
-        ...list,
-        { ...form, mcpStatus: 'pending', windSpeed: 0, irradiation: 0, lastUpdate: 'Baru ditambah' },
-      ]);
-      setShowAddModal(false);
+  const API = process.env.NEXT_PUBLIC_API_URL ?? 'http://localhost:8000';
+
+  // Handlers
+  async function handleSave(form: Parameters<ModalProps['onSave']>[0]): Promise<string | undefined> {
+    try {
+      if (editStation) {
+        const res = await fetch(`${API}/api/v1/stations/${editStation.id}`, {
+          method: 'PATCH',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(form),
+        });
+        if (!res.ok) {
+          const json = await res.json();
+          return json.detail ?? 'Gagal menyimpan perubahan';
+        }
+        setEditStation(null);
+      } else {
+        const res = await fetch(`${API}/api/v1/stations`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(form),
+        });
+        if (!res.ok) {
+          const json = await res.json();
+          return json.detail ?? 'Gagal menambah stasiun';
+        }
+        setShowAddModal(false);
+      }
+      await mutate();
+      return undefined;
+    } catch {
+      return 'Tidak dapat terhubung ke server.';
     }
   }
 
-  function handleDelete(id: string) {
-    setStationList((list) => list.filter((s) => s.id !== id));
-    setDeleteId(null);
+  async function handleDelete(id: string) {
+    setCrudError(null);
+    try {
+      const res = await fetch(`${API}/api/v1/stations/${id}`, { method: 'DELETE' });
+      if (!res.ok && res.status !== 204) {
+        const json = await res.json();
+        setCrudError(json.detail ?? 'Gagal menghapus stasiun');
+        return;
+      }
+      setDeleteId(null);
+      await mutate();
+    } catch {
+      setCrudError('Tidak dapat terhubung ke server.');
+    }
+  }
+
+  function handleExport() {
+    const header = ['id', 'name', 'lat', 'lon', 'region', 'altitude', 'status', 'score'];
+    const rows = filtered.map((s) =>
+      [s.id, `"${s.name}"`, s.lat, s.lon, `"${s.region}"`, s.altitude, s.status, s.score].join(',')
+    );
+    const csv = [header.join(','), ...rows].join('\n');
+    const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = 'stasiun_re-valid.csv';
+    a.click();
+    URL.revokeObjectURL(url);
+  }
+
+  function handleLogout() {
+    localStorage.removeItem('token');
+    router.push('/login');
   }
 
   async function handleCsvUpload() {
@@ -260,7 +347,7 @@ export default function AdminPage() {
       const formData = new FormData();
       formData.append('file', csvFile);
       const res = await fetch(
-        `${process.env.NEXT_PUBLIC_API_URL ?? 'http://localhost:8000'}/api/v1/measurements/upload?station_id=${encodeURIComponent(csvStation)}`,
+        `${API}/api/v1/measurements/upload?station_id=${encodeURIComponent(csvStation)}`,
         { method: 'POST', body: formData },
       );
       const json = await res.json();
@@ -285,7 +372,7 @@ export default function AdminPage() {
   return (
     <div className="bg-gray-100 dark:bg-background-dark text-gray-900 dark:text-gray-100 min-h-screen flex overflow-hidden antialiased font-display">
       {/* Sidebar */}
-      <aside className="w-64 bg-white dark:bg-surface-dark border-r border-gray-200 dark:border-border-dark hidden md:flex flex-col z-20 shrink-0">
+      <aside className="fixed top-0 left-0 h-screen w-64 bg-white dark:bg-surface-dark border-r border-gray-200 dark:border-border-dark hidden md:flex flex-col z-20">
         <div className="h-16 flex items-center px-6 border-b border-gray-200 dark:border-border-dark">
           <Link href="/" className="flex items-center gap-0">
             <span className="material-symbols-outlined text-primary mr-2">bolt</span>
@@ -293,15 +380,15 @@ export default function AdminPage() {
           </Link>
         </div>
         <nav className="flex-1 overflow-y-auto py-4 px-3 space-y-1">
-          <Link href="#" className="group flex items-center px-3 py-2.5 text-sm font-medium text-gray-600 dark:text-gray-400 rounded-lg hover:bg-gray-100 dark:hover:bg-gray-800 hover:text-gray-900 dark:hover:text-white transition-all">
+          <Link href="/" className="group flex items-center px-3 py-2.5 text-sm font-medium text-gray-600 dark:text-gray-400 rounded-lg hover:bg-gray-100 dark:hover:bg-gray-800 hover:text-gray-900 dark:hover:text-white transition-all">
             <span className="material-symbols-outlined mr-3 text-[20px]">dashboard</span>
             Dashboard
           </Link>
-          <Link href="#" className="group flex items-center px-3 py-2.5 text-sm font-medium bg-primary/10 text-primary rounded-lg transition-all">
+          <Link href="/admin" className="group flex items-center px-3 py-2.5 text-sm font-medium bg-primary/10 text-primary rounded-lg transition-all">
             <span className="material-symbols-outlined mr-3 text-[20px]">location_on</span>
             Data Lokasi
           </Link>
-          <Link href="#" className="group flex items-center px-3 py-2.5 text-sm font-medium text-gray-600 dark:text-gray-400 rounded-lg hover:bg-gray-100 dark:hover:bg-gray-800 hover:text-gray-900 dark:hover:text-white transition-all">
+          <Link href="/analisis" className="group flex items-center px-3 py-2.5 text-sm font-medium text-gray-600 dark:text-gray-400 rounded-lg hover:bg-gray-100 dark:hover:bg-gray-800 hover:text-gray-900 dark:hover:text-white transition-all">
             <span className="material-symbols-outlined mr-3 text-[20px]">bar_chart</span>
             Metrik Validasi
           </Link>
@@ -309,17 +396,6 @@ export default function AdminPage() {
             <span className="material-symbols-outlined mr-3 text-[20px]">map</span>
             Peta Potensi (GIS)
           </Link>
-          <div className="pt-4 mt-4 border-t border-gray-200 dark:border-border-dark">
-            <p className="px-3 text-xs font-semibold text-gray-500 uppercase tracking-wider mb-2">Pengaturan</p>
-            <Link href="#" className="group flex items-center px-3 py-2.5 text-sm font-medium text-gray-600 dark:text-gray-400 rounded-lg hover:bg-gray-100 dark:hover:bg-gray-800 hover:text-gray-900 dark:hover:text-white transition-all">
-              <span className="material-symbols-outlined mr-3 text-[20px]">settings</span>
-              Sistem
-            </Link>
-            <Link href="#" className="group flex items-center px-3 py-2.5 text-sm font-medium text-gray-600 dark:text-gray-400 rounded-lg hover:bg-gray-100 dark:hover:bg-gray-800 hover:text-gray-900 dark:hover:text-white transition-all">
-              <span className="material-symbols-outlined mr-3 text-[20px]">group</span>
-              Pengguna
-            </Link>
-          </div>
         </nav>
         <div className="p-4 border-t border-gray-200 dark:border-border-dark">
           <div className="flex items-center gap-3">
@@ -328,7 +404,7 @@ export default function AdminPage() {
               <p className="text-sm font-medium text-gray-900 dark:text-white truncate">Admin Utama</p>
               <p className="text-xs text-gray-500 truncate">admin@re-valid.id</p>
             </div>
-            <button className="text-gray-400 hover:text-gray-500 dark:hover:text-gray-300">
+            <button onClick={handleLogout} className="text-gray-400 hover:text-gray-500 dark:hover:text-gray-300" title="Keluar">
               <span className="material-symbols-outlined text-[20px]">logout</span>
             </button>
           </div>
@@ -336,34 +412,37 @@ export default function AdminPage() {
       </aside>
 
       {/* Main content */}
-      <div className="flex-1 flex flex-col min-w-0 overflow-auto">
+      <div className="flex-1 flex flex-col min-w-0 md:ml-64">
         {/* Top header */}
-        <header className="h-16 shrink-0 flex items-center justify-between px-4 sm:px-6 lg:px-8 bg-white dark:bg-surface-dark border-b border-gray-200 dark:border-border-dark">
+        <header className="h-16 fixed top-0 left-64 right-0 z-10 hidden md:flex items-center justify-between px-4 sm:px-6 lg:px-8 bg-white dark:bg-surface-dark border-b border-gray-200 dark:border-border-dark">
           <div className="flex items-center gap-4">
             <button className="md:hidden p-2 -ml-2 text-gray-500 hover:bg-gray-100 dark:hover:bg-gray-800 rounded-lg">
               <span className="material-symbols-outlined">menu</span>
             </button>
             <nav className="hidden sm:flex" aria-label="Breadcrumb">
               <ol className="flex items-center space-x-2" role="list">
-                <li><Link href="/" className="text-gray-400 hover:text-gray-500 dark:hover:text-gray-300"><span className="material-symbols-outlined text-[20px]">home</span></Link></li>
-                <li><span className="text-gray-300 dark:text-gray-600">/</span></li>
                 <li><span className="text-sm font-medium text-gray-500 dark:text-gray-400">Admin</span></li>
                 <li><span className="text-gray-300 dark:text-gray-600">/</span></li>
                 <li><span className="text-sm font-medium text-primary" aria-current="page">Lokasi Pengukuran</span></li>
               </ol>
             </nav>
           </div>
-          <div className="flex items-center gap-4">
-            <button className="p-2 text-gray-400 hover:text-gray-500 dark:hover:text-gray-300 relative">
-              <span className="material-symbols-outlined text-[24px]">notifications</span>
-              <span className="absolute top-2 right-2 block h-2 w-2 rounded-full bg-red-500 ring-2 ring-white dark:ring-surface-dark" />
-            </button>
-          </div>
+          <div className="flex items-center gap-4" />
         </header>
 
         {/* Page content */}
-        <main className="flex-1 p-4 sm:p-6 lg:p-8">
+        <main className="flex-1 overflow-auto mt-16 p-4 sm:p-6 lg:p-8">
           <div className="max-w-7xl mx-auto space-y-6">
+            {/* CRUD error banner */}
+            {crudError && (
+              <div className="flex items-center gap-3 px-4 py-3 rounded-lg bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800 text-red-700 dark:text-red-400 text-sm">
+                <span className="material-symbols-outlined text-[18px]">error</span>
+                <span className="flex-1">{crudError}</span>
+                <button onClick={() => setCrudError(null)} className="shrink-0 text-red-400 hover:text-red-600">
+                  <span className="material-symbols-outlined text-[16px]">close</span>
+                </button>
+              </div>
+            )}
             {/* Page title + actions */}
             <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
               <div>
@@ -371,7 +450,10 @@ export default function AdminPage() {
                 <p className="mt-0.5 text-xs text-gray-500 dark:text-gray-400">Kelola daftar stasiun meteorologi dan parameter geografis.</p>
               </div>
               <div className="flex gap-3">
-                <button className="inline-flex items-center gap-2 px-4 py-2 bg-white dark:bg-surface-dark border border-gray-300 dark:border-border-dark rounded-lg text-sm font-medium text-gray-700 dark:text-gray-200 hover:bg-gray-50 dark:hover:bg-gray-800 transition-colors">
+                <button
+                  onClick={handleExport}
+                  className="inline-flex items-center gap-2 px-4 py-2 bg-white dark:bg-surface-dark border border-gray-300 dark:border-border-dark rounded-lg text-sm font-medium text-gray-700 dark:text-gray-200 hover:bg-gray-50 dark:hover:bg-gray-800 transition-colors"
+                >
                   <span className="material-symbols-outlined text-[20px]">download</span>
                   Ekspor Data
                 </button>
@@ -490,7 +572,7 @@ export default function AdminPage() {
                         <td className="px-5 py-4 whitespace-nowrap text-sm text-gray-600 dark:text-gray-300">
                           <div className="flex items-center gap-1">
                             <span className="material-symbols-outlined text-[14px] text-amber-400">wb_sunny</span>
-                            {station.irradiation} kWh/mÂ²/hr
+                            {station.irradiation} kWh/m²/hr
                           </div>
                         </td>
                         <td className="px-5 py-4 whitespace-nowrap">
@@ -559,7 +641,7 @@ export default function AdminPage() {
                   Menampilkan <span className="font-semibold text-gray-900 dark:text-white">{filtered.length}</span> dari{' '}
                   <span className="font-semibold text-gray-900 dark:text-white">{stationList.length}</span> stasiun
                 </p>
-                <p className="text-xs text-gray-400">Diperbarui secara lokal (mock)</p>
+                <p className="text-xs text-gray-400">Tersimpan di database</p>
               </div>
             </div>
 
@@ -570,7 +652,7 @@ export default function AdminPage() {
                   <span className="material-symbols-outlined text-primary text-[20px]">sensors</span>
                   <h2 className="text-base font-bold text-gray-900 dark:text-white">Status MQTT Stasiun</h2>
                 </div>
-                <span className="text-xs text-gray-400">Diperbarui: mock data</span>
+                <span className="text-xs text-gray-400">Live dari database</span>
               </div>
               <div className="overflow-x-auto">
                 <table className="min-w-full divide-y divide-gray-200 dark:divide-border-dark text-sm">
@@ -583,7 +665,7 @@ export default function AdminPage() {
                   </thead>
                   <tbody className="divide-y divide-gray-200 dark:divide-border-dark">
                     {stationList.map((s) => {
-                      const online = s.mcpStatus === 'selesai' || s.mcpStatus === 'berjalan';
+                      const online = isRecentlyActive(s.lastUpdate);
                       return (
                         <tr key={s.id} className="hover:bg-gray-50 dark:hover:bg-white/5">
                           <td className="px-6 py-3">
@@ -594,7 +676,7 @@ export default function AdminPage() {
                           </td>
                           <td className="px-6 py-3 font-mono text-xs text-gray-500 dark:text-gray-400">stations/{s.id}/data</td>
                           <td className="px-6 py-3 text-xs text-gray-600 dark:text-gray-300">{s.lastUpdate}</td>
-                          <td className="px-6 py-3 text-xs text-gray-600 dark:text-gray-300">{online ? '10 mnt' : '—'}</td>
+                          <td className="px-6 py-3 text-xs text-gray-600 dark:text-gray-300">{online ? '~3 dtk' : '—'}</td>
                           <td className="px-6 py-3">
                             {online ? (
                               <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-medium bg-green-100 text-green-800 dark:bg-green-900/30 dark:text-green-400">
@@ -609,58 +691,6 @@ export default function AdminPage() {
                         </tr>
                       );
                     })}
-                  </tbody>
-                </table>
-              </div>
-            </div>
-
-            {/* Celery Job Queue */}
-            <div className="bg-white dark:bg-surface-dark rounded-xl border border-gray-200 dark:border-border-dark overflow-hidden shadow-sm">
-              <div className="px-6 py-4 border-b border-gray-200 dark:border-border-dark flex items-center justify-between">
-                <div className="flex items-center gap-2">
-                  <span className="material-symbols-outlined text-violet-400 text-[20px]">queue</span>
-                  <h2 className="text-base font-bold text-gray-900 dark:text-white">Antrian Job Celery</h2>
-                </div>
-                <div className="flex gap-3 text-xs">
-                  <span className="bg-green-500/10 text-green-500 px-2 py-0.5 rounded-full font-medium">1 Berjalan</span>
-                  <span className="bg-yellow-500/10 text-yellow-500 px-2 py-0.5 rounded-full font-medium">2 Antri</span>
-                  <span className="bg-red-500/10 text-red-500 px-2 py-0.5 rounded-full font-medium">0 Gagal</span>
-                </div>
-              </div>
-              <div className="overflow-x-auto">
-                <table className="min-w-full divide-y divide-gray-200 dark:divide-border-dark text-sm">
-                  <thead className="bg-gray-50 dark:bg-black/20">
-                    <tr>
-                      {['Job ID', 'Tipe', 'Lokasi', 'Dimulai', 'Status'].map((col) => (
-                        <th key={col} className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">{col}</th>
-                      ))}
-                    </tr>
-                  </thead>
-                  <tbody className="divide-y divide-gray-200 dark:divide-border-dark">
-                    {[
-                      { id: 'job-4a2f', type: 'MCP Analysis', loc: 'GWY-089', started: '14:31 WIB', status: 'running' },
-                      { id: 'job-7c1e', type: 'MCP Analysis', loc: 'CMH-001', started: '—', status: 'queued' },
-                      { id: 'job-9d3b', type: 'Laporan PDF', loc: 'PGD-023', started: '—', status: 'queued' },
-                    ].map((job) => (
-                      <tr key={job.id} className="hover:bg-gray-50 dark:hover:bg-white/5">
-                        <td className="px-6 py-3 font-mono text-xs text-gray-500 dark:text-gray-400">{job.id}</td>
-                        <td className="px-6 py-3 text-xs font-medium text-gray-900 dark:text-white">{job.type}</td>
-                        <td className="px-6 py-3 font-mono text-xs text-gray-600 dark:text-gray-300">{job.loc}</td>
-                        <td className="px-6 py-3 text-xs text-gray-600 dark:text-gray-300">{job.started}</td>
-                        <td className="px-6 py-3">
-                          {job.status === 'running' && (
-                            <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-medium bg-green-100 text-green-800 dark:bg-green-900/30 dark:text-green-400">
-                              <span className="w-1.5 h-1.5 rounded-full bg-green-500 animate-pulse" />Berjalan
-                            </span>
-                          )}
-                          {job.status === 'queued' && (
-                            <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-medium bg-yellow-100 text-yellow-800 dark:bg-yellow-900/30 dark:text-yellow-400">
-                              <span className="w-1.5 h-1.5 rounded-full bg-yellow-500" />Antri
-                            </span>
-                          )}
-                        </td>
-                      </tr>
-                    ))}
                   </tbody>
                 </table>
               </div>
@@ -739,14 +769,7 @@ export default function AdminPage() {
 
             {/* Footer */}
             <div className="pt-6 border-t border-gray-200 dark:border-border-dark">
-              <div className="flex flex-col md:flex-row justify-between items-center gap-4">
-                <p className="text-xs text-gray-400 dark:text-gray-500">Â© 2026 RE-Valid. Hak cipta dilindungi.</p>
-                <div className="flex gap-4 text-xs text-gray-400 dark:text-gray-500">
-                  <Link href="#" className="hover:text-primary">Ketentuan Layanan</Link>
-                  <Link href="#" className="hover:text-primary">Kebijakan Privasi</Link>
-                  <Link href="#" className="hover:text-primary">Bantuan</Link>
-                </div>
-              </div>
+              <p className="text-xs text-gray-400 dark:text-gray-500 text-center">© 2026 RE-Valid · Sistem Pendukung Keputusan Potensi EBT Jawa Barat</p>
             </div>
           </div>
         </main>
