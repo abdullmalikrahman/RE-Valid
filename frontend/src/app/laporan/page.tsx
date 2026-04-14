@@ -206,9 +206,9 @@ function LaporanContent() {
             <div className="bg-white dark:bg-card-dark rounded-xl border border-gray-200 dark:border-border-dark overflow-hidden shadow-sm">
               <div className="p-5 border-b border-gray-200 dark:border-border-dark flex items-center gap-3">
                 <div className="size-8 rounded-full bg-blue-50 dark:bg-blue-900/20 flex items-center justify-center text-primary">
-                  <span className="material-symbols-outlined text-[18px]">tune</span>
+                  <span className="material-symbols-outlined text-[18px]">location_on</span>
                 </div>
-                <h3 className="text-base font-bold text-slate-900 dark:text-white">Filter Laporan</h3>
+                <h3 className="text-base font-bold text-slate-900 dark:text-white">Pilih Stasiun</h3>
               </div>
               <div className="p-5 flex flex-col gap-5">
                 {/* Station selector */}
@@ -237,55 +237,7 @@ function LaporanContent() {
                   </div>
                 </div>
 
-                {/* Date range */}
-                <div className="flex flex-col gap-2">
-                  <label className="text-xs font-bold text-slate-700 dark:text-text-secondary uppercase tracking-wide">
-                    Rentang Tanggal
-                  </label>
-                  <div className="flex items-center gap-2">
-                    <input
-                      className="flex-1 min-w-0 bg-gray-50 dark:bg-[#111a22] border border-gray-200 dark:border-border-dark rounded-lg py-2 px-3 text-sm text-slate-900 dark:text-white focus:ring-1 focus:ring-primary focus:border-primary outline-none transition-all"
-                      type="date"
-                      defaultValue="2023-01-01"
-                    />
-                    <span className="text-slate-500 text-xs shrink-0">&ndash;</span>
-                    <input
-                      className="flex-1 min-w-0 bg-gray-50 dark:bg-[#111a22] border border-gray-200 dark:border-border-dark rounded-lg py-2 px-3 text-sm text-slate-900 dark:text-white focus:ring-1 focus:ring-primary focus:border-primary outline-none transition-all"
-                      type="date"
-                      defaultValue="2023-12-31"
-                    />
-                  </div>
-                </div>
 
-                {/* Sections */}
-                <div className="flex flex-col gap-3">
-                  <label className="text-xs font-bold text-slate-700 dark:text-text-secondary uppercase tracking-wide">
-                    Sertakan Bagian
-                  </label>
-                  <div className="flex flex-col gap-2">
-                    {[
-                      { label: 'Ringkasan Eksekutif', checked: true },
-                      { label: 'Grafik Analisis Potensi', checked: true },
-                      { label: 'Log Validasi Data Mentah', checked: false },
-                    ].map((item) => (
-                      <label key={item.label} className="flex items-center gap-3 cursor-pointer group">
-                        <input
-                          defaultChecked={item.checked}
-                          className="w-4 h-4 rounded border-gray-300 dark:border-gray-600 dark:bg-gray-800 accent-primary"
-                          type="checkbox"
-                        />
-                        <span className="text-sm text-slate-600 dark:text-slate-300 group-hover:text-primary transition-colors">
-                          {item.label}
-                        </span>
-                      </label>
-                    ))}
-                  </div>
-                </div>
-
-                <button className="w-full mt-2 bg-slate-800 dark:bg-white text-white dark:text-slate-900 hover:bg-slate-700 dark:hover:bg-gray-200 font-bold py-2.5 px-4 rounded-lg transition-colors flex justify-center items-center gap-2 text-sm">
-                  <span className="material-symbols-outlined text-[18px]">refresh</span>
-                  Terapkan Filter
-                </button>
               </div>
             </div>
 
@@ -402,14 +354,14 @@ function LaporanContent() {
                   <p className="text-[10px] text-slate-400 uppercase tracking-wide mb-1">GHI Observasi</p>
                   <p className="text-2xl font-black text-amber-400">
                     {station.irradiation.toFixed(1)}
-                    <span className="text-[12px] font-medium text-slate-400 ml-0.5">kWh/m²/hr</span>
+                    <span className="text-[12px] font-medium text-slate-400 ml-0.5">kWh/m²/hari</span>
                   </p>
                 </div>
                 <div className="bg-slate-50 dark:bg-[#111a22] rounded-xl p-4 border border-slate-100 dark:border-[#233648] text-center">
                   <p className="text-[10px] text-slate-400 uppercase tracking-wide mb-1">GHI Baseline (GSA)</p>
                   <p className="text-2xl font-black text-slate-400 dark:text-slate-300">
                     {(station.irradiation * 0.958).toFixed(1)}
-                    <span className="text-[12px] font-medium text-slate-400 ml-0.5">kWh/m²/hr</span>
+                    <span className="text-[12px] font-medium text-slate-400 ml-0.5">kWh/m²/hari</span>
                   </p>
                 </div>
                 <div className="bg-slate-50 dark:bg-[#111a22] rounded-xl p-4 border border-slate-100 dark:border-[#233648] text-center">
@@ -426,15 +378,14 @@ function LaporanContent() {
                 <div className="bg-slate-50 dark:bg-[#111a22] rounded-xl p-4 border border-slate-100 dark:border-[#233648] text-center">
                   <p className="text-[10px] text-slate-400 uppercase tracking-wide mb-1">Bias vs GSA</p>
                   <p className={`text-2xl font-black ${
-                    Math.abs(station.bias * 0.8) <= 10 ? 'text-green-400' : 'text-amber-400'
+                    Math.abs(station.bias) <= 5 ? 'text-green-400' : 'text-amber-400'
                   }`}>
-                    {station.bias * 0.8 > 0 ? '+' : ''}{(station.bias * 0.8).toFixed(1)}
+                    {station.bias > 0 ? '+' : ''}{station.bias.toFixed(1)}
                     <span className="text-[13px] font-medium text-slate-400 ml-0.5">%</span>
                   </p>
                 </div>
               </div>
               <div className="mt-3 flex flex-wrap gap-2">
-                <span className="text-[10px] font-mono px-2 py-0.5 rounded border bg-slate-100 dark:bg-slate-800 border-slate-200 dark:border-slate-700 text-slate-500 dark:text-slate-300">IEC 61853</span>
                 <span className="text-[10px] font-mono px-2 py-0.5 rounded border bg-amber-500/10 border-amber-500/30 text-amber-400">SOLARGIS / GSA</span>
                 <span className={`text-[10px] font-mono px-2 py-0.5 rounded border ${
                   station.irradiation / 8.5 >= 0.40 && station.irradiation / 8.5 <= 0.65
