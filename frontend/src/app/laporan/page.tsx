@@ -1,6 +1,6 @@
 'use client';
 
-import { Suspense, useRef, useState } from 'react';
+import { Suspense, useState } from 'react';
 import { useSearchParams, useRouter } from 'next/navigation';
 import Link from 'next/link';
 import Navbar from '@/components/Navbar';
@@ -38,7 +38,6 @@ function LaporanContent() {
   const stationId = searchParams.get('station') ?? stations[0].id;
   const station = stations.find((s) => s.id === stationId) ?? stations[0];
 
-  const reportRef = useRef<HTMLDivElement>(null);
   const [exporting, setExporting] = useState<'pdf' | 'csv' | 'geojson' | null>(null);
 
   const mcdaFactors = [
@@ -49,35 +48,103 @@ function LaporanContent() {
   ];
 
   async function handleExportPDF() {
-    if (!reportRef.current) return;
     setExporting('pdf');
     try {
-      const [{ default: jsPDF }, { default: html2canvas }] = await Promise.all([
-        import('jspdf'),
-        import('html2canvas'),
-      ]);
-      const canvas = await html2canvas(reportRef.current, {
-        scale: 2,
-        useCORS: true,
-        backgroundColor: '#0f1923',
-        logging: false,
-      });
-      const imgData = canvas.toDataURL('image/png');
+      const { default: jsPDF } = await import('jspdf');
       const pdf = new jsPDF({ orientation: 'portrait', unit: 'mm', format: 'a4' });
-      const pageW = pdf.internal.pageSize.getWidth();
-      const pageH = pdf.internal.pageSize.getHeight();
-      const imgW = pageW - 20; // 10mm margin each side
-      const imgH = (canvas.height * imgW) / canvas.width;
-      let yPos = 10;
-      let remaining = imgH;
-      while (remaining > 0) {
-        pdf.addImage(imgData, 'PNG', 10, yPos, imgW, imgH);
-        remaining -= (pageH - 20);
-        if (remaining > 0) {
-          pdf.addPage();
-          yPos = 10 - (imgH - remaining);
-        }
-      }
+      const W = pdf.internal.pageSize.getWidth();
+      let y = 18;
+
+      // Header bar
+      pdf.setFillColor(19, 127, 236);
+      pdf.rect(0, 0, W, 14, 'F');
+      pdf.setTextColor(255, 255, 255);
+      pdf.setFontSize(11);
+      pdf.setFont('helvetica', 'bold');
+      pdf.text('RE-Valid — Laporan Validasi Potensi EBT', 10, 9.5);
+      pdf.setFontSize(8);
+      pdf.setFont('helvetica', 'normal');
+      pdf.text(`Diekspor: ${new Date().toLocaleString('id-ID')}`, W - 10, 9.5, { align: 'right' });
+
+      // Station title
+      pdf.setTextColor(30, 30, 30);
+      pdf.setFontSize(15);
+      pdf.setFont('helvetica', 'bold');
+      pdf.text(station.name, 10, y);
+      y += 6;
+      pdf.setFontSize(9);
+      pdf.setFont('helvetica', 'normal');
+      pdf.setTextColor(100, 100, 100);
+      pdf.text(`${station.region}  ·  ID: ${station.id}  ·  Status: ${statusLabel[station.status]}  ·  MCP: ${mcpLabel[station.mcpStatus]}`, 10, y);
+      y += 8;
+
+      // Section helper
+      const sectionTitle = (title: string) => {
+        pdf.setFillColor(235, 240, 250);
+        pdf.rect(10, y, W - 20, 7, 'F');
+        pdf.setFontSize(9);
+        pdf.setFont('helvetica', 'bold');
+        pdf.setTextColor(19, 127, 236);
+        pdf.text(title, 12, y + 5);
+        y += 10;
+      };
+      const row = (label: string, value: string, highlight?: boolean) => {
+        pdf.setFontSize(9);
+        pdf.setFont('helvetica', 'normal');
+        pdf.setTextColor(80, 80, 80);
+        pdf.text(label, 14, y);
+        pdf.setFont('helvetica', 'bold');
+        pdf.setTextColor(highlight ? 22 : 30, highlight ? 163 : 30, highlight ? 74 : 30);
+        pdf.text(value, W - 14, y, { align: 'right' });
+        y += 5.5;
+      };
+
+      // Identitas Stasiun
+      sectionTitle('Identitas Stasiun');
+      row('Koordinat', `${station.lat.toFixed(4)}, ${station.lon.toFixed(4)}`);
+      row('Ketinggian', `${station.altitude.toLocaleString('id')} m dpl`);
+      row('Periode', station.period);
+      row('Variabel', station.variables);
+      y += 3;
+
+      // Metrik Validasi Angin
+      sectionTitle('Metrik Validasi Angin (ERA5 vs Observasi)');
+      row('Kecepatan Angin Rata-rata', `${station.windSpeed} m/s`);
+      row('RMSE', `${station.rmse.toFixed(2)} m/s`);
+      row('Bias', `${station.bias > 0 ? '+' : ''}${station.bias.toFixed(1)} %`);
+      row('R²', station.r2.toFixed(2));
+      row('Skor GIS-MCDA', `${station.score} / 100`);
+      y += 3;
+
+      // Validasi Surya
+      sectionTitle('Validasi Surya — GHI (GSA vs Observasi)');
+      row('GHI Observasi', `${station.irradiation.toFixed(1)} kWh/m²/hari`);
+      row('GHI Baseline (GSA)', `${(station.irradiation * 0.958).toFixed(1)} kWh/m²/hari`);
+      row('Clearness Index (Kt)', (station.irradiation / 8.5).toFixed(2));
+      row('Bias vs GSA', `${station.bias > 0 ? '+' : ''}${station.bias.toFixed(1)} %`);
+      y += 3;
+
+      // Potensi Energi
+      sectionTitle('Potensi Energi');
+      row('Kecepatan Angin Rata-rata (GWA)', `${station.windSpeed} m/s`);
+      row('Iradiasi Matahari GHI (GSA)', `${station.irradiation} kWh/m²/hari`);
+      row('AEP PLTB P50', `${station.aep.toLocaleString('id')} MWh/thn`);
+      row('Hasil Spesifik PLTS (PR=75%)', `${Math.round(station.irradiation * 365 * 0.75).toLocaleString('id')} kWh/kWp·thn`);
+      y += 3;
+
+      // GIS-MCDA
+      sectionTitle('Faktor Kesesuaian GIS-MCDA');
+      mcdaFactors.forEach((f) => row(f.label, `${f.pct}%`));
+      y += 3;
+
+      // Footer
+      pdf.setFontSize(7);
+      pdf.setFont('helvetica', 'italic');
+      pdf.setTextColor(160, 160, 160);
+      pdf.text('Sumber referensi: ERA5 (ECMWF) · GWA 3.0 · GSA/SOLARGIS · RE-Valid DSS', 10, y);
+      y += 4;
+      pdf.text(`Periode: ${station.period}  ·  Referensi MCP: ERA5 (ECMWF)  ·  Atlas baseline: GWA/GSA`, 10, y);
+
       pdf.save(`RE-Valid_Laporan_${station.id}_${new Date().toISOString().slice(0, 10)}.pdf`);
     } finally {
       setExporting(null);
@@ -257,7 +324,7 @@ function LaporanContent() {
           </div>
 
           {/* Right: report content */}
-          <div ref={reportRef} className="lg:col-span-8 flex flex-col gap-6">
+          <div className="lg:col-span-8 flex flex-col gap-6">
             {/* Station identity */}
             <div className="bg-white dark:bg-card-dark border border-gray-200 dark:border-border-dark rounded-xl p-5 shadow-sm">
               <div className="flex items-start justify-between gap-4 mb-4">

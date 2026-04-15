@@ -11,6 +11,7 @@ export default function KalkulatorPage() {
   const { stations } = useStations();
   const [energyType, setEnergyType] = useState<'wind' | 'solar'>('wind');
   const isWind = energyType === 'wind';
+  const [exportingPDF, setExportingPDF] = useState(false);
 
   // --- Station selector ---
   const [selectedStationId, setSelectedStationId] = useState<string>('none');
@@ -86,7 +87,7 @@ export default function KalkulatorPage() {
 
     const discOpex = cashFlows.reduce((acc, cf) => acc + cf.opex / Math.pow(1 + r, cf.year), 0);
     const discAep = cashFlows.reduce((acc, cf) => acc + cf.energy / Math.pow(1 + r, cf.year), 0);
-    const lcoeCents = discAep > 0 ? ((capex + discOpex) * 1000) / (discAep * 1000) / 10 : 0;
+    const lcoeCents = discAep > 0 ? ((capex + discOpex) * 100) / discAep : 0;
 
     let cumulative = -capex;
     let payback = umurProyek;
@@ -119,10 +120,8 @@ export default function KalkulatorPage() {
 
   const isViable = kpis.npv > 0;
   const selectedStation = stations.find((s) => s.id === selectedStationId);
-  const accentColor = isWind ? 'primary' : 'amber-500';
   const accentClass = isWind ? 'text-primary' : 'text-amber-400';
   const accentBg = isWind ? 'bg-primary' : 'bg-amber-500';
-  const accentBorder = isWind ? 'border-primary' : 'border-amber-500';
 
   function handleReset() {
     setKapasitas(50);
@@ -150,6 +149,148 @@ export default function KalkulatorPage() {
       setDegradasi(0.4); // PLTS degradasi panel ~0.4%/thn
     }
   }
+
+  async function handleExportPDF() {
+    setExportingPDF(true);
+    try {
+      const { default: jsPDF } = await import('jspdf');
+      const pdf = new jsPDF({ orientation: 'portrait', unit: 'mm', format: 'a4' });
+      const W = pdf.internal.pageSize.getWidth();
+      let y = 18;
+
+      // Header
+      pdf.setFillColor(19, 127, 236);
+      pdf.rect(0, 0, W, 14, 'F');
+      pdf.setTextColor(255, 255, 255);
+      pdf.setFontSize(11);
+      pdf.setFont('helvetica', 'bold');
+      pdf.text('RE-Valid — Kalkulator Energi & Ekonomi', 10, 9.5);
+      pdf.setFontSize(8);
+      pdf.setFont('helvetica', 'normal');
+      pdf.text(`Diekspor: ${new Date().toLocaleString('id-ID')}`, W - 10, 9.5, { align: 'right' });
+
+      // Title
+      pdf.setTextColor(30, 30, 30);
+      pdf.setFontSize(14);
+      pdf.setFont('helvetica', 'bold');
+      pdf.text(`Simulasi ${isWind ? 'PLTB (Angin)' : 'PLTS (Surya)'}`, 10, y);
+      y += 7;
+
+      // Parameter summary
+      pdf.setFontSize(9);
+      pdf.setFont('helvetica', 'normal');
+      pdf.setTextColor(80, 80, 80);
+      const paramLines = [
+        `Kapasitas: ${kapasitas} ${isWind ? 'MW' : 'MWp'}  |  ${isWind ? `CF: ${faktorKapasitas}%` : `PR: ${performanceRatio}%`}  |  Umur Proyek: ${umurProyek} thn  |  Degradasi: ${degradasi}%/thn`,
+        `CAPEX: $${capex} Jt  |  OPEX: ${opex}% CAPEX/thn  |  Diskonto: ${diskonto}%  |  Tarif: $${tarif}/MWh`,
+        selectedStation ? `Stasiun Referensi: ${selectedStation.name} (${selectedStation.id})` : 'Stasiun: Manual (tidak ada stasiun dipilih)',
+      ];
+      paramLines.forEach((line) => { pdf.text(line, 10, y); y += 5; });
+      y += 3;
+
+      // KPI section
+      pdf.setDrawColor(200, 200, 200);
+      pdf.setFillColor(245, 247, 250);
+      pdf.rect(10, y, W - 20, 28, 'FD');
+      pdf.setFontSize(8);
+      pdf.setFont('helvetica', 'bold');
+      pdf.setTextColor(100, 100, 100);
+      const kpiLabels = ['AEP Thn-1 (GWh)', 'LCOE (¢/kWh)', 'NPV (Jt USD)', 'Payback (Thn)', 'ROI (%)'];
+      const kpiVals = [
+        kpis.aepY1.toFixed(2),
+        kpis.lcoeCents.toFixed(2),
+        `${kpis.npv >= 0 ? '+' : ''}${kpis.npv.toFixed(1)}`,
+        kpis.payback.toFixed(1),
+        `${kpis.roi.toFixed(1)}`,
+      ];
+      const colW = (W - 20) / 5;
+      kpiLabels.forEach((lbl, i) => {
+        const x = 10 + i * colW + colW / 2;
+        pdf.setFont('helvetica', 'normal');
+        pdf.setTextColor(100, 100, 100);
+        pdf.text(lbl, x, y + 8, { align: 'center' });
+        pdf.setFont('helvetica', 'bold');
+        pdf.setFontSize(12);
+        pdf.setTextColor(i === 2 ? (kpis.npv >= 0 ? 34 : 220) : 19, i === 2 ? (kpis.npv >= 0 ? 197 : 38 ) : 127, i === 2 ? (kpis.npv >= 0 ? 94 : 60) : 236);
+        pdf.text(kpiVals[i], x, y + 18, { align: 'center' });
+        pdf.setFontSize(8);
+      });
+      y += 34;
+
+      // Viability badge
+      pdf.setFillColor(kpis.npv >= 0 ? 220 : 254, kpis.npv >= 0 ? 252 : 226, kpis.npv >= 0 ? 231 : 226);
+      pdf.roundedRect(10, y, W - 20, 8, 2, 2, 'F');
+      pdf.setFont('helvetica', 'bold');
+      pdf.setFontSize(9);
+      pdf.setTextColor(kpis.npv >= 0 ? 22 : 185, kpis.npv >= 0 ? 163 : 28, kpis.npv >= 0 ? 74 : 28);
+      pdf.text(kpis.npv >= 0 ? 'NPV Positif — Proyek Layak Secara Finansial' : 'NPV Negatif — Proyek Tidak Layak', W / 2, y + 5.5, { align: 'center' });
+      y += 14;
+
+      // Cash flow table
+      pdf.setFontSize(10);
+      pdf.setFont('helvetica', 'bold');
+      pdf.setTextColor(30, 30, 30);
+      pdf.text('Rincian Arus Kas', 10, y);
+      y += 5;
+
+      const headers = ['Tahun', `AEP (GWh)`, 'Pendapatan ($Jt)', 'OPEX ($Jt)', 'Arus Kas Bersih ($Jt)'];
+      const cols = [15, 30, 45, 35, 50];
+      let x = 10;
+      pdf.setFillColor(235, 240, 248);
+      pdf.rect(10, y, W - 20, 7, 'F');
+      pdf.setFontSize(8);
+      pdf.setFont('helvetica', 'bold');
+      pdf.setTextColor(60, 60, 60);
+      headers.forEach((h, i) => { pdf.text(h, x + 2, y + 5); x += cols[i]; });
+      y += 7;
+
+      cashFlows.forEach((row) => {
+        x = 10;
+        pdf.setFont('helvetica', 'normal');
+        pdf.setTextColor(40, 40, 40);
+        if (cashFlows.indexOf(row) % 2 === 0) { pdf.setFillColor(250, 250, 252); pdf.rect(10, y, W - 20, 6.5, 'F'); }
+        const cells = [String(row.year), String(row.energy), row.revenue.toFixed(2), row.opex.toFixed(2), (row.net >= 0 ? '+' : '') + row.net.toFixed(2)];
+        cells.forEach((c, i) => {
+          if (i === 4) pdf.setTextColor(row.net >= 0 ? 22 : 185, row.net >= 0 ? 163 : 28, row.net >= 0 ? 74 : 28);
+          else pdf.setTextColor(40, 40, 40);
+          pdf.text(c, x + 2, y + 4.5); x += cols[i];
+        });
+        y += 6.5;
+      });
+      y += 6;
+
+      // Footer disclaimer
+      pdf.setFontSize(7);
+      pdf.setFont('helvetica', 'italic');
+      pdf.setTextColor(150, 150, 150);
+      pdf.text('Simulasi screening awal. Tidak menggantikan studi kelayakan finansial atau analisis detail konsultan EBT bersertifikat.', 10, y);
+      pdf.text('Sumber: RE-Valid DSS — ERA5/GWA/GSA', 10, y + 4);
+
+      pdf.save(`RE-Valid_Kalkulator_${new Date().toISOString().slice(0, 10)}.pdf`);
+    } finally {
+      setExportingPDF(false);
+    }
+  }
+
+  const cumPoints = useMemo(() => {
+    let cum = -capex;
+    const vals = [cum];
+    for (const cf of cashFlows) {
+      cum += cf.net;
+      vals.push(cum);
+    }
+    const minVal = Math.min(...vals);
+    const maxVal = Math.max(...vals);
+    const range = maxVal - minVal || 1;
+    const norm = (v: number) => 5 + (1 - (v - minVal) / range) * 90;
+    const zeroY = Math.max(5, Math.min(95, norm(0)));
+    const pts = vals.map((v, i) => `${(i / umurProyek) * 100},${norm(v)}`);
+    return {
+      pathD: `M${pts.join(' L')}`,
+      areaD: `M${pts.join(' L')} L100,95 L0,95 Z`,
+      zeroY,
+    };
+  }, [cashFlows, capex, umurProyek]);
 
   return (
     <div className="bg-background-light dark:bg-background-dark font-display text-slate-900 dark:text-white min-h-screen flex flex-col text-sm">
@@ -179,9 +320,15 @@ export default function KalkulatorPage() {
               </div>
             </div>
             <div className="flex gap-3">
-              <button className="flex items-center gap-2 px-4 py-2 bg-slate-200 dark:bg-card-dark text-slate-700 dark:text-white rounded-lg hover:bg-slate-300 dark:hover:bg-border-dark transition-all text-sm font-medium">
-                <span className="material-symbols-outlined text-[18px]">download</span>
-                Ekspor PDF
+              <button
+                onClick={handleExportPDF}
+                disabled={exportingPDF}
+                className="flex items-center gap-2 px-4 py-2 bg-slate-200 dark:bg-card-dark text-slate-700 dark:text-white rounded-lg hover:bg-slate-300 dark:hover:bg-border-dark transition-all text-sm font-medium disabled:opacity-60 disabled:cursor-wait"
+              >
+                {exportingPDF
+                  ? <><span className="material-symbols-outlined text-[18px] animate-spin">refresh</span>Memproses...</>
+                  : <><span className="material-symbols-outlined text-[18px]">download</span>Ekspor PDF</>
+                }
               </button>
             </div>
           </div>
@@ -555,7 +702,6 @@ export default function KalkulatorPage() {
                   <div className="absolute -left-7 top-0 bottom-6 flex flex-col justify-between text-[10px] text-slate-400 font-mono h-full">
                     <span>+</span><span></span><span>0</span><span></span><span>-</span>
                   </div>
-                  <div className="absolute left-0 right-0 top-[50%] border-t border-dashed border-slate-300 dark:border-slate-600 w-full" />
                   <svg className="w-full h-full overflow-visible" preserveAspectRatio="none" viewBox="0 0 100 100">
                     <defs>
                       <linearGradient id="cashGrad" x1="0%" x2="0%" y1="0%" y2="100%">
@@ -563,9 +709,12 @@ export default function KalkulatorPage() {
                         <stop offset="100%" style={{ stopColor: isWind ? '#137fec' : '#f59e0b', stopOpacity: 0 }} />
                       </linearGradient>
                     </defs>
-                    <path d="M0,80 L10,80 L20,75 L30,65 L40,55 L50,45 L60,35 L70,25 L80,15 L90,5 L100,5 L100,80 Z" fill="url(#cashGrad)" opacity="0.2" />
-                    <path d="M0,80 L10,80 L20,75 L30,65 L40,55 L50,45 L60,35 L70,25 L80,15 L90,5 L100,5" fill="none" stroke={isWind ? '#137fec' : '#f59e0b'} strokeLinejoin="round" strokeWidth="2" vectorEffect="non-scaling-stroke" />
-                    <circle cx={Math.min(95, Math.round((kpis.payback / umurProyek) * 100))} cy="50" fill={isWind ? '#137fec' : '#f59e0b'} r="1.5" className="animate-pulse" />
+                    <line x1="0" y1={cumPoints.zeroY} x2="100" y2={cumPoints.zeroY} stroke="#64748b" strokeWidth="0.5" strokeDasharray="2,2" vectorEffect="non-scaling-stroke" />
+                    <path d={cumPoints.areaD} fill="url(#cashGrad)" opacity="0.2" />
+                    <path d={cumPoints.pathD} fill="none" stroke={isWind ? '#137fec' : '#f59e0b'} strokeLinejoin="round" strokeWidth="2" vectorEffect="non-scaling-stroke" />
+                    {kpis.payback < umurProyek && (
+                      <circle cx={Math.min(95, (kpis.payback / umurProyek) * 100)} cy={cumPoints.zeroY} fill={isWind ? '#137fec' : '#f59e0b'} r="1.5" className="animate-pulse" />
+                    )}
                   </svg>
                   <div className="absolute left-0 right-0 -bottom-5 flex justify-between text-[10px] text-slate-400 font-mono w-full">
                     <span>Y0</span><span>Y{Math.round(umurProyek*0.25)}</span><span>Y{Math.round(umurProyek*0.5)}</span><span>Y{Math.round(umurProyek*0.75)}</span><span>Y{umurProyek}</span>
