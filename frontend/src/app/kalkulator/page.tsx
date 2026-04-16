@@ -226,6 +226,110 @@ export default function KalkulatorPage() {
       pdf.text(kpis.npv >= 0 ? 'NPV Positif — Proyek Layak Secara Finansial' : 'NPV Negatif — Proyek Tidak Layak', W / 2, y + 5.5, { align: 'center' });
       y += 14;
 
+      // ── Arus Kas Kumulatif chart ──────────────────────────────────────────
+      pdf.setFontSize(10);
+      pdf.setFont('helvetica', 'bold');
+      pdf.setTextColor(30, 30, 30);
+      pdf.text('Arus Kas Kumulatif', 10, y);
+      y += 5;
+      pdf.setFontSize(8);
+      pdf.setFont('helvetica', 'normal');
+      pdf.setTextColor(100, 100, 100);
+      pdf.text('Akumulasi arus kas bersih terhadap tahun proyek (titik = titik balik modal)', 10, y);
+      y += 6;
+      {
+        const cX = 20;
+        const cW = W - 30;
+        const cH = 52;
+        const cumVals: number[] = [-capex];
+        let cumRun = -capex;
+        for (const cf of cashFlows) { cumRun += cf.net; cumVals.push(cumRun); }
+        const minV = Math.min(...cumVals);
+        const maxV = Math.max(...cumVals);
+        const rangeV = maxV - minV || 1;
+        const cToY = (v: number) => y + cH - ((v - minV) / rangeV) * cH;
+        const cToX = (i: number) => cX + (i / umurProyek) * cW;
+
+        pdf.setFillColor(248, 250, 252);
+        pdf.setDrawColor(210, 215, 220);
+        pdf.setLineWidth(0.2);
+        pdf.rect(cX, y, cW, cH, 'FD');
+
+        pdf.setDrawColor(225, 230, 235);
+        for (let gi = 1; gi <= 4; gi++) {
+          pdf.line(cX, y + (gi / 5) * cH, cX + cW, y + (gi / 5) * cH);
+        }
+
+        if (minV < 0 && maxV > 0) {
+          const zeroY = cToY(0);
+          pdf.setDrawColor(170, 170, 170);
+          pdf.setLineWidth(0.4);
+          pdf.line(cX, zeroY, cX + cW, zeroY);
+          pdf.setFontSize(6);
+          pdf.setTextColor(120, 120, 120);
+          pdf.text('0', cX - 1, zeroY + 1.5, { align: 'right' });
+        }
+
+        pdf.setLineWidth(0.8);
+        for (let i = 1; i < cumVals.length; i++) {
+          const bothPos = cumVals[i] >= 0 && cumVals[i - 1] >= 0;
+          const bothNeg = cumVals[i] < 0 && cumVals[i - 1] < 0;
+          if (bothPos) pdf.setDrawColor(34, 197, 94);
+          else if (bothNeg) pdf.setDrawColor(220, 38, 38);
+          else pdf.setDrawColor(19, 127, 236);
+          pdf.line(cToX(i - 1), cToY(cumVals[i - 1]), cToX(i), cToY(cumVals[i]));
+        }
+
+        if (kpis.payback < umurProyek) {
+          const pbX = cToX(kpis.payback);
+          const pbY = cToY(0);
+          pdf.setFillColor(19, 127, 236);
+          pdf.setDrawColor(255, 255, 255);
+          pdf.setLineWidth(0.3);
+          pdf.circle(pbX, pbY, 1.5, 'FD');
+          pdf.setFontSize(6.5);
+          pdf.setFont('helvetica', 'bold');
+          pdf.setTextColor(19, 127, 236);
+          pdf.text(`Payback Y${kpis.payback.toFixed(1)}`, pbX + 2.5, pbY - 2);
+        }
+
+        pdf.setFontSize(6.5);
+        pdf.setFont('helvetica', 'normal');
+        pdf.setTextColor(100, 100, 100);
+        [0, 0.25, 0.5, 0.75, 1].forEach((t) => {
+          const yr = Math.round(t * umurProyek);
+          pdf.text(`Y${yr}`, cToX(yr), y + cH + 4, { align: 'center' });
+        });
+
+        pdf.setFontSize(6);
+        pdf.text(`${maxV.toFixed(0)}`, cX - 1, y + 2, { align: 'right' });
+        pdf.text(`${minV.toFixed(0)}`, cX - 1, y + cH, { align: 'right' });
+
+        const legY = y + 5;
+        pdf.setFontSize(7);
+        pdf.setDrawColor(34, 197, 94); pdf.setLineWidth(0.8);
+        pdf.line(cX + cW - 55, legY, cX + cW - 47, legY);
+        pdf.setTextColor(50, 50, 50);
+        pdf.text('Arus positif', cX + cW - 46, legY + 1.5);
+        pdf.setDrawColor(220, 38, 38);
+        pdf.line(cX + cW - 28, legY, cX + cW - 20, legY);
+        pdf.text('Arus negatif', cX + cW - 19, legY + 1.5);
+        y += cH + 12;
+      }
+
+      // ── Page 2: Rincian Arus Kas ──────────────────────────────────────────
+      pdf.addPage();
+      y = 18;
+      pdf.setFillColor(19, 127, 236);
+      pdf.rect(0, 0, W, 14, 'F');
+      pdf.setTextColor(255, 255, 255);
+      pdf.setFontSize(11);
+      pdf.setFont('helvetica', 'bold');
+      pdf.text('RE-Valid — Kalkulator Energi & Ekonomi', 10, 9.5);
+      pdf.setFontSize(8);
+      pdf.setFont('helvetica', 'normal');
+      pdf.text(`Simulasi ${isWind ? 'PLTB' : 'PLTS'} — Rincian Arus Kas`, W - 10, 9.5, { align: 'right' });
+
       // Cash flow table
       pdf.setFontSize(10);
       pdf.setFont('helvetica', 'bold');

@@ -1,11 +1,12 @@
 'use client';
 
-import { Suspense, useState } from 'react';
+import { Suspense, useState, useMemo } from 'react';
 import { useSearchParams, useRouter } from 'next/navigation';
 import Link from 'next/link';
 import Navbar from '@/components/Navbar';
 import Footer from '@/components/Footer';
 import { useStations } from '@/hooks/useStations';
+import { useMeasurements } from '@/hooks/useMeasurements';
 
 const statusLabel: Record<string, string> = {
   prioritas: 'Prioritas',
@@ -37,6 +38,35 @@ function LaporanContent() {
   const router = useRouter();
   const stationId = searchParams.get('station') ?? stations[0].id;
   const station = stations.find((s) => s.id === stationId) ?? stations[0];
+
+  const { measurements } = useMeasurements(stationId);
+  const chartData = useMemo(() => {
+    const scaleFactor = 1.046;
+    const daily = measurements.map((m) => ({
+      obs: parseFloat((m.wind_speed ?? 0).toString()),
+      baseline: parseFloat(((m.wind_speed ?? 0) * scaleFactor).toFixed(2)),
+    }));
+    const groups = new Map<string, { obs: number[]; base: number[] }>();
+    measurements.forEach((m, i) => {
+      const key = new Date(m.measured_at).toLocaleDateString('id-ID', { month: 'short', year: '2-digit' });
+      if (!groups.has(key)) groups.set(key, { obs: [], base: [] });
+      const g = groups.get(key)!;
+      g.obs.push(daily[i].obs);
+      g.base.push(daily[i].baseline);
+    });
+    return [...groups.entries()].map(([date, g]) => ({
+      date,
+      obs: parseFloat((g.obs.reduce((a, b) => a + b, 0) / g.obs.length).toFixed(2)),
+      baseline: parseFloat((g.base.reduce((a, b) => a + b, 0) / g.base.length).toFixed(2)),
+    }));
+  }, [measurements]);
+  const scatterData = useMemo(() => {
+    const scaleFactor = 1.046;
+    return measurements.map((m) => ({
+      obs: parseFloat((m.wind_speed ?? 0).toString()),
+      baseline: parseFloat(((m.wind_speed ?? 0) * scaleFactor).toFixed(2)),
+    }));
+  }, [measurements]);
 
   const [exporting, setExporting] = useState<'pdf' | 'csv' | 'geojson' | null>(null);
 
@@ -137,13 +167,171 @@ function LaporanContent() {
       mcdaFactors.forEach((f) => row(f.label, `${f.pct}%`));
       y += 3;
 
-      // Footer
+      // Footer page 1
       pdf.setFontSize(7);
       pdf.setFont('helvetica', 'italic');
       pdf.setTextColor(160, 160, 160);
       pdf.text('Sumber referensi: ERA5 (ECMWF) · GWA 3.0 · GSA/SOLARGIS · RE-Valid DSS', 10, y);
       y += 4;
       pdf.text(`Periode: ${station.period}  ·  Referensi MCP: ERA5 (ECMWF)  ·  Atlas baseline: GWA/GSA`, 10, y);
+
+      // ── Page 2: Grafik Visualisasi & Korelasi ─────────────────────────────
+      pdf.addPage();
+      y = 18;
+      pdf.setFillColor(19, 127, 236);
+      pdf.rect(0, 0, W, 14, 'F');
+      pdf.setTextColor(255, 255, 255);
+      pdf.setFontSize(11);
+      pdf.setFont('helvetica', 'bold');
+      pdf.text('RE-Valid — Grafik Validasi', 10, 9.5);
+      pdf.setFontSize(8);
+      pdf.setFont('helvetica', 'normal');
+      pdf.text(`${station.name} (${station.id})`, W - 10, 9.5, { align: 'right' });
+
+      if (chartData.length === 0) {
+        pdf.setFontSize(9);
+        pdf.setFont('helvetica', 'italic');
+        pdf.setTextColor(150, 150, 150);
+        pdf.text('Data pengukuran tidak tersedia. Pastikan backend aktif dan data telah diunggah.', W / 2, 110, { align: 'center' });
+      } else {
+        // ── Chart 1: Visualisasi Perbandingan Data ──────────────────────────
+        pdf.setFontSize(10);
+        pdf.setFont('helvetica', 'bold');
+        pdf.setTextColor(30, 30, 30);
+        pdf.text('Visualisasi Perbandingan Data', 10, y);
+        y += 5;
+        pdf.setFontSize(8);
+        pdf.setFont('helvetica', 'normal');
+        pdf.setTextColor(100, 100, 100);
+        pdf.text('Kecepatan angin rata-rata bulanan — ERA5 (baseline) vs Observasi lapangan  (m/s)', 10, y);
+        y += 6;
+        {
+          const tsX = 20;
+          const tsW = W - 30;
+          const tsH = 48;
+          const tsObsArr = chartData.map((d) => d.obs);
+          const tsBslArr = chartData.map((d) => d.baseline);
+          const tsMin = Math.min(...tsObsArr, ...tsBslArr) * 0.85;
+          const tsMax = Math.max(...tsObsArr, ...tsBslArr) * 1.1;
+          const tsRange = tsMax - tsMin || 1;
+          const tsToY = (v: number) => y + tsH - ((v - tsMin) / tsRange) * tsH;
+          const tsToX = (i: number) => tsX + (i / Math.max(chartData.length - 1, 1)) * tsW;
+
+          pdf.setFillColor(248, 250, 252);
+          pdf.setDrawColor(210, 215, 220);
+          pdf.setLineWidth(0.2);
+          pdf.rect(tsX, y, tsW, tsH, 'FD');
+          pdf.setDrawColor(225, 230, 235);
+          for (let tg = 1; tg <= 4; tg++) {
+            pdf.line(tsX, y + (tg / 5) * tsH, tsX + tsW, y + (tg / 5) * tsH);
+          }
+
+          pdf.setDrawColor(19, 127, 236);
+          pdf.setLineWidth(0.7);
+          for (let i = 1; i < chartData.length; i++) {
+            pdf.line(tsToX(i - 1), tsToY(tsBslArr[i - 1]), tsToX(i), tsToY(tsBslArr[i]));
+          }
+          pdf.setDrawColor(249, 115, 22);
+          pdf.setLineWidth(0.7);
+          for (let i = 1; i < chartData.length; i++) {
+            pdf.line(tsToX(i - 1), tsToY(tsObsArr[i - 1]), tsToX(i), tsToY(tsObsArr[i]));
+          }
+          pdf.setFillColor(249, 115, 22);
+          chartData.forEach((_, i) => {
+            pdf.circle(tsToX(i), tsToY(tsObsArr[i]), 0.8, 'F');
+          });
+
+          pdf.setFontSize(6);
+          pdf.setFont('helvetica', 'normal');
+          pdf.setTextColor(100, 100, 100);
+          chartData.forEach((d, i) => {
+            if (i % 2 === 0 || i === chartData.length - 1) {
+              pdf.text(d.date, tsToX(i), y + tsH + 4, { align: 'center' });
+            }
+          });
+          pdf.text(`${tsMax.toFixed(1)}`, tsX - 1, y + 2, { align: 'right' });
+          pdf.text(`${tsMin.toFixed(1)}`, tsX - 1, y + tsH, { align: 'right' });
+
+          const tsLegY = y + 4;
+          pdf.setFontSize(7);
+          pdf.setDrawColor(19, 127, 236); pdf.setLineWidth(0.8);
+          pdf.line(tsX + tsW - 52, tsLegY, tsX + tsW - 44, tsLegY);
+          pdf.setTextColor(50, 50, 50);
+          pdf.text('ERA5', tsX + tsW - 43, tsLegY + 1.5);
+          pdf.setDrawColor(249, 115, 22);
+          pdf.line(tsX + tsW - 27, tsLegY, tsX + tsW - 19, tsLegY);
+          pdf.text('Observasi', tsX + tsW - 18, tsLegY + 1.5);
+          y += tsH + 12;
+        }
+
+        // ── Chart 2: Analisis Korelasi ───────────────────────────────────────
+        pdf.setFontSize(10);
+        pdf.setFont('helvetica', 'bold');
+        pdf.setTextColor(30, 30, 30);
+        pdf.text('Analisis Korelasi', 10, y);
+        y += 5;
+        pdf.setFontSize(8);
+        pdf.setFont('helvetica', 'normal');
+        pdf.setTextColor(100, 100, 100);
+        pdf.text(`ERA5 vs Observasi  ·  R² = ${station.r2.toFixed(2)}  ·  RMSE = ${station.rmse.toFixed(2)} m/s  ·  Bias = ${station.bias > 0 ? '+' : ''}${station.bias.toFixed(1)}%`, 10, y);
+        y += 6;
+        {
+          const scSize = 68;
+          const scX = W / 2 - scSize / 2;
+          const allPts = scatterData;
+          const scMin = Math.min(...allPts.map((d) => Math.min(d.obs, d.baseline)), 0);
+          const scMax = Math.max(...allPts.map((d) => Math.max(d.obs, d.baseline))) * 1.05 || 10;
+          const scRange = scMax - scMin || 1;
+          const scToX = (v: number) => scX + ((v - scMin) / scRange) * scSize;
+          const scToY = (v: number) => y + scSize - ((v - scMin) / scRange) * scSize;
+
+          pdf.setFillColor(248, 250, 252);
+          pdf.setDrawColor(210, 215, 220);
+          pdf.setLineWidth(0.2);
+          pdf.rect(scX, y, scSize, scSize, 'FD');
+          pdf.setDrawColor(225, 230, 235);
+          for (let sg = 1; sg <= 3; sg++) {
+            pdf.line(scX, y + (sg / 4) * scSize, scX + scSize, y + (sg / 4) * scSize);
+            pdf.line(scX + (sg / 4) * scSize, y, scX + (sg / 4) * scSize, y + scSize);
+          }
+
+          pdf.setDrawColor(160, 160, 160);
+          pdf.setLineWidth(0.4);
+          pdf.line(scX, y + scSize, scX + scSize, y);
+
+          pdf.setFillColor(19, 127, 236);
+          const maxDots = Math.min(allPts.length, 200);
+          for (let i = 0; i < maxDots; i++) {
+            const d = allPts[i];
+            pdf.rect(scToX(d.baseline) - 0.4, scToY(d.obs) - 0.4, 0.8, 0.8, 'F');
+          }
+
+          pdf.setFontSize(6);
+          pdf.setFont('helvetica', 'normal');
+          pdf.setTextColor(100, 100, 100);
+          pdf.text('ERA5 →', scX + scSize / 2, y + scSize + 4, { align: 'center' });
+          pdf.text(`${scMin.toFixed(1)}`, scX, y + scSize + 4, { align: 'left' });
+          pdf.text(`${scMax.toFixed(1)}`, scX + scSize, y + scSize + 4, { align: 'right' });
+          pdf.text(`${scMax.toFixed(1)}`, scX - 1, y + 2, { align: 'right' });
+          pdf.text(`${scMin.toFixed(1)}`, scX - 1, y + scSize, { align: 'right' });
+          pdf.text('Obs', scX - 1, y + scSize / 2, { align: 'right' });
+
+          pdf.setFontSize(7);
+          pdf.setTextColor(50, 50, 50);
+          pdf.setFillColor(19, 127, 236);
+          pdf.rect(scX + scSize + 5, y + 4, 3, 3, 'F');
+          pdf.text('Data harian', scX + scSize + 9, y + 6.5);
+          pdf.setDrawColor(160, 160, 160); pdf.setLineWidth(0.4);
+          pdf.line(scX + scSize + 5, y + 12, scX + scSize + 8, y + 12);
+          pdf.text('Garis y = x', scX + scSize + 9, y + 13.5);
+          y += scSize + 12;
+        }
+      }
+
+      pdf.setFontSize(7);
+      pdf.setFont('helvetica', 'italic');
+      pdf.setTextColor(160, 160, 160);
+      pdf.text('RE-Valid DSS — Halaman 2/2  ·  ERA5/GWA/GSA', W / 2, y, { align: 'center' });
 
       pdf.save(`RE-Valid_Laporan_${station.id}_${new Date().toISOString().slice(0, 10)}.pdf`);
     } finally {
