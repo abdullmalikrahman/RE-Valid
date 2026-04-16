@@ -510,7 +510,7 @@ function AnalisisContent() {
                     cursor={{ strokeDasharray: '3 3' }}
                     contentStyle={{ backgroundColor: '#1c2630', border: '1px solid #2d3b4a', borderRadius: '8px', fontSize: 11 }}
                   />
-                  <Scatter data={scatterData} fill={isWind ? '#137fec' : '#f59e0b'} opacity={0.55} size={18} />
+                  <Scatter data={scatterData} fill={isWind ? '#137fec' : '#f59e0b'} opacity={0.55} />
                   {/* y = x reference line: perfect agreement */}
                   <ReferenceLine
                     segment={[{ x: scatterMin, y: scatterMin }, { x: scatterMax, y: scatterMax }]}

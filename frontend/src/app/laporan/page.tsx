@@ -40,12 +40,20 @@ function LaporanContent() {
   const station = stations.find((s) => s.id === stationId) ?? stations[0];
 
   const { measurements } = useMeasurements(stationId);
+              
+  // Gunakan data angin jika stasiun memiliki variabel angin, surya jika tidak
+  const chartIsWind = station.variables.toLowerCase().includes('angin');
+  const chartScaleFactor = chartIsWind ? 1.046 : 0.958;
+  const chartUnit = chartIsWind ? 'm/s' : 'kWh/m²/hari';
+  const chartLabel = chartIsWind ? 'Kecepatan angin rata-rata bulanan (m/s)' : 'GHI rata-rata bulanan (kWh/m²/hari)';
+
   const chartData = useMemo(() => {
-    const scaleFactor = 1.046;
-    const daily = measurements.map((m) => ({
-      obs: parseFloat((m.wind_speed ?? 0).toString()),
-      baseline: parseFloat(((m.wind_speed ?? 0) * scaleFactor).toFixed(2)),
-    }));
+    const daily = measurements.map((m) => {
+      const raw = chartIsWind
+        ? parseFloat((m.wind_speed ?? 0).toString())
+        : parseFloat(((m.ghi ?? 0) * 24 / 1000).toFixed(2));
+      return { obs: raw, baseline: parseFloat((raw * chartScaleFactor).toFixed(2)) };
+    });
     const groups = new Map<string, { obs: number[]; base: number[] }>();
     measurements.forEach((m, i) => {
       const key = new Date(m.measured_at).toLocaleDateString('id-ID', { month: 'short', year: '2-digit' });
@@ -59,14 +67,16 @@ function LaporanContent() {
       obs: parseFloat((g.obs.reduce((a, b) => a + b, 0) / g.obs.length).toFixed(2)),
       baseline: parseFloat((g.base.reduce((a, b) => a + b, 0) / g.base.length).toFixed(2)),
     }));
-  }, [measurements]);
+  }, [measurements, chartIsWind, chartScaleFactor]);
+
   const scatterData = useMemo(() => {
-    const scaleFactor = 1.046;
-    return measurements.map((m) => ({
-      obs: parseFloat((m.wind_speed ?? 0).toString()),
-      baseline: parseFloat(((m.wind_speed ?? 0) * scaleFactor).toFixed(2)),
-    }));
-  }, [measurements]);
+    return measurements.map((m) => {
+      const raw = chartIsWind
+        ? parseFloat((m.wind_speed ?? 0).toString())
+        : parseFloat(((m.ghi ?? 0) * 24 / 1000).toFixed(2));
+      return { obs: raw, baseline: parseFloat((raw * chartScaleFactor).toFixed(2)) };
+    });
+  }, [measurements, chartIsWind, chartScaleFactor]);
 
   const [exporting, setExporting] = useState<'pdf' | 'csv' | 'geojson' | null>(null);
 
@@ -203,7 +213,7 @@ function LaporanContent() {
         pdf.setFontSize(8);
         pdf.setFont('helvetica', 'normal');
         pdf.setTextColor(100, 100, 100);
-        pdf.text('Kecepatan angin rata-rata bulanan — ERA5 (baseline) vs Observasi lapangan  (m/s)', 10, y);
+        pdf.text(`${chartLabel}  —  ERA5/GSA (baseline) vs Observasi lapangan`, 10, y);
         y += 6;
         {
           const tsX = 20;
@@ -251,13 +261,15 @@ function LaporanContent() {
           });
           pdf.text(`${tsMax.toFixed(1)}`, tsX - 1, y + 2, { align: 'right' });
           pdf.text(`${tsMin.toFixed(1)}`, tsX - 1, y + tsH, { align: 'right' });
+          pdf.setFontSize(6);
+          pdf.text(chartUnit, tsX - 1, y + tsH / 2, { align: 'right' });
 
           const tsLegY = y + 4;
           pdf.setFontSize(7);
           pdf.setDrawColor(19, 127, 236); pdf.setLineWidth(0.8);
           pdf.line(tsX + tsW - 52, tsLegY, tsX + tsW - 44, tsLegY);
           pdf.setTextColor(50, 50, 50);
-          pdf.text('ERA5', tsX + tsW - 43, tsLegY + 1.5);
+          pdf.text('ERA5/GSA', tsX + tsW - 43, tsLegY + 1.5);
           pdf.setDrawColor(249, 115, 22);
           pdf.line(tsX + tsW - 27, tsLegY, tsX + tsW - 19, tsLegY);
           pdf.text('Observasi', tsX + tsW - 18, tsLegY + 1.5);
@@ -273,7 +285,7 @@ function LaporanContent() {
         pdf.setFontSize(8);
         pdf.setFont('helvetica', 'normal');
         pdf.setTextColor(100, 100, 100);
-        pdf.text(`ERA5 vs Observasi  ·  R² = ${station.r2.toFixed(2)}  ·  RMSE = ${station.rmse.toFixed(2)} m/s  ·  Bias = ${station.bias > 0 ? '+' : ''}${station.bias.toFixed(1)}%`, 10, y);
+        pdf.text(`ERA5/GSA vs Observasi  ·  R² = ${station.r2.toFixed(2)}  ·  RMSE = ${station.rmse.toFixed(2)} ${chartIsWind ? 'm/s' : 'kWh/m²/hari'}  ·  Bias = ${station.bias > 0 ? '+' : ''}${station.bias.toFixed(1)}%`, 10, y);
         y += 6;
         {
           const scSize = 68;
