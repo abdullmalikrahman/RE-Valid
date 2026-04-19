@@ -24,6 +24,18 @@ export interface Station {
   photo?: string;
 }
 
+// ─── Relative time formatter (works with ISO timestamp strings) ──────────────
+export function relativeTime(iso: string): string {
+  const diff = Date.now() - new Date(iso).getTime();
+  const secs = Math.floor(diff / 1000);
+  if (secs < 60) return `${secs} dtk lalu`;
+  const mins = Math.floor(secs / 60);
+  if (mins < 60) return `${mins} mnt lalu`;
+  const hours = Math.floor(mins / 60);
+  if (hours < 24) return `${hours} jam lalu`;
+  return `${Math.floor(hours / 24)} hari lalu`;
+}
+
 export const stations: Station[] = [
   {
     id: 'GWY-089',
@@ -34,7 +46,7 @@ export const stations: Station[] = [
     altitude: 1820,
     status: 'prioritas',
     score: 92,
-    lastUpdate: '5 mnt lalu',
+    lastUpdate: '2026-04-20T09:55:00Z',
     period: 'Jan 2023 – Des 2023',
     variables: 'Angin, Iradiasi',
     mcpStatus: 'selesai',
@@ -54,7 +66,7 @@ export const stations: Station[] = [
     altitude: 752,
     status: 'prioritas',
     score: 87,
-    lastUpdate: '8 mnt lalu',
+    lastUpdate: '2026-04-20T09:52:00Z',
     period: 'Jan 2023 – Des 2023',
     variables: 'Angin, Iradiasi',
     mcpStatus: 'selesai',
@@ -74,7 +86,7 @@ export const stations: Station[] = [
     altitude: 12,
     status: 'kandidat',
     score: 71,
-    lastUpdate: '2 jam lalu',
+    lastUpdate: '2026-04-20T08:00:00Z',
     period: 'Mar 2023 – Des 2023',
     variables: 'Angin, Iradiasi',
     mcpStatus: 'berjalan',
@@ -94,7 +106,7 @@ export const stations: Station[] = [
     altitude: 48,
     status: 'tidak_sesuai',
     score: 44,
-    lastUpdate: '4 hari lalu',
+    lastUpdate: '2026-04-16T10:00:00Z',
     period: '—',
     variables: 'Surya',
     mcpStatus: 'pending',
@@ -114,7 +126,7 @@ export const stations: Station[] = [
     altitude: 730,
     status: 'kandidat',
     score: 76,
-    lastUpdate: '45 mnt lalu',
+    lastUpdate: '2026-04-20T09:15:00Z',
     period: 'Feb 2023 – Des 2023',
     variables: 'Angin, Iradiasi',
     mcpStatus: 'selesai',
@@ -134,7 +146,7 @@ export const stations: Station[] = [
     altitude: 368,
     status: 'kandidat',
     score: 68,
-    lastUpdate: '1.5 jam lalu',
+    lastUpdate: '2026-04-20T08:30:00Z',
     period: 'Jan 2023 – Sep 2023',
     variables: 'Angin',
     mcpStatus: 'berjalan',

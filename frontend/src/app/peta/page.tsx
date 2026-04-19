@@ -2,9 +2,9 @@
 
 import dynamic from 'next/dynamic';
 import Link from 'next/link';
-import { useState, useCallback } from 'react';
+import { useState, useCallback, useEffect, useRef } from 'react';
 import Navbar from '@/components/Navbar';
-import { windHeatPoints, solarHeatPoints, type Station } from '@/lib/stationData';
+import { windHeatPoints, solarHeatPoints, relativeTime, type Station } from '@/lib/stationData';
 import { useStations } from '@/hooks/useStations';
 
 // Leaflet must be client-side only (no SSR)
@@ -56,8 +56,18 @@ function StationPanel({
     pending: 'Pending',
   };
 
+  useEffect(() => {
+    function onKey(e: KeyboardEvent) { if (e.key === 'Escape') onClose(); }
+    document.addEventListener('keydown', onKey);
+    return () => document.removeEventListener('keydown', onKey);
+  }, [onClose]);
+
   return (
-    <div className="absolute top-4 bottom-4 right-16 w-80 bg-white/95 dark:bg-panel-dark/95 backdrop-blur-md border border-slate-200 dark:border-[#233648] rounded-xl shadow-2xl z-1000 flex flex-col overflow-hidden">
+    <div className="fixed left-0 right-0 bottom-0 max-h-[75vh] rounded-t-2xl lg:absolute lg:left-auto lg:right-16 lg:top-4 lg:bottom-4 lg:max-h-none lg:w-80 lg:rounded-xl bg-white/95 dark:bg-panel-dark/95 backdrop-blur-md border border-slate-200 dark:border-[#233648] shadow-2xl z-1000 flex flex-col overflow-hidden">
+      {/* Mobile drag handle */}
+      <div className="lg:hidden flex justify-center pt-2 pb-1 shrink-0">
+        <div className="w-8 h-1 bg-slate-300 dark:bg-slate-600 rounded-full" />
+      </div>
       <div className="p-4 border-b border-slate-200 dark:border-[#233648] flex justify-between items-start bg-slate-50/50 dark:bg-[#192633]/50 shrink-0">
         <div className="flex-1 min-w-0">
           <div className="flex items-center gap-2 mb-1">
@@ -67,7 +77,7 @@ function StationPanel({
             </span>
             <span className="text-[11px] text-slate-400 ml-auto whitespace-nowrap flex items-center gap-1">
               <span className="material-symbols-outlined text-[13px]">schedule</span>
-              {station.lastUpdate}
+              {relativeTime(station.lastUpdate)}
             </span>
           </div>
           <h2 className="text-[17px] font-bold text-slate-900 dark:text-white leading-tight">{station.name}</h2>
@@ -171,38 +181,22 @@ function StationPanel({
           </div>
         </section>
 
-        <section>
-          <h3 className="text-[13px] font-bold text-slate-900 dark:text-white mb-2 flex items-center gap-1.5">
-            <span className="material-symbols-outlined text-emerald-400 text-[17px]">layers</span>
-            Faktor Kesesuaian GIS-MCDA
-          </h3>
-          <div className="space-y-2">
-            {[
-              { label: 'Potensi EBT', pct: Math.min(100, station.score + 5) },
-              { label: 'Topografi', pct: station.altitude > 500 ? 80 : 55 },
-              { label: 'Aksesibilitas', pct: station.altitude > 1000 ? 55 : 75 },
-              { label: 'Infrastruktur', pct: Math.max(30, station.score - 15) },
-            ].map((f) => (
-              <div key={f.label}>
-                <div className="flex justify-between text-[11px] text-slate-500 dark:text-text-secondary mb-0.5">
-                  <span>{f.label}</span><span>{f.pct}%</span>
-                </div>
-                <div className="h-1.5 rounded-full bg-slate-200 dark:bg-[#233648]">
-                  <div className="h-1.5 rounded-full bg-primary" style={{ width: `${f.pct}%` }} />
-                </div>
-              </div>
-            ))}
-          </div>
-        </section>
       </div>
 
-      <div className="p-4 border-t border-slate-200 dark:border-[#233648] shrink-0">
+      <div className="p-4 border-t border-slate-200 dark:border-[#233648] shrink-0 flex gap-2">
+        <Link
+          href={`/analisis?station=${station.id}`}
+          className="flex-1 flex items-center justify-center gap-1.5 rounded-lg h-10 px-3 border border-primary text-primary hover:bg-primary hover:text-white text-[12px] font-bold transition-all"
+        >
+          <span className="material-symbols-outlined text-[15px]">bar_chart</span>
+          <span>Analisis</span>
+        </Link>
         <Link
           href={`/laporan?station=${station.id}`}
-          className="w-full flex items-center justify-center gap-2 rounded-lg h-10 px-4 bg-primary hover:bg-blue-600 text-white text-[13px] font-bold shadow-lg shadow-blue-500/20 transition-all"
+          className="flex-1 flex items-center justify-center gap-1.5 rounded-lg h-10 px-3 bg-primary hover:bg-blue-600 text-white text-[12px] font-bold shadow-lg shadow-blue-500/20 transition-all"
         >
-          <span>Lihat Laporan Lengkap</span>
-          <span className="material-symbols-outlined text-[16px]">arrow_forward</span>
+          <span className="material-symbols-outlined text-[15px]">description</span>
+          <span>Laporan</span>
         </Link>
       </div>
     </div>
@@ -210,18 +204,28 @@ function StationPanel({
 }
 
 // --- Analisis Modal ---
-function AnalisisModal({ onClose }: { onClose: () => void }) {
-  const [loading, setLoading] = useState(false);
+function AnalisisModal({ onClose, stations }: { onClose: () => void; stations: Station[] }) {
   const [done, setDone] = useState(false);
 
+  useEffect(() => {
+    function onKey(e: KeyboardEvent) { if (e.key === 'Escape') onClose(); }
+    document.addEventListener('keydown', onKey);
+    return () => document.removeEventListener('keydown', onKey);
+  }, [onClose]);
+
   function runAnalysis() {
-    setLoading(true);
-    setTimeout(() => { setLoading(false); setDone(true); }, 2200);
+    setDone(true);
   }
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm px-4">
-      <div className="bg-white dark:bg-panel-dark border border-slate-200 dark:border-[#233648] rounded-2xl shadow-2xl w-full max-w-lg overflow-hidden">
+    <div
+      className="fixed inset-0 z-2000 flex items-center justify-center bg-black/60 backdrop-blur-sm px-4"
+      onClick={onClose}
+    >
+      <div
+        className="bg-white dark:bg-panel-dark border border-slate-200 dark:border-[#233648] rounded-2xl shadow-2xl w-full max-w-lg overflow-hidden"
+        onClick={(e) => e.stopPropagation()}
+      >
         <div className="flex items-center justify-between px-6 py-4 border-b border-slate-200 dark:border-[#233648]">
           <div className="flex items-center gap-2">
             <span className="material-symbols-outlined text-primary text-[22px]">analytics</span>
@@ -235,14 +239,14 @@ function AnalisisModal({ onClose }: { onClose: () => void }) {
           {!done ? (
             <>
               <p className="text-[13px] text-slate-500 dark:text-text-secondary">
-                Analisis GIS-MCDA menggabungkan data validasi lapangan, potensi EBT, topografi, aksesibilitas, dan infrastruktur untuk memprioritaskan lokasi di Jawa Barat.
+                Peringkat lokasi berdasarkan skor kesesuaian yang dihitung dari data validasi lapangan: kecepatan angin, iradiasi surya, RMSE, R², Bias, dan ketinggian stasiun.
               </p>
               <div className="grid grid-cols-2 gap-3 text-[12px]">
                 {[
                   { icon: 'sensors', label: 'Stasiun Aktif', value: `${stations.filter(s => s.status !== 'tidak_sesuai').length} lokasi` },
-                  { icon: 'layers', label: 'Kriteria MCDA', value: '8 faktor' },
+                  { icon: 'layers', label: 'Kriteria Skor', value: '6 variabel' },
                   { icon: 'area_chart', label: 'Cakupan', value: 'Jawa Barat' },
-                  { icon: 'schedule', label: 'Est. Waktu', value: '~2 detik' },
+                  { icon: 'schedule', label: 'Est. Waktu', value: 'Instan' },
                 ].map((s) => (
                   <div key={s.label} className="bg-slate-50 dark:bg-[#111a22] rounded-lg p-3 border border-slate-200 dark:border-[#233648] flex items-center gap-2.5">
                     <span className="material-symbols-outlined text-primary text-[18px]">{s.icon}</span>
@@ -253,12 +257,8 @@ function AnalisisModal({ onClose }: { onClose: () => void }) {
                   </div>
                 ))}
               </div>
-              <button onClick={runAnalysis} disabled={loading} className="w-full flex items-center justify-center gap-2 h-10 rounded-lg bg-primary hover:bg-blue-600 disabled:opacity-60 text-white font-bold text-[13px] transition-all">
-                {loading ? (
-                  <><span className="material-symbols-outlined animate-spin text-[18px]">progress_activity</span>Menganalisis...</>
-                ) : (
-                  <><span className="material-symbols-outlined text-[18px]">play_arrow</span>Jalankan Analisis</>
-                )}
+              <button onClick={runAnalysis} className="w-full flex items-center justify-center gap-2 h-10 rounded-lg bg-primary hover:bg-blue-600 text-white font-bold text-[13px] transition-all">
+                <span className="material-symbols-outlined text-[18px]">play_arrow</span>Jalankan Analisis
               </button>
             </>
           ) : (
@@ -267,7 +267,7 @@ function AnalisisModal({ onClose }: { onClose: () => void }) {
                 <span className="material-symbols-outlined text-[24px]">check_circle</span>
                 <span className="font-bold text-[14px]">Analisis selesai</span>
               </div>
-              <div className="space-y-2">
+              <div className="space-y-2 max-h-64 overflow-y-auto pr-1">
                 {[...stations].sort((a, b) => b.score - a.score).map((s, i) => (
                   <Link key={s.id} href={`/analisis?station=${s.id}`} className="flex items-center gap-3 bg-slate-50 dark:bg-[#111a22] p-3 rounded-lg border border-slate-200 dark:border-[#233648] hover:border-primary hover:bg-blue-50 dark:hover:bg-[#0d1c2a] transition-colors group">
                     <span className="text-[12px] font-bold text-slate-400 w-4 shrink-0">#{i + 1}</span>
@@ -312,28 +312,56 @@ export default function PetaPage() {
   const [showSatellite, setShowSatellite] = useState(false);
   const [showStations, setShowStations] = useState(true);
   const [showMCDA, setShowMCDA] = useState(false);
-  // Constraint & Infrastruktur
-  const [showConstraints, setShowConstraints] = useState(false);
-  const [showJaringanListrik, setShowJaringanListrik] = useState(false);
-  const [showAksesJalan, setShowAksesJalan] = useState(false);
-  const [showBufferPermukiman, setShowBufferPermukiman] = useState(false);
-  const [showTopografi, setShowTopografi] = useState(false);
-
-  const [filterPriority, setFilterPriority] = useState<'all' | 'prioritas' | 'kandidat'>('all');
+  const [filterPriority, setFilterPriority] = useState<'all' | 'prioritas' | 'kandidat' | 'tidak_sesuai'>('all');
   const [showAnalisis, setShowAnalisis] = useState(false);
   const [searchQuery, setSearchQuery] = useState('');
+  const [showMobileSidebar, setShowMobileSidebar] = useState(false);
 
   const handleSelectStation = useCallback((s: Station | null) => setSelectedStation(s), []);
 
-  const filteredStations = stations.filter((s) => {
-    const matchFilter = filterPriority === 'all' || s.status === filterPriority;
-    const matchSearch =
-      searchQuery === '' ||
-      s.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
-      s.id.toLowerCase().includes(searchQuery.toLowerCase()) ||
-      s.region.toLowerCase().includes(searchQuery.toLowerCase());
-    return matchFilter && matchSearch;
-  });
+  const searchRef = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    function handleClickOutside(e: MouseEvent) {
+      if (searchRef.current && !searchRef.current.contains(e.target as Node)) {
+        setSearchQuery('');
+      }
+    }
+    function handleEsc(e: KeyboardEvent) {
+      if (e.key === 'Escape' && searchQuery) {
+        // Stop propagation so StationPanel's ESC listener doesn't also fire
+        e.stopImmediatePropagation();
+        setSearchQuery('');
+      }
+    }
+    document.addEventListener('mousedown', handleClickOutside);
+    // Use capture:true so this fires before StationPanel's bubble-phase listener
+    document.addEventListener('keydown', handleEsc, { capture: true });
+    return () => {
+      document.removeEventListener('mousedown', handleClickOutside);
+      document.removeEventListener('keydown', handleEsc, { capture: true });
+    };
+  }, [searchQuery]);
+
+  // Search searches ALL stations regardless of active filter
+  const searchResults = searchQuery === ''
+    ? []
+    : stations.filter((s) =>
+        s.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
+        s.id.toLowerCase().includes(searchQuery.toLowerCase()) ||
+        s.region.toLowerCase().includes(searchQuery.toLowerCase())
+      );
+
+  // Main list & map follow the status filter only
+  const filteredStations = stations.filter(
+    (s) => filterPriority === 'all' || s.status === filterPriority
+  );
+
+  // Clear selected station if it is no longer in the filtered list
+  useEffect(() => {
+    if (selectedStation && !filteredStations.some((s) => s.id === selectedStation.id)) {
+      setSelectedStation(null);
+    }
+  }, [filteredStations, selectedStation]);
 
   return (
     <div className="bg-background-light dark:bg-background-dark text-slate-900 dark:text-white font-display overflow-hidden h-screen flex flex-col">
@@ -341,11 +369,26 @@ export default function PetaPage() {
 
       <main className="flex-1 relative flex overflow-hidden">
 
+        {/* Mobile sidebar backdrop */}
+        {showMobileSidebar && (
+          <div
+            className="lg:hidden fixed inset-0 top-14 bg-black/50 z-30"
+            onClick={() => setShowMobileSidebar(false)}
+          />
+        )}
+
         {/* Sidebar */}
-        <aside className="hidden lg:flex w-72 flex-col border-r border-slate-200 dark:border-[#233648] bg-white dark:bg-[#111a22] z-20 shrink-0">
+        <aside className={`flex flex-col border-r border-slate-200 dark:border-[#233648] bg-white dark:bg-[#111a22] shrink-0 fixed top-14 bottom-0 left-0 z-40 w-72 transition-transform duration-300 ease-in-out ${showMobileSidebar ? 'translate-x-0' : '-translate-x-full'} lg:relative lg:top-auto lg:bottom-auto lg:left-auto lg:z-20 lg:translate-x-0`}>
+          {/* Mobile close button */}
+          <div className="lg:hidden flex items-center justify-between px-4 py-3 border-b border-slate-200 dark:border-[#233648] shrink-0">
+            <span className="text-[12px] font-bold text-slate-500 dark:text-text-secondary uppercase tracking-wider">Kontrol Peta</span>
+            <button onClick={() => setShowMobileSidebar(false)} className="p-1 text-slate-400 hover:text-slate-600 dark:hover:text-white rounded-lg hover:bg-slate-100 dark:hover:bg-[#233648] transition-colors">
+              <span className="material-symbols-outlined text-[22px]">close</span>
+            </button>
+          </div>
           <div className="p-4 flex flex-col h-full overflow-hidden">
 
-            <div className="mb-4">
+            <div className="mb-4" ref={searchRef}>
               <div className="flex w-full items-center rounded-lg border border-slate-200 dark:border-[#233648] bg-slate-50 dark:bg-[#192633] focus-within:ring-2 focus-within:ring-primary/50 px-3 h-10">
                 <span className="material-symbols-outlined text-slate-400 text-[20px] shrink-0">search</span>
                 <input
@@ -360,21 +403,29 @@ export default function PetaPage() {
                   </button>
                 )}
               </div>
-              {searchQuery && filteredStations.length > 0 && (
+              {searchQuery && searchResults.length > 0 && (
                 <div className="mt-1 bg-white dark:bg-[#192633] border border-slate-200 dark:border-[#233648] rounded-lg shadow-xl overflow-hidden z-30 relative">
-                  {filteredStations.map((s) => (
-                    <button key={s.id} onClick={() => { setSelectedStation(s); setSearchQuery(''); }}
+                  {searchResults.map((s) => (
+                    <button key={s.id} onClick={() => {
+                      setSelectedStation(s);
+                      setSearchQuery('');
+                      setShowMobileSidebar(false);
+                      // If the selected station is not in the current filter, reset to 'all'
+                      if (filterPriority !== 'all' && s.status !== filterPriority) {
+                        setFilterPriority('all');
+                      }
+                    }}
                       className="w-full flex items-center gap-2.5 px-3 py-2.5 hover:bg-slate-50 dark:hover:bg-[#233648] text-left transition-colors border-b border-slate-100 dark:border-[#1e2d3d] last:border-0">
                       <span className={`w-2 h-2 rounded-full shrink-0 ${s.status === 'prioritas' ? 'bg-green-500' : s.status === 'kandidat' ? 'bg-amber-400' : 'bg-slate-400'}`} />
                       <div>
                         <p className="text-[12px] font-semibold text-slate-900 dark:text-white">{s.name}</p>
-                        <p className="text-[11px] text-slate-400 font-mono">{s.id}</p>
+                        <p className="text-[11px] text-slate-400 font-mono">{s.id} &middot; {s.status === 'prioritas' ? 'Prioritas' : s.status === 'kandidat' ? 'Kandidat' : 'Tidak Sesuai'}</p>
                       </div>
                     </button>
                   ))}
                 </div>
               )}
-              {searchQuery && filteredStations.length === 0 && (
+              {searchQuery && searchResults.length === 0 && (
                 <div className="mt-1 bg-white dark:bg-[#192633] border border-slate-200 dark:border-[#233648] rounded-lg px-3 py-3">
                   <p className="text-[12px] text-slate-400 text-center">Tidak ditemukan</p>
                 </div>
@@ -434,63 +485,18 @@ export default function PetaPage() {
 
               <div>
                 <div className="flex items-center gap-2 mb-2">
-                  <span className="material-symbols-outlined text-amber-500 text-[19px]">policy</span>
-                  <h3 className="text-slate-900 dark:text-white text-[12px] font-bold uppercase tracking-wider">Constraint &amp; Infrastruktur</h3>
-                </div>
-                <div className="bg-slate-50 dark:bg-panel-dark rounded-lg p-3 border border-slate-200 dark:border-[#233648] space-y-1">
-                  {/* Constraint Regulasi */}
-                  <label className="flex items-center gap-3 py-1.5 cursor-pointer group">
-                    <input type="checkbox" checked={showConstraints} onChange={() => setShowConstraints(v => !v)} className="h-4 w-4 rounded border-slate-300 dark:border-[#324d67] accent-primary" />
-                    <div>
-                      <p className="text-red-500 text-[13px] font-medium group-hover:text-red-400 transition-colors">Constraint Regulasi</p>
-                      <p className="text-slate-400 text-[11px]">KKP, KBAM, zona lindung</p>
-                    </div>
-                  </label>
-                  {/* Jaringan Listrik */}
-                  <label className="flex items-center gap-3 py-1.5 cursor-pointer group border-t border-slate-200 dark:border-[#233648]/50">
-                    <input type="checkbox" checked={showJaringanListrik} onChange={() => setShowJaringanListrik(v => !v)} className="h-4 w-4 rounded border-slate-300 dark:border-[#324d67] accent-primary" />
-                    <div>
-                      <p className="text-yellow-400 text-[13px] font-medium group-hover:text-yellow-300 transition-colors">Jaringan Listrik</p>
-                      <p className="text-slate-400 text-[11px]">Grid PLN &amp; gardu induk</p>
-                    </div>
-                  </label>
-                  {/* Akses Jalan */}
-                  <label className="flex items-center gap-3 py-1.5 cursor-pointer group border-t border-slate-200 dark:border-[#233648]/50">
-                    <input type="checkbox" checked={showAksesJalan} onChange={() => setShowAksesJalan(v => !v)} className="h-4 w-4 rounded border-slate-300 dark:border-[#324d67] accent-primary" />
-                    <div>
-                      <p className="text-orange-400 text-[13px] font-medium group-hover:text-orange-300 transition-colors">Akses Jalan</p>
-                      <p className="text-slate-400 text-[11px]">Jalan arteri &amp; kolektor</p>
-                    </div>
-                  </label>
-                  {/* Buffer Permukiman */}
-                  <label className="flex items-center gap-3 py-1.5 cursor-pointer group border-t border-slate-200 dark:border-[#233648]/50">
-                    <input type="checkbox" checked={showBufferPermukiman} onChange={() => setShowBufferPermukiman(v => !v)} className="h-4 w-4 rounded border-slate-300 dark:border-[#324d67] accent-primary" />
-                    <div>
-                      <p className="text-violet-400 text-[13px] font-medium group-hover:text-violet-300 transition-colors">Buffer Permukiman</p>
-                      <p className="text-slate-400 text-[11px]">Zona penyangga 300m&ndash;500m</p>
-                    </div>
-                  </label>
-                  {/* Topografi */}
-                  <label className="flex items-center gap-3 py-1.5 cursor-pointer group border-t border-slate-200 dark:border-[#233648]/50">
-                    <input type="checkbox" checked={showTopografi} onChange={() => setShowTopografi(v => !v)} className="h-4 w-4 rounded border-slate-300 dark:border-[#324d67] accent-primary" />
-                    <div>
-                      <p className="text-emerald-400 text-[13px] font-medium group-hover:text-emerald-300 transition-colors">Topografi / Elevasi</p>
-                      <p className="text-slate-400 text-[11px]">DEM SRTM 30m &mdash; slope summary</p>
-                    </div>
-                  </label>
-                </div>
-              </div>
-
-              <div>
-                <div className="flex items-center gap-2 mb-2">
                   <span className="material-symbols-outlined text-primary text-[19px]">tune</span>
                   <h3 className="text-slate-900 dark:text-white text-[12px] font-bold uppercase tracking-wider">Filter Status</h3>
                 </div>
-                <div className="flex gap-1.5">
-                  {(['all', 'prioritas', 'kandidat'] as const).map((f) => (
+                <div className="flex flex-wrap gap-1.5">
+                  {(['all', 'prioritas', 'kandidat', 'tidak_sesuai'] as const).map((f) => (
                     <button key={f} onClick={() => setFilterPriority(f)}
-                      className={`flex-1 py-1.5 text-[11px] font-bold rounded-lg border transition-all ${filterPriority === f ? 'bg-primary text-white border-primary' : 'bg-white dark:bg-[#111a22] border-slate-200 dark:border-[#233648] text-slate-500 dark:text-slate-400 hover:border-primary/50'}`}>
-                      {f === 'all' ? 'Semua' : f === 'prioritas' ? 'Prioritas' : 'Kandidat'}
+                      className={`flex-1 py-1.5 text-[11px] font-bold rounded-lg border transition-all ${
+                        filterPriority === f
+                          ? f === 'tidak_sesuai' ? 'bg-slate-500 text-white border-slate-500' : 'bg-primary text-white border-primary'
+                          : 'bg-white dark:bg-[#111a22] border-slate-200 dark:border-[#233648] text-slate-500 dark:text-slate-400 hover:border-primary/50'
+                      }`}>
+                      {f === 'all' ? 'Semua' : f === 'prioritas' ? 'Prioritas' : f === 'kandidat' ? 'Kandidat' : 'Tidak Sesuai'}
                     </button>
                   ))}
                 </div>
@@ -502,8 +508,13 @@ export default function PetaPage() {
                   <span className="text-[11px] text-slate-400">{filteredStations.length} lokasi</span>
                 </div>
                 <div className="space-y-1.5">
-                  {filteredStations.map((s) => (
-                    <button key={s.id} onClick={() => setSelectedStation(s)}
+                  {filteredStations.length === 0 ? (
+                    <div className="text-center py-6">
+                      <span className="material-symbols-outlined text-slate-300 dark:text-slate-600 text-[32px]">location_off</span>
+                      <p className="text-[12px] text-slate-400 mt-1">Tidak ada lokasi</p>
+                    </div>
+                  ) : filteredStations.map((s) => (
+                    <button key={s.id} onClick={() => { setSelectedStation(prev => prev?.id === s.id ? null : s); setShowMobileSidebar(false); }}
                       className={`w-full flex items-center gap-2.5 px-3 py-2.5 rounded-lg border text-left transition-all ${selectedStation?.id === s.id ? 'bg-primary/10 border-primary/50' : 'bg-white dark:bg-panel-dark border-slate-200 dark:border-[#233648] hover:border-primary/40 hover:bg-slate-50 dark:hover:bg-[#192633]'}`}>
                       <span className={`w-2 h-2 rounded-full shrink-0 ${s.status === 'prioritas' ? 'bg-green-500' : s.status === 'kandidat' ? 'bg-amber-400' : 'bg-slate-400'}`} />
                       <div className="flex-1 min-w-0">
@@ -533,13 +544,8 @@ export default function PetaPage() {
             stations={filteredStations}
             activeLayer={activeLayer}
             showStations={showStations}
-            showConstraints={showConstraints}
             showSatellite={showSatellite}
             showMCDA={showMCDA}
-            showJaringanListrik={showJaringanListrik}
-            showAksesJalan={showAksesJalan}
-            showBufferPermukiman={showBufferPermukiman}
-            showTopografi={showTopografi}
             selectedStation={selectedStation}
             onSelectStation={handleSelectStation}
             windPoints={windHeatPoints}
@@ -575,16 +581,27 @@ export default function PetaPage() {
             </button>
           </div>
 
-          {/* Active layer badge */}
-          {activeLayer !== 'none' && (
-            <div className={`absolute top-4 left-4 z-1000 flex items-center gap-2 px-3 py-1.5 rounded-full text-[11px] font-bold border backdrop-blur-sm ${activeLayer === 'wind' ? 'bg-primary/20 border-primary/50 text-primary' : 'bg-yellow-500/20 border-yellow-500/50 text-yellow-400'}`}>
-              <span className="material-symbols-outlined text-[14px]">{activeLayer === 'wind' ? 'air' : 'wb_sunny'}</span>
-              {activeLayer === 'wind' ? 'Layer: Kecepatan Angin' : 'Layer: Iradiasi Surya'}
-              <button onClick={() => setActiveLayer('none')} className="ml-1 opacity-70 hover:opacity-100">
-                <span className="material-symbols-outlined text-[13px]">close</span>
-              </button>
-            </div>
-          )}
+          {/* Left side controls */}
+          <div className="absolute top-4 left-4 z-1000 flex flex-col gap-2">
+            {/* Mobile: open sidebar button */}
+            <button
+              onClick={() => setShowMobileSidebar(true)}
+              className="lg:hidden flex items-center gap-2 bg-white dark:bg-[#192633] text-slate-700 dark:text-white px-3 py-2 rounded-lg shadow-lg border border-slate-200 dark:border-[#233648] text-[12px] font-bold transition-colors"
+            >
+              <span className="material-symbols-outlined text-[18px]">tune</span>
+              <span>Kontrol Peta</span>
+            </button>
+            {/* Active layer badge */}
+            {activeLayer !== 'none' && (
+              <div className={`flex items-center gap-2 px-3 py-1.5 rounded-full text-[11px] font-bold border backdrop-blur-sm ${activeLayer === 'wind' ? 'bg-primary/20 border-primary/50 text-primary' : 'bg-yellow-500/20 border-yellow-500/50 text-yellow-400'}`}>
+                <span className="material-symbols-outlined text-[14px]">{activeLayer === 'wind' ? 'air' : 'wb_sunny'}</span>
+                {activeLayer === 'wind' ? 'Layer: Kecepatan Angin' : 'Layer: Iradiasi Surya'}
+                <button onClick={() => setActiveLayer('none')} className="ml-1 opacity-70 hover:opacity-100">
+                  <span className="material-symbols-outlined text-[13px]">close</span>
+                </button>
+              </div>
+            )}
+          </div>
 
           {/* Legend */}
           <div className="absolute bottom-4 left-4 z-1000 bg-white/90 dark:bg-[#111a22]/95 backdrop-blur-sm p-3.5 rounded-xl shadow-xl border border-slate-200 dark:border-[#233648]">
@@ -593,9 +610,24 @@ export default function PetaPage() {
                 <h4 className="text-[10px] font-bold text-slate-900 dark:text-white uppercase tracking-wider mb-1.5">
                   {activeLayer === 'wind' ? 'Kecepatan Angin' : 'Iradiasi Surya'}
                 </h4>
-                <div className={`w-36 h-2 rounded-full ${activeLayer === 'wind' ? 'bg-linear-to-r from-blue-600 via-green-500 to-red-500' : 'bg-linear-to-r from-yellow-200 via-orange-400 to-red-600'}`} />
+                <div className="w-36 h-2 rounded-full" style={{
+                  background: activeLayer === 'wind'
+                    ? 'linear-gradient(to right, #2563eb, #22c55e, #eab308, #f97316, #ef4444)'
+                    : 'linear-gradient(to right, #fde68a, #f59e0b, #f97316, #dc2626)'
+                }} />
                 <div className="flex justify-between text-[10px] text-slate-400 mt-0.5">
                   <span>Rendah</span><span>Tinggi</span>
+                </div>
+              </div>
+            )}
+            {showMCDA && (
+              <div className="mb-3">
+                <h4 className="text-[10px] font-bold text-slate-900 dark:text-white uppercase tracking-wider mb-1.5">Zona GIS-MCDA</h4>
+                <div className="flex items-center gap-2 text-[11px] text-slate-600 dark:text-text-secondary">
+                  <span className="inline-flex items-center justify-center w-5 h-5 shrink-0">
+                    <span className="block w-4 h-4 rounded-full border-2 border-green-500/70 bg-green-500/10" />
+                  </span>
+                  <span>Besar = skor lebih tinggi</span>
                 </div>
               </div>
             )}
@@ -612,14 +644,14 @@ export default function PetaPage() {
             ))}
           </div>
 
-          {/* Station detail panel */}
-          {selectedStation && (
+          {/* Station detail panel — hidden when Analisis modal is open so ESC only closes the top layer */}
+          {selectedStation && !showAnalisis && (
             <StationPanel station={selectedStation} onClose={() => setSelectedStation(null)} />
           )}
         </div>
       </main>
 
-      {showAnalisis && <AnalisisModal onClose={() => setShowAnalisis(false)} />}
+      {showAnalisis && <AnalisisModal onClose={() => setShowAnalisis(false)} stations={stations} />}
     </div>
   );
 }

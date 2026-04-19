@@ -2,6 +2,7 @@
 
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
+import { useState } from 'react';
 
 const navItems = [
   { href: '/', label: 'Beranda' },
@@ -12,9 +13,10 @@ const navItems = [
 
 export default function Navbar() {
   const pathname = usePathname();
+  const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
 
   return (
-    <header className="h-14 flex-none flex items-center justify-between whitespace-nowrap border-b border-slate-200 dark:border-[#233648] bg-white dark:bg-[#111a22] px-4 lg:px-8 z-50">
+    <header className="relative h-14 flex-none flex items-center justify-between whitespace-nowrap border-b border-slate-200 dark:border-[#233648] bg-white dark:bg-[#111a22] px-4 lg:px-8 z-50">
       <Link href="/" className="flex items-center gap-2.5">
         <div className="size-7 flex items-center justify-center rounded-lg bg-primary/10">
           <span className="material-symbols-outlined text-[18px] text-primary">bolt</span>
@@ -66,10 +68,53 @@ export default function Navbar() {
         </div>
       </div>
 
-      {/* Mobile menu button */}
-      <div className="md:hidden text-slate-900 dark:text-white ml-4">
-        <span className="material-symbols-outlined">menu</span>
-      </div>
+      {/* Mobile hamburger button */}
+      <button
+        onClick={() => setMobileMenuOpen(v => !v)}
+        className="md:hidden ml-4 p-1 text-slate-900 dark:text-white hover:bg-slate-100 dark:hover:bg-[#233648] rounded-lg transition-colors"
+        aria-label="Toggle menu"
+      >
+        <span className="material-symbols-outlined text-[24px]">{mobileMenuOpen ? 'close' : 'menu'}</span>
+      </button>
+
+      {/* Mobile dropdown menu */}
+      {mobileMenuOpen && (
+        <div className="md:hidden absolute top-14 left-0 right-0 bg-white dark:bg-[#111a22] border-b border-slate-200 dark:border-[#233648] z-50 shadow-xl">
+          {navItems.map((item) => {
+            const isActive = pathname === item.href;
+            return (
+              <Link
+                key={item.href}
+                href={item.href}
+                onClick={() => setMobileMenuOpen(false)}
+                className={`block px-4 py-3 text-[13px] font-medium border-b border-slate-100 dark:border-[#1e2d3d] last:border-0 transition-colors ${
+                  isActive
+                    ? 'text-primary bg-primary/5 font-bold'
+                    : 'text-slate-600 dark:text-text-secondary hover:text-slate-900 dark:hover:text-white hover:bg-slate-50 dark:hover:bg-[#192633]'
+                }`}
+              >
+                {item.label}
+              </Link>
+            );
+          })}
+          <div className="flex gap-2 px-4 py-3 border-t border-slate-200 dark:border-[#233648]">
+            <Link
+              href="/admin"
+              onClick={() => setMobileMenuOpen(false)}
+              className="flex-1 text-center text-[13px] text-slate-600 dark:text-text-secondary border border-slate-200 dark:border-[#233648] rounded-lg py-2 font-medium hover:bg-slate-50 dark:hover:bg-[#192633] transition-colors"
+            >
+              Admin
+            </Link>
+            <Link
+              href="/login"
+              onClick={() => setMobileMenuOpen(false)}
+              className="flex-1 text-center text-[13px] bg-primary hover:bg-blue-600 text-white px-3 py-2 rounded-lg transition-colors font-medium"
+            >
+              Masuk
+            </Link>
+          </div>
+        </div>
+      )}
     </header>
   );
 }
