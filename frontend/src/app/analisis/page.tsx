@@ -146,10 +146,10 @@ function AnalisisContent() {
   const scatterMax = scatterData.length ? Math.max(...scatterData.map((d) => d.obs)) : 10;
 
   // MAE computed from real measurement data (mean absolute error obs vs baseline)
-  // Falls back to RMSE × 0.77 approximation while measurements are still loading
+  // Returns null when no measurement data is available (avoids showing a fake fallback value)
   const mae = dailyValues.length > 0
     ? parseFloat((dailyValues.reduce((s, d) => s + Math.abs(d.obs - d.baseline), 0) / dailyValues.length).toFixed(2))
-    : parseFloat((station.rmse * 0.77).toFixed(2));
+    : null;
 
   // ─── Availability from actual measurements ──────────────────────────────────────
   const availPct = measurements.length > 0
@@ -158,18 +158,18 @@ function AnalisisContent() {
   const availDisplay = availPct !== null ? `${availPct}%` : '–';
 
   // ─── Validation rows (computed after measurements) ──────────────────────────────
-  const windValidationRows = [
+  const windValidationRows: { metric: string; value: string; target: string; pass: boolean | null }[] = [
     { metric: 'RMSE (m/s)', value: station.rmse.toFixed(2), target: '< 2.0', pass: station.rmse < 2.0 },
-    { metric: 'MAE (m/s)', value: mae.toFixed(2), target: '< 1.5', pass: mae < 1.5 },
+    { metric: 'MAE (m/s)', value: mae !== null ? mae.toFixed(2) : '–', target: '< 1.5', pass: mae !== null ? mae < 1.5 : null },
     { metric: 'Bias vs GWA (%)', value: biasDisplay, target: '± 5%', pass: Math.abs(station.bias) <= 5 },
-    { metric: 'Ketersediaan Data', value: availDisplay, target: '> 90%', pass: availPct !== null && availPct > 90 },
+    { metric: 'Ketersediaan Data', value: availDisplay, target: '> 90%', pass: availPct !== null ? availPct > 90 : null },
   ];
   const solarBiasDisplay = (station.bias > 0 ? '+' : '') + station.bias.toFixed(1) + '%';
-  const solarValidationRows = [
+  const solarValidationRows: { metric: string; value: string; target: string; pass: boolean | null }[] = [
     { metric: 'Korelasi Atlas (R²)', value: station.r2.toFixed(2), target: '> 0.70', pass: station.r2 > 0.70 },
     { metric: 'Bias vs GSA (%)', value: solarBiasDisplay, target: '± 5%', pass: Math.abs(station.bias) <= 5 },
     { metric: 'Clearness Index (Kt)', value: ktIndex.toFixed(2), target: '0.40–0.65', pass: ktIndex >= 0.40 && ktIndex <= 0.65 },
-    { metric: 'Ketersediaan Data', value: availDisplay, target: '> 90%', pass: availPct !== null && availPct > 90 },
+    { metric: 'Ketersediaan Data', value: availDisplay, target: '> 90%', pass: availPct !== null ? availPct > 90 : null },
   ];
 
   return (
@@ -564,8 +564,14 @@ function AnalisisContent() {
                       <td className="px-4 py-3 text-right font-mono text-slate-600 dark:text-text-secondary">{row.value}</td>
                       <td className="px-4 py-3 text-right text-slate-600 dark:text-text-secondary">{row.target}</td>
                       <td className="px-4 py-3 text-center">
-                        <span className={`px-2 py-1 rounded text-[10px] font-bold uppercase ${row.pass ? 'bg-green-500/10 text-green-500' : 'bg-red-500/10 text-red-400'}`}>
-                          {row.pass ? 'Lulus' : 'Perlu Tinjau'}
+                        <span className={`px-2 py-1 rounded text-[10px] font-bold uppercase ${
+                          row.pass === null
+                            ? 'bg-slate-500/10 text-slate-400'
+                            : row.pass
+                            ? 'bg-green-500/10 text-green-500'
+                            : 'bg-red-500/10 text-red-400'
+                        }`}>
+                          {row.pass === null ? (measLoading ? 'Memuat' : 'N/A') : row.pass ? 'Lulus' : 'Perlu Tinjau'}
                         </span>
                       </td>
                     </tr>
