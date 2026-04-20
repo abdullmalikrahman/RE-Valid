@@ -78,7 +78,13 @@ function AnalisisContent() {
           mutate();
         } else if (data.status === 'failed') {
           setTaskState('error');
-          setTaskMsg(data.error ?? 'Task gagal');
+          // Tampilkan pesan khusus jika baseline belum di-set
+          const errMsg: string = data.result?.message ?? data.error ?? 'Task gagal';
+          if (errMsg.includes('baseline') || errMsg.includes('baseline_not_set')) {
+            setTaskMsg('Baseline atlas belum diisi. Admin perlu mengisi nilai wind_baseline / ghi_baseline di halaman Manajemen Stasiun terlebih dahulu (gunakan tombol "Ambil dari Atlas" atau input manual).');
+          } else {
+            setTaskMsg(errMsg);
+          }
         } else {
           setTimeout(poll, 2000);
         }
@@ -91,8 +97,10 @@ function AnalisisContent() {
   }
 
   // ─── Wind derived ──────────────────────────────────────────────────────────
-  const windLongTerm = (station.windSpeed * 1.046).toFixed(1);
-  const windDiff = ((1.046 - 1) * 100).toFixed(1);
+  // Gunakan wind_baseline dari atlas (NASA POWER/GWA) jika tersedia; fallback ke aproksimasi
+  const windBaselineVal = station.windBaseline ?? station.windSpeed * 1.046;
+  const windLongTerm = windBaselineVal.toFixed(1);
+  const windDiff = (((station.windSpeed - windBaselineVal) / windBaselineVal) * 100).toFixed(1);
   const aepGross = station.aep;
   const aepNetP50 = Math.round(station.aep * 0.877);
   const aepNetP90 = Math.round(station.aep * 0.767);
@@ -102,8 +110,8 @@ function AnalisisContent() {
   const biasDisplay = (station.bias > 0 ? '+' : '') + station.bias.toFixed(1) + '%';
 
   // ─── Solar derived ─────────────────────────────────────────────────────────
-  // GHI baseline (ERA5/GSA slightly underestimates tropical GHI)
-  const ghiBaseline = parseFloat((station.irradiation * 0.958).toFixed(2));
+  // GHI baseline dari atlas (NASA POWER/PVGIS) jika tersedia; fallback ke aproksimasi
+  const ghiBaseline = parseFloat((station.ghiBaseline ?? station.irradiation * 0.958).toFixed(2));
   const ghiDiff = parseFloat((((station.irradiation - ghiBaseline) / ghiBaseline) * 100).toFixed(1));
   // Clearness Index: Kt = GHI_obs / GHI_extraterrestrial (≈ 8.5 kWh/m²/hari at 7°S lat)
   const ktIndex = parseFloat((station.irradiation / 8.5).toFixed(2));
@@ -119,16 +127,14 @@ function AnalisisContent() {
   // ─── Measurements & chart data ────────────────────────────────────────────
   const { measurements, isLoading: measLoading } = useMeasurements(station.id, startDate, endDate);
 
-  // Per-day values reused for scatter plot
-  // Baseline approximates ERA5/GWA (wind: +4.6%) or ERA5/GSA (solar: -4.2%)
-  // — same scaling used by the Celery validate_station_mcp task
-  const scaleFactor = isWind ? 1.046 : 0.958;
+  // Per-day values — baseline adalah konstanta atlas (NASA POWER/ERA5) per stasiun
+  // Bukan fungsi dari obs (menghindari self-referential baseline)
+  const atlasBaseline = isWind ? windBaselineVal : ghiBaseline;
   const dailyValues = measurements.map((m) => {
     const obs = isWind
       ? parseFloat((m.wind_speed ?? 0).toString())
       : parseFloat(((m.ghi ?? 0) * 24 / 1000).toFixed(2));
-    const baseline = parseFloat((obs * scaleFactor).toFixed(2));
-    return { obs, baseline };
+    return { obs, baseline: atlasBaseline };
   });
 
   // Monthly averages for time-series line chart (12 clean points instead of 365 noisy ones)
@@ -148,7 +154,12 @@ function AnalisisContent() {
     }));
   })();
 
-  const scatterData = dailyValues;
+  // Scatter: obs (X) vs deviasi dari atlas baseline (Y) — lebih informatif dari obs vs konstanta
+  // Y > 0 = obs di atas atlas; Y < 0 = obs di bawah atlas; Y = 0 = cocok sempurna
+  const scatterData = dailyValues.map((d) => ({
+    obs: d.obs,
+    dev: parseFloat((d.obs - atlasBaseline).toFixed(3)),
+  }));
 
   // Reference line y = x (perfect agreement) for scatter plot
   const scatterMin = scatterData.length ? Math.min(...scatterData.map((d) => d.obs)) : 0;
@@ -487,7 +498,7 @@ function AnalisisContent() {
             <div className="mb-3">
               <h3 className="text-sm font-bold text-slate-900 dark:text-white">Analisis Korelasi</h3>
               <p className="text-xs text-slate-500 dark:text-text-secondary">
-                Scatter Plot: Obs (X) vs {isWind ? 'GWA/ERA5' : 'GSA/ERA5'} (Y)
+                Deviasi obs dari referensi atlas {isWind ? 'GWA/ERA5' : 'GSA/ERA5'} (Y = obs − atlas)
               </p>
             </div>
             <div className="w-full bg-input-bg-dark rounded-lg border border-gray-800 mb-3" style={{ flex: '1 1 0', minHeight: '320px' }}>
@@ -506,14 +517,14 @@ function AnalisisContent() {
                 <ScatterChart margin={{ top: 10, right: 10, bottom: 30, left: 15 }}>
                   <CartesianGrid strokeDasharray="3 3" stroke="#2d3b4a" />
                   <XAxis
-                    dataKey="obs" name={isWind ? 'Obs (m/s)' : 'Obs (kWh/m2)'} type="number"
+                    dataKey="obs" name={isWind ? 'Obs (m/s)' : 'Obs (kWh/m²)'} type="number"
                     domain={['auto', 'auto']} tick={{ fontSize: 9, fill: '#64748b' }} tickLine={false}
-                    label={{ value: isWind ? 'Obs (m/s)' : 'Obs (kWh/m2)', position: 'insideBottom', offset: -16, fill: '#64748b', fontSize: 9 }}
+                    label={{ value: isWind ? 'Obs (m/s)' : 'Obs (kWh/m²)', position: 'insideBottom', offset: -16, fill: '#64748b', fontSize: 9 }}
                   />
                   <YAxis
-                    dataKey="baseline" name={isWind ? 'GWA (m/s)' : 'GSA (kWh/m2)'} type="number"
+                    dataKey="dev" name={isWind ? 'Deviasi (m/s)' : 'Deviasi (kWh/m²)'} type="number"
                     domain={['auto', 'auto']} tick={{ fontSize: 9, fill: '#64748b' }} tickLine={false} axisLine={false}
-                    label={{ value: isWind ? 'GWA (m/s)' : 'GSA (kWh/m2)', angle: -90, position: 'insideLeft', offset: 10, fill: '#64748b', fontSize: 9 }}
+                    label={{ value: isWind ? 'Deviasi (m/s)' : 'Deviasi (kWh/m²)', angle: -90, position: 'insideLeft', offset: 10, fill: '#64748b', fontSize: 9 }}
                   />
                   <Tooltip
                     cursor={{ strokeDasharray: '3 3' }}
@@ -522,11 +533,11 @@ function AnalisisContent() {
                   <Scatter data={scatterData} fill={isWind ? '#137fec' : '#f59e0b'} opacity={0.55} />
                   {/* y = x reference line: perfect agreement */}
                   <ReferenceLine
-                    segment={[{ x: scatterMin, y: scatterMin }, { x: scatterMax, y: scatterMax }]}
+                    y={0}
                     stroke="#e2e8f0"
                     strokeDasharray="5 3"
-                    strokeWidth={1.2}
-                    label={{ value: 'y=x', position: 'insideTopLeft', fill: '#94a3b8', fontSize: 9 }}
+                    strokeWidth={1.5}
+                    label={{ value: 'obs = atlas', position: 'insideTopLeft', fill: '#94a3b8', fontSize: 9 }}
                   />
                 </ScatterChart>
               </ResponsiveContainer>
@@ -534,8 +545,8 @@ function AnalisisContent() {
             </div>
             <div className="bg-gray-50 dark:bg-[#111a22] rounded-lg p-3 text-xs text-slate-500 dark:text-slate-400">
               <div className="flex justify-between mb-1.5">
-                <span>Model baseline:</span>
-                <span className="font-mono">{isWind ? 'y = 1.046x (GWA)' : 'y = 0.958x (GSA)'}</span>
+                <span>Baseline atlas:</span>
+                <span className="font-mono">{isWind ? `${windLongTerm} m/s (NASA/GWA)` : `${ghiBaseline} kWh/m²/hr (NASA/GSA)`}</span>
               </div>
               <div className={`flex justify-between items-center font-bold ${r2Color}`}>
                 <span>R² =</span>
@@ -610,12 +621,14 @@ function AnalisisContent() {
                     <p className="text-[10px] text-slate-400 mt-0.5">Periode obs lapangan</p>
                   </div>
                   <div className="bg-primary/5 dark:bg-primary/10 p-3 rounded-lg border border-primary/20">
-                    <p className="text-[10px] uppercase text-primary font-bold mb-1">Jangka Panjang</p>
+                    <p className="text-[10px] uppercase text-primary font-bold mb-1">Baseline Atlas</p>
                     <div className="flex items-center gap-1.5">
                       <p className="text-base font-bold text-slate-900 dark:text-white">{windLongTerm} m/s</p>
-                      <span className="text-[10px] font-bold text-green-500">&uarr; {windDiff}%</span>
+                      <span className={`text-[10px] font-bold ${parseFloat(windDiff) >= 0 ? 'text-green-500' : 'text-red-400'}`}>
+                        {parseFloat(windDiff) >= 0 ? '↑' : '↓'} {Math.abs(parseFloat(windDiff))}%
+                      </span>
                     </div>
-                    <p className="text-[10px] text-slate-400 mt-0.5">Proyeksi 20 tahun</p>
+                    <p className="text-[10px] text-slate-400 mt-0.5">ERA5/NASA POWER (iklim)</p>
                   </div>
                 </div>
                 <div>
@@ -666,9 +679,11 @@ function AnalisisContent() {
                     <p className="text-[10px] uppercase text-amber-500 font-bold mb-1">Baseline GSA</p>
                     <div className="flex items-center gap-1.5">
                       <p className="text-base font-bold text-slate-900 dark:text-white">{ghiBaseline}</p>
-                      <span className="text-[10px] font-bold text-amber-400">+{ghiDiff}%</span>
+                      <span className={`text-[10px] font-bold ${ghiDiff >= 0 ? 'text-green-500' : 'text-red-400'}`}>
+                        {ghiDiff >= 0 ? '+' : ''}{ghiDiff}%
+                      </span>
                     </div>
-                    <p className="text-[10px] text-slate-400 mt-0.5">kWh/m²/hari (GSA/ERA5)</p>
+                    <p className="text-[10px] text-slate-400 mt-0.5">kWh/m²/hari (NASA POWER/GSA)</p>
                   </div>
                 </div>
                 <div className="bg-gray-50 dark:bg-[#111a22] p-3 rounded-lg flex items-center justify-between">

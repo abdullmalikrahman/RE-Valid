@@ -28,6 +28,8 @@ type AdminStation = {
   mcpStatus: string;
   windSpeed: number;
   irradiation: number;
+  windBaseline: number | null;
+  ghiBaseline: number | null;
   lastUpdate: string;
 };
 
@@ -81,17 +83,52 @@ function StationModal({ station, onClose, onSave }: ModalProps) {
     altitude: station?.altitude ?? 0,
     status: station?.status ?? 'kandidat' as const,
     score: station?.score ?? 50,
+    windBaseline: station?.windBaseline ?? null as number | null,
+    ghiBaseline: station?.ghiBaseline ?? null as number | null,
   });
 
   const isEdit = station !== null;
   const [isSaving, setIsSaving] = useState(false);
   const [saveError, setSaveError] = useState<string | null>(null);
+  const [isFetchingAtlas, setIsFetchingAtlas] = useState(false);
+  const [atlasMsg, setAtlasMsg] = useState<string | null>(null);
 
   useEffect(() => {
     function onKey(e: KeyboardEvent) { if (e.key === 'Escape' && !isSaving) onClose(); }
     document.addEventListener('keydown', onKey);
     return () => document.removeEventListener('keydown', onKey);
   }, [onClose, isSaving]);
+
+  // Ambil nilai baseline atlas dari NASA POWER via endpoint backend
+  async function handleFetchAtlas() {
+    if (!station?.id) {
+      setAtlasMsg('Simpan stasiun dahulu sebelum mengambil data atlas.');
+      return;
+    }
+    setIsFetchingAtlas(true);
+    setAtlasMsg(null);
+    try {
+      const res = await fetch(`/api/v1/stations/${station.id}/fetch-atlas`, {
+        method: 'POST',
+        headers: { ...authHeaders() },
+      });
+      const json = await res.json();
+      if (!res.ok) {
+        setAtlasMsg(json.detail ?? 'Gagal mengambil data atlas.');
+        return;
+      }
+      setForm((prev) => ({
+        ...prev,
+        windBaseline: json.wind_baseline ?? prev.windBaseline,
+        ghiBaseline: json.ghi_baseline ?? prev.ghiBaseline,
+      }));
+      setAtlasMsg('Data atlas berhasil diambil dari NASA POWER dan disimpan.');
+    } catch {
+      setAtlasMsg('Tidak dapat terhubung ke server.');
+    } finally {
+      setIsFetchingAtlas(false);
+    }
+  }
 
   async function handleSubmit() {
     setSaveError(null);
@@ -198,6 +235,60 @@ function StationModal({ station, onClose, onSave }: ModalProps) {
               <span className="w-10 text-right text-sm font-bold text-gray-900 dark:text-white">{form.score}</span>
             </div>
           </div>
+
+          {/* ── Baseline Atlas (hanya di mode edit) ───────────────────── */}
+          {isEdit && (
+            <div className="flex flex-col gap-3 border border-blue-200 dark:border-blue-800 rounded-xl p-4 bg-blue-50/50 dark:bg-blue-900/10">
+              <div className="flex items-center justify-between">
+                <div>
+                  <p className="text-xs font-semibold text-blue-700 dark:text-blue-400 uppercase tracking-wide">Baseline Referensi Atlas</p>
+                  <p className="text-[11px] text-blue-500 dark:text-blue-500 mt-0.5">Sumber: NASA POWER (ERA5). Digunakan untuk MCP analysis.</p>
+                </div>
+                <button
+                  type="button"
+                  onClick={handleFetchAtlas}
+                  disabled={isFetchingAtlas || isSaving}
+                  className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-blue-600 hover:bg-blue-700 disabled:opacity-60 disabled:cursor-not-allowed text-white text-xs font-bold transition-colors"
+                >
+                  <span className={`material-symbols-outlined text-[14px] ${isFetchingAtlas ? 'animate-spin' : ''}`}>
+                    {isFetchingAtlas ? 'refresh' : 'cloud_download'}
+                  </span>
+                  {isFetchingAtlas ? 'Mengambil...' : 'Ambil dari Atlas'}
+                </button>
+              </div>
+              {atlasMsg && (
+                <p className={`text-[11px] px-2 py-1.5 rounded-md ${atlasMsg.includes('berhasil') ? 'bg-green-100 text-green-700 dark:bg-green-900/20 dark:text-green-400' : 'bg-red-100 text-red-700 dark:bg-red-900/20 dark:text-red-400'}`}>
+                  {atlasMsg}
+                </p>
+              )}
+              <div className="grid grid-cols-2 gap-3">
+                <div className="flex flex-col gap-1">
+                  <label className="text-[11px] text-gray-500 dark:text-gray-400">Angin 100m · m/s (GWA/NASA)</label>
+                  <input
+                    type="number"
+                    step="0.01"
+                    min="0"
+                    placeholder="e.g. 5.20"
+                    className="bg-white dark:bg-input-bg-dark border border-gray-300 dark:border-border-dark rounded-lg px-3 py-2 text-sm text-gray-900 dark:text-white focus:outline-none focus:border-primary font-mono"
+                    value={form.windBaseline ?? ''}
+                    onChange={(e) => setForm({ ...form, windBaseline: e.target.value === '' ? null : Number(e.target.value) })}
+                  />
+                </div>
+                <div className="flex flex-col gap-1">
+                  <label className="text-[11px] text-gray-500 dark:text-gray-400">GHI · kWh/m²/hari (PVGIS/NASA)</label>
+                  <input
+                    type="number"
+                    step="0.01"
+                    min="0"
+                    placeholder="e.g. 4.65"
+                    className="bg-white dark:bg-input-bg-dark border border-gray-300 dark:border-border-dark rounded-lg px-3 py-2 text-sm text-gray-900 dark:text-white focus:outline-none focus:border-primary font-mono"
+                    value={form.ghiBaseline ?? ''}
+                    onChange={(e) => setForm({ ...form, ghiBaseline: e.target.value === '' ? null : Number(e.target.value) })}
+                  />
+                </div>
+              </div>
+            </div>
+          )}
         </div>
         <div className="flex gap-3 px-6 pb-5">
           {saveError && (
@@ -261,6 +352,8 @@ export default function AdminPage() {
     mcpStatus: s.mcpStatus,
     windSpeed: s.windSpeed,
     irradiation: s.irradiation,
+    windBaseline: s.windBaseline ?? null,
+    ghiBaseline: s.ghiBaseline ?? null,
     lastUpdate: s.lastUpdate,
   }));
 
@@ -301,10 +394,13 @@ export default function AdminPage() {
   async function handleSave(form: Parameters<ModalProps['onSave']>[0]): Promise<string | undefined> {
     try {
       if (editStation) {
-        const res = await fetch(`${API}/api/v1/stations/${editStation.id}`, {
+        // Konversi camelCase ke snake_case untuk backend
+        const { windBaseline, ghiBaseline, id: _id, ...rest } = form as typeof form & { windBaseline: number | null; ghiBaseline: number | null };
+        const payload = { ...rest, wind_baseline: windBaseline, ghi_baseline: ghiBaseline };
+        const res = await fetch(`/api/v1/stations/${editStation.id}`, {
           method: 'PATCH',
           headers: { 'Content-Type': 'application/json', ...authHeaders() },
-          body: JSON.stringify(form),
+          body: JSON.stringify(payload),
         });
         if (!res.ok) {
           const json = await res.json();
@@ -312,7 +408,7 @@ export default function AdminPage() {
         }
         setEditStation(null);
       } else {
-        const res = await fetch(`${API}/api/v1/stations`, {
+        const res = await fetch(`/api/v1/stations`, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json', ...authHeaders() },
           body: JSON.stringify(form),
@@ -333,7 +429,7 @@ export default function AdminPage() {
   async function handleDelete(id: string) {
     setCrudError(null);
     try {
-      const res = await fetch(`${API}/api/v1/stations/${id}`, { method: 'DELETE', headers: authHeaders() });
+      const res = await fetch(`/api/v1/stations/${id}`, { method: 'DELETE', headers: authHeaders() });
       if (!res.ok && res.status !== 204) {
         const json = await res.json();
         setCrudError(json.detail ?? 'Gagal menghapus stasiun');
@@ -376,7 +472,7 @@ export default function AdminPage() {
       const formData = new FormData();
       formData.append('file', csvFile);
       const res = await fetch(
-        `${API}/api/v1/measurements/upload?station_id=${encodeURIComponent(csvStation)}`,
+        `/api/v1/measurements/upload?station_id=${encodeURIComponent(csvStation)}`,
         { method: 'POST', body: formData, headers: authHeaders() },
       );
       const json = await res.json();

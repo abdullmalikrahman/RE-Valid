@@ -35,12 +35,14 @@ export default function KalkulatorPage() {
     if (!s) return;
     setSelectedStationId(id);
     if (isWind) {
-      // CF angin ≈ windSpeed × 3.8, clamp 15–42%
-      const cf = Math.round(Math.max(15, Math.min(42, s.windSpeed * 3.8)));
+      // CF angin ≈ windBaseline (atlas) × 3.8, fallback ke windSpeed, clamp 15–42%
+      const speed = s.windBaseline ?? s.windSpeed;
+      const cf = Math.round(Math.max(15, Math.min(42, speed * 3.8)));
       setFaktorKapasitas(cf);
     } else {
-      // CF surya ≈ (irradiation / 24) × 100 × PR faktor
-      const cf = Math.round(Math.max(12, Math.min(30, (s.irradiation / 24) * 100)));
+      // CF surya ≈ (ghiBaseline atlas / 24) × 100, fallback ke irradiation
+      const ghi = s.ghiBaseline ?? s.irradiation;
+      const cf = Math.round(Math.max(12, Math.min(30, (ghi / 24) * 100)));
       setFaktorKapasitas(cf);
       // PR default 75% untuk PLTS tropik
       setPerformanceRatio(75);
@@ -54,12 +56,13 @@ export default function KalkulatorPage() {
     if (isWind) {
       return (kapasitas * (faktorKapasitas / 100) * 8760) / 1000; // GWh
     } else {
-      // AEP PLTS = kapasitas (MWp) × irradiation (kWh/m²/day) × 365 × PR
+      // AEP PLTS = kapasitas (MWp) × GHI (kWh/m²/day) × 365 × PR
+      // Prioritaskan ghiBaseline (NASA POWER atlas) daripada irradiation terukur
       const station = stations.find((s) => s.id === selectedStationId);
-      const irradiation = station ? station.irradiation : 4.5;
-      return (kapasitas * irradiation * 365 * (performanceRatio / 100)) / 1000; // GWh
+      const ghi = station ? (station.ghiBaseline ?? station.irradiation ?? 4.5) : 4.5;
+      return (kapasitas * ghi * 365 * (performanceRatio / 100)) / 1000; // GWh
     }
-  }, [kapasitas, faktorKapasitas, performanceRatio, energyType, selectedStationId, isWind]);
+  }, [kapasitas, faktorKapasitas, performanceRatio, energyType, selectedStationId, isWind, stations]);
 
   // --- Computed cash flows ---
   const cashFlows = useMemo(() => {
@@ -466,7 +469,7 @@ export default function KalkulatorPage() {
             </button>
           </div>
           <p className="text-[11px] text-slate-400">
-            {isWind ? 'CF pre-fill dari windSpeed · CAPEX ref. ~$1.0–1.5 M/MW' : 'CF pre-fill dari iradiasi · CAPEX ref. ~$0.8–1.2 M/MWp'}
+            {isWind ? 'CF pre-fill dari baseline atlas (ERA5) · CAPEX ref. ~$1.0–1.5 M/MW' : 'CF pre-fill dari GHI baseline atlas (ERA5) · CAPEX ref. ~$0.8–1.2 M/MWp'}
           </p>
         </div>
 
@@ -489,7 +492,7 @@ export default function KalkulatorPage() {
                   <option value="none">— Pilih Stasiun —</option>
                   {stations.map((s) => (
                     <option key={s.id} value={s.id}>
-                      {s.name} ({s.id}) &mdash; {isWind ? `${s.windSpeed} m/s` : `${s.irradiation} kWh/m²/hari`}
+                      {s.name} ({s.id}) &mdash; {isWind ? `${s.windBaseline ?? s.windSpeed} m/s` : `${s.ghiBaseline ?? s.irradiation} kWh/m²/hari`}
                     </option>
                   ))}
                 </select>
@@ -501,14 +504,14 @@ export default function KalkulatorPage() {
                   <div className={`flex items-center gap-2 text-[11px] ${isWind ? 'text-green-500 bg-green-500/10 border-green-500/20' : 'text-amber-500 bg-amber-500/10 border-amber-500/20'} border rounded px-2.5 py-1.5`}>
                     <span className="material-symbols-outlined text-[14px]">check_circle</span>
                     {isWind
-                      ? `CF diperbarui dari kecepatan angin ${selectedStation.windSpeed} m/s`
-                      : `CF diperbarui dari iradiasi ${selectedStation.irradiation} kWh/m²/hari`}
+                      ? `CF diperbarui dari baseline atlas ${selectedStation.windBaseline ?? selectedStation.windSpeed} m/s`
+                      : `CF diperbarui dari GHI baseline atlas ${selectedStation.ghiBaseline ?? selectedStation.irradiation} kWh/m²/hari`}
                   </div>
                   <div className="grid grid-cols-2 gap-1.5 text-[11px]">
                     <div className="bg-gray-50 dark:bg-[#111a22] rounded px-2.5 py-2 flex flex-col gap-0.5">
-                      <span className="text-slate-400 uppercase font-bold text-[10px]">{isWind ? 'Kec. Angin' : 'GHI'}</span>
+                      <span className="text-slate-400 uppercase font-bold text-[10px]">{isWind ? 'Baseline Atlas' : 'GHI Baseline'}</span>
                       <span className="font-bold text-slate-900 dark:text-white">
-                        {isWind ? `${selectedStation.windSpeed} m/s` : `${selectedStation.irradiation} kWh/m²/d`}
+                        {isWind ? `${selectedStation.windBaseline ?? selectedStation.windSpeed} m/s` : `${selectedStation.ghiBaseline ?? selectedStation.irradiation} kWh/m²/d`}
                       </span>
                     </div>
                     <div className="bg-gray-50 dark:bg-[#111a22] rounded px-2.5 py-2 flex flex-col gap-0.5">

@@ -38,6 +38,8 @@ class Station(Base):
     )
     wind_speed: Mapped[float | None] = mapped_column(Numeric(5, 2))
     irradiation: Mapped[float | None] = mapped_column(Numeric(5, 2))
+    wind_baseline: Mapped[float | None] = mapped_column(Numeric(5, 2))
+    ghi_baseline: Mapped[float | None] = mapped_column(Numeric(5, 2))
     aep: Mapped[int | None] = mapped_column(Integer)
     rmse: Mapped[float | None] = mapped_column(Numeric(6, 3))
     bias: Mapped[float | None] = mapped_column(Numeric(6, 2))

@@ -20,6 +20,8 @@ export interface Station {
   r2: number;
   windSpeed: number; // m/s avg
   irradiation: number; // kWh/m²/day
+  windBaseline?: number | null; // GWA/NASA POWER atlas reference (m/s)
+  ghiBaseline?: number | null; // PVGIS/NASA POWER atlas reference (kWh/m²/day)
   aep: number; // MWh/year estimated
   photo?: string;
 }

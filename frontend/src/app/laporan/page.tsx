@@ -43,7 +43,11 @@ function LaporanContent() {
               
   // Gunakan data angin jika stasiun memiliki variabel angin, surya jika tidak
   const chartIsWind = station.variables.toLowerCase().includes('angin');
-  const chartScaleFactor = chartIsWind ? 1.046 : 0.958;
+  // Baseline konstanta per stasiun dari atlas (NASA POWER/ERA5)
+  // Fallback ke aproksimasi jika belum terisi di DB
+  const atlasBaselineValue = chartIsWind
+    ? (station.windBaseline ?? station.windSpeed * 1.046)
+    : (station.ghiBaseline ?? station.irradiation * 0.958);
   const chartUnit = chartIsWind ? 'm/s' : 'kWh/m²/hari';
   const chartLabel = chartIsWind ? 'Kecepatan angin rata-rata bulanan (m/s)' : 'GHI rata-rata bulanan (kWh/m²/hari)';
 
@@ -52,7 +56,7 @@ function LaporanContent() {
       const raw = chartIsWind
         ? parseFloat((m.wind_speed ?? 0).toString())
         : parseFloat(((m.ghi ?? 0) * 24 / 1000).toFixed(2));
-      return { obs: raw, baseline: parseFloat((raw * chartScaleFactor).toFixed(2)) };
+      return { obs: raw, baseline: atlasBaselineValue };
     });
     const groups = new Map<string, { obs: number[]; base: number[] }>();
     measurements.forEach((m, i) => {
@@ -67,16 +71,16 @@ function LaporanContent() {
       obs: parseFloat((g.obs.reduce((a, b) => a + b, 0) / g.obs.length).toFixed(2)),
       baseline: parseFloat((g.base.reduce((a, b) => a + b, 0) / g.base.length).toFixed(2)),
     }));
-  }, [measurements, chartIsWind, chartScaleFactor]);
+  }, [measurements, chartIsWind, atlasBaselineValue]);
 
   const scatterData = useMemo(() => {
     return measurements.map((m) => {
       const raw = chartIsWind
         ? parseFloat((m.wind_speed ?? 0).toString())
         : parseFloat(((m.ghi ?? 0) * 24 / 1000).toFixed(2));
-      return { obs: raw, baseline: parseFloat((raw * chartScaleFactor).toFixed(2)) };
+      return { obs: raw, baseline: atlasBaselineValue };
     });
-  }, [measurements, chartIsWind, chartScaleFactor]);
+  }, [measurements, chartIsWind, atlasBaselineValue]);
 
   const [exporting, setExporting] = useState<'pdf' | 'csv' | 'geojson' | null>(null);
 
@@ -159,7 +163,7 @@ function LaporanContent() {
       // Validasi Surya
       sectionTitle('Validasi Surya — GHI (GSA vs Observasi)');
       row('GHI Observasi', `${station.irradiation.toFixed(1)} kWh/m²/hari`);
-      row('GHI Baseline (GSA)', `${(station.irradiation * 0.958).toFixed(1)} kWh/m²/hari`);
+      row('GHI Baseline (NASA POWER/GSA)', `${(station.ghiBaseline ?? station.irradiation * 0.958).toFixed(1)} kWh/m²/hari`);
       row('Clearness Index (Kt)', (station.irradiation / 8.5).toFixed(2));
       row('Bias vs GSA', `${station.bias > 0 ? '+' : ''}${station.bias.toFixed(1)} %`);
       y += 3;
@@ -374,7 +378,7 @@ function LaporanContent() {
       [],
       ['--- Validasi Surya ---'],
       ['GHI Observasi (kWh/m²/hari)', station.irradiation],
-      ['GHI Baseline GSA (kWh/m²/hari)', (station.irradiation * 0.958).toFixed(2)],
+      ['GHI Baseline NASA/GSA (kWh/m²/hari)', (station.ghiBaseline ?? station.irradiation * 0.958).toFixed(2)],
       ['Clearness Index (Kt)', (station.irradiation / 8.5).toFixed(2)],
       [],
       ['--- Potensi Energi ---'],

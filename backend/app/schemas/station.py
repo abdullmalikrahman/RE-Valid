@@ -23,6 +23,8 @@ class StationUpdate(BaseModel):
     altitude: Optional[int] = None
     status: Optional[str] = Field(None, pattern="^(prioritas|kandidat|tidak_sesuai)$")
     score: Optional[int] = Field(None, ge=0, le=100)
+    wind_baseline: Optional[float] = Field(None, ge=0, description="GWA wind speed atlas (m/s)")
+    ghi_baseline: Optional[float] = Field(None, ge=0, description="PVGIS GHI atlas (kWh/m²/day)")
 
 
 class StationResponse(BaseModel):
@@ -41,6 +43,8 @@ class StationResponse(BaseModel):
     mcp_status: str
     wind_speed: float | None
     irradiation: float | None
+    wind_baseline: float | None
+    ghi_baseline: float | None
     aep: int | None
     rmse: float | None
     bias: float | None
