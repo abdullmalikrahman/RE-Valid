@@ -5,6 +5,16 @@ import { useRouter } from 'next/navigation';
 import Link from 'next/link';
 import { useStations } from '@/hooks/useStations';
 
+function getToken(): string {
+  if (typeof window === 'undefined') return '';
+  return localStorage.getItem('re_valid_token') ?? '';
+}
+
+function authHeaders(): Record<string, string> {
+  const token = getToken();
+  return token ? { Authorization: `Bearer ${token}` } : {};
+}
+
 // Local editable station shape
 type AdminStation = {
   id: string;
@@ -228,6 +238,17 @@ function StationModal({ station, onClose, onSave }: ModalProps) {
 export default function AdminPage() {
   const router = useRouter();
   const { stations: initialStations, mutate } = useStations();
+
+  // Auth guard — redirect to login if no token
+  const [adminUsername, setAdminUsername] = useState('');
+  useEffect(() => {
+    const token = getToken();
+    if (!token) {
+      router.replace('/login');
+      return;
+    }
+    setAdminUsername(localStorage.getItem('re_valid_username') ?? 'Admin');
+  }, [router]);
   const stationList: AdminStation[] = initialStations.map((s) => ({
     id: s.id,
     name: s.name,
@@ -282,7 +303,7 @@ export default function AdminPage() {
       if (editStation) {
         const res = await fetch(`${API}/api/v1/stations/${editStation.id}`, {
           method: 'PATCH',
-          headers: { 'Content-Type': 'application/json' },
+          headers: { 'Content-Type': 'application/json', ...authHeaders() },
           body: JSON.stringify(form),
         });
         if (!res.ok) {
@@ -293,7 +314,7 @@ export default function AdminPage() {
       } else {
         const res = await fetch(`${API}/api/v1/stations`, {
           method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
+          headers: { 'Content-Type': 'application/json', ...authHeaders() },
           body: JSON.stringify(form),
         });
         if (!res.ok) {
@@ -312,7 +333,7 @@ export default function AdminPage() {
   async function handleDelete(id: string) {
     setCrudError(null);
     try {
-      const res = await fetch(`${API}/api/v1/stations/${id}`, { method: 'DELETE' });
+      const res = await fetch(`${API}/api/v1/stations/${id}`, { method: 'DELETE', headers: authHeaders() });
       if (!res.ok && res.status !== 204) {
         const json = await res.json();
         setCrudError(json.detail ?? 'Gagal menghapus stasiun');
@@ -341,7 +362,9 @@ export default function AdminPage() {
   }
 
   function handleLogout() {
-    localStorage.removeItem('token');
+    localStorage.removeItem('re_valid_token');
+    localStorage.removeItem('re_valid_username');
+    localStorage.removeItem('re_valid_role');
     router.push('/login');
   }
 
@@ -354,7 +377,7 @@ export default function AdminPage() {
       formData.append('file', csvFile);
       const res = await fetch(
         `${API}/api/v1/measurements/upload?station_id=${encodeURIComponent(csvStation)}`,
-        { method: 'POST', body: formData },
+        { method: 'POST', body: formData, headers: authHeaders() },
       );
       const json = await res.json();
       if (!res.ok) {
@@ -405,10 +428,10 @@ export default function AdminPage() {
         </nav>
         <div className="p-4 border-t border-gray-200 dark:border-border-dark">
           <div className="flex items-center gap-3">
-            <div className="h-9 w-9 rounded-full bg-primary flex items-center justify-center text-white text-sm font-bold">AD</div>
+            <div className="h-9 w-9 rounded-full bg-primary flex items-center justify-center text-white text-sm font-bold">{adminUsername.slice(0, 2).toUpperCase() || 'AD'}</div>
             <div className="flex-1 min-w-0">
-              <p className="text-sm font-medium text-gray-900 dark:text-white truncate">Admin Utama</p>
-              <p className="text-xs text-gray-500 truncate">admin@re-valid.id</p>
+              <p className="text-sm font-medium text-gray-900 dark:text-white truncate">{adminUsername || 'Admin'}</p>
+              <p className="text-xs text-gray-500 truncate">Administrator</p>
             </div>
             <button onClick={handleLogout} className="text-gray-400 hover:text-gray-500 dark:hover:text-gray-300" title="Keluar">
               <span className="material-symbols-outlined text-[20px]">logout</span>

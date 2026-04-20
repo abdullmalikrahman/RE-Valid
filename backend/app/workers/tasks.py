@@ -58,6 +58,13 @@ def validate_station_mcp(self, station_id: str, variable: str = "wind", n: int =
         conn = psycopg2.connect(db_url)
         cur = conn.cursor()
 
+        # Mark station as running immediately so frontend can show progress
+        cur.execute(
+            "UPDATE stations SET mcp_status = 'berjalan' WHERE id = %s",
+            (station_id,),
+        )
+        conn.commit()
+
         if variable == "wind":
             col = "wind_speed"
         else:

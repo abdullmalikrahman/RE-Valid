@@ -1,6 +1,7 @@
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
 from celery.result import AsyncResult
+from app.core.security import get_current_user
 from app.workers.tasks import validate_station_mcp
 from app.workers.celery_app import celery_app
 
@@ -14,7 +15,7 @@ class AnalyzeRequest(BaseModel):
 
 
 @router.post("", summary="Jalankan analisis MCP / validasi GHI untuk satu stasiun")
-def start_analysis(body: AnalyzeRequest):
+def start_analysis(body: AnalyzeRequest, _=Depends(get_current_user)):
     if body.variable not in ("wind", "solar"):
         raise HTTPException(status_code=422, detail="variable harus 'wind' atau 'solar'")
     task = validate_station_mcp.delay(body.station_id, body.variable, body.n)

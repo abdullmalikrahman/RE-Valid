@@ -1,10 +1,16 @@
 ﻿'use client';
 
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
 
 export default function LoginPage() {
   const router = useRouter();
+
+  // Redirect to admin panel if already logged in
+  useEffect(() => {
+    const token = localStorage.getItem('re_valid_token');
+    if (token) router.replace('/admin');
+  }, [router]);
 
   const [username, setUsername] = useState('');
   const [password, setPassword] = useState('');
@@ -40,7 +46,7 @@ export default function LoginPage() {
       localStorage.setItem('re_valid_username', data.username);
       localStorage.setItem('re_valid_role', data.role);
 
-      router.push('/peta');
+      router.push('/admin');
     } catch {
       setError('Tidak dapat terhubung ke server. Periksa koneksi Anda.');
     } finally {

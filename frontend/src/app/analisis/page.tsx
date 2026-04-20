@@ -50,12 +50,21 @@ function AnalisisContent() {
   async function runAnalysis() {
     setTaskState('loading');
     setTaskMsg('');
+    const token = typeof window !== 'undefined' ? localStorage.getItem('re_valid_token') : null;
     try {
       const res = await fetch('/api/v1/analyze', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: {
+          'Content-Type': 'application/json',
+          ...(token ? { Authorization: `Bearer ${token}` } : {}),
+        },
         body: JSON.stringify({ station_id: station.id, variable: energyType, n: 90 }),
       });
+      if (res.status === 401) {
+        setTaskState('error');
+        setTaskMsg('Diperlukan login admin untuk menjalankan analisis.');
+        return;
+      }
       if (!res.ok) throw new Error(await res.text());
       const { task_id } = await res.json();
 

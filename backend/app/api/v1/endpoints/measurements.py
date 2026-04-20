@@ -6,6 +6,7 @@ from fastapi import APIRouter, Depends, HTTPException, Query, UploadFile, status
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.database import get_db
+from app.core.security import get_current_user
 from app.crud.measurement import bulk_insert_measurements, get_latest_per_station, get_measurements
 from app.crud.station import get_station_by_id
 from app.schemas.measurement import MeasurementResponse
@@ -23,6 +24,7 @@ async def upload_measurements_csv(
     station_id: str,
     file: UploadFile,
     db: AsyncSession = Depends(get_db),
+    _=Depends(get_current_user),
 ):
     """Upload a CSV file of measurements for a given station.
 
