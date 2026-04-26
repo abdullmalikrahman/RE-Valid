@@ -580,68 +580,41 @@ function LaporanContent() {
           </div>
         </div>
 
-        <div className="grid grid-cols-1 lg:grid-cols-12 gap-8 items-start">
-          {/* Left: filter panel */}
-          <div className="lg:col-span-4 flex flex-col gap-6">
-            <div className="bg-white dark:bg-card-dark rounded-xl border border-gray-200 dark:border-border-dark overflow-hidden shadow-sm">
-              <div className="p-5 border-b border-gray-200 dark:border-border-dark flex items-center gap-3">
-                <div className="size-8 rounded-full bg-blue-50 dark:bg-blue-900/20 flex items-center justify-center text-primary">
-                  <span className="material-symbols-outlined text-[18px]">location_on</span>
-                </div>
-                <h3 className="text-base font-bold text-slate-900 dark:text-white">Pilih Stasiun</h3>
-              </div>
-              <div className="p-5 flex flex-col gap-5">
-                {/* Station selector */}
-                <div className="flex flex-col gap-2">
-                  <label className="text-xs font-bold text-slate-700 dark:text-text-secondary uppercase tracking-wide">
-                    Stasiun
-                  </label>
-                  <div className="relative">
-                    <span className="absolute left-3 top-2.5 text-slate-400 material-symbols-outlined text-[18px]">
-                      location_on
-                    </span>
-                    <select
-                      value={station.id}
-                      onChange={(e) => router.push(`/laporan?station=${e.target.value}${fromPage !== 'peta' ? `&from=${fromPage}` : ''}`)}
-                      className="w-full bg-gray-50 dark:bg-[#111a22] border border-gray-200 dark:border-border-dark rounded-lg py-2 pl-9 pr-8 text-sm text-slate-900 dark:text-white focus:ring-1 focus:ring-primary focus:border-primary outline-none transition-all appearance-none"
-                    >
-                      {stations.map((s) => (
-                        <option key={s.id} value={s.id}>
-                          {s.name} ({s.id})
-                        </option>
-                      ))}
-                    </select>
-                    <span className="absolute right-3 top-2.5 text-slate-400 material-symbols-outlined text-[18px] pointer-events-none">
-                      expand_more
-                    </span>
-                  </div>
-                </div>
-
-
-              </div>
-            </div>
-
-            {/* System notice */}
-            <div className="bg-blue-50 dark:bg-blue-900/20 rounded-xl p-5 border border-blue-100 dark:border-blue-800/30">
-              <div className="flex items-start gap-3">
-                <span className="material-symbols-outlined text-primary text-[24px]">info</span>
-                <div>
-                  <h4 className="text-sm font-bold text-slate-900 dark:text-white mb-1">Catatan Sistem</h4>
-                  <p className="text-xs text-slate-600 dark:text-blue-100/70 leading-relaxed">
-                    Referensi MCP: ERA5 (ECMWF). Atlas baseline: GWA/GSA. Data observasi lapangan
-                    digunakan sebagai acuan validasi. Periode: {station.period}.
-                  </p>
-                </div>
+        {/* ── Control bar ───────────────────────────────────────────────────── */}
+        <div className="flex flex-col sm:flex-row gap-3 mb-2">
+          <div className="flex-1 bg-white dark:bg-card-dark rounded-xl border border-gray-200 dark:border-border-dark px-4 py-3 flex items-center gap-3 shadow-sm">
+            <span className="material-symbols-outlined text-primary text-[18px] shrink-0">location_on</span>
+            <div className="flex-1 min-w-0">
+              <p className="text-[10px] font-bold text-slate-500 dark:text-text-secondary uppercase tracking-wide mb-1">Pilih Stasiun</p>
+              <div className="relative">
+                <select
+                  value={station.id}
+                  onChange={(e) => router.push(`/laporan?station=${e.target.value}${fromPage !== 'peta' ? `&from=${fromPage}` : ''}`)}
+                  className="w-full bg-gray-50 dark:bg-[#111a22] border border-gray-200 dark:border-border-dark rounded-lg py-1.5 pl-3 pr-8 text-sm text-slate-900 dark:text-white focus:ring-1 focus:ring-primary focus:border-primary outline-none transition-all appearance-none"
+                >
+                  {stations.map((s) => (
+                    <option key={s.id} value={s.id}>{s.name} ({s.id})</option>
+                  ))}
+                </select>
+                <span className="absolute right-2.5 top-2 text-slate-400 material-symbols-outlined text-[16px] pointer-events-none">expand_more</span>
               </div>
             </div>
           </div>
+          <div className="flex-1 bg-blue-50 dark:bg-blue-900/20 rounded-xl px-4 py-3 border border-blue-100 dark:border-blue-800/30 flex items-center gap-3">
+            <span className="material-symbols-outlined text-primary text-[18px] shrink-0">info</span>
+            <p className="text-xs text-slate-600 dark:text-blue-100/70 leading-relaxed">
+              <span className="font-bold text-slate-900 dark:text-white">Catatan: </span>
+              Referensi MCP: ERA5 (ECMWF) · Atlas: GWA/GSA · Periode: {station.period}
+            </p>
+          </div>
+        </div>
 
-          {/* Right: report content */}
-          <div className="lg:col-span-8 flex flex-col gap-6">
-            {/* Station identity */}
-            <div className="bg-white dark:bg-card-dark border border-gray-200 dark:border-border-dark rounded-xl p-5 shadow-sm">
-              <div className="flex items-start justify-between gap-4 mb-4">
-                <div>
+        {/* ── Main content — full width ──────────────────────────────────────── */}
+        <div className="flex flex-col gap-5">
+          {/* Station identity full-width */}
+          <div className="bg-white dark:bg-card-dark border border-gray-200 dark:border-border-dark rounded-xl p-5 shadow-sm">
+            <div className="flex items-start justify-between gap-4 mb-4">
+              <div>
                   <div className="flex items-center gap-2 mb-1">
                     <span
                       className={`w-2.5 h-2.5 rounded-full ${
@@ -685,6 +658,9 @@ function LaporanContent() {
             </div>
 
             {/* Validation metrics */}
+
+          {/* Row 2: metrik angin + validasi surya — 2 kolom sejajar */}
+          <div className="grid grid-cols-1 lg:grid-cols-2 gap-5">
             <div className="bg-white dark:bg-card-dark border border-gray-200 dark:border-border-dark rounded-xl p-5 shadow-sm">
               <div className="flex items-center gap-2 mb-4">
                 <span className="material-symbols-outlined text-violet-400 text-[20px]">query_stats</span>
@@ -777,7 +753,9 @@ function LaporanContent() {
                 </span>
               </div>
             </div>
+          </div>
 
+          {/* Row 3: Grafik Validasi full-width */}
             {/* Grafik Validasi Preview */}
             <div className="bg-white dark:bg-card-dark border border-gray-200 dark:border-border-dark rounded-xl p-5 shadow-sm">
               <div className="flex items-center gap-2 mb-4">
@@ -950,13 +928,15 @@ function LaporanContent() {
               </div>
             </div>
 
+          {/* Row 4: Perbandingan Baseline + Potensi Energi — 2 kolom */}
+          <div className="grid grid-cols-1 lg:grid-cols-2 gap-5">
             {/* Energy potential */}
             <div className="bg-white dark:bg-card-dark border border-gray-200 dark:border-border-dark rounded-xl p-5 shadow-sm">
               <div className="flex items-center gap-2 mb-4">
                 <span className="material-symbols-outlined text-yellow-400 text-[20px]">bolt</span>
                 <h4 className="text-sm font-bold text-slate-900 dark:text-white">Potensi Energi</h4>
               </div>
-              <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
+              <div className="grid grid-cols-2 gap-4">
                 <div className="bg-blue-50 dark:bg-blue-900/10 border border-blue-100 dark:border-blue-800/30 rounded-xl p-4 text-center">
                   <span className="material-symbols-outlined text-blue-400 text-[24px] mb-1 block">air</span>
                   <p className="text-[10px] text-slate-400 uppercase tracking-wide">Kec. Angin Rata-rata</p>
@@ -994,7 +974,7 @@ function LaporanContent() {
                   <p className="text-[10px] text-slate-400 mt-1.5">PR = 75% (asumsi)</p>
                 </div>
               </div>
-            </div>
+            </div>{/* end Potensi Energi card */}
 
             {/* GIS-MCDA */}
             <div className="bg-white dark:bg-card-dark border border-gray-200 dark:border-border-dark rounded-xl p-5 shadow-sm">
@@ -1030,10 +1010,15 @@ function LaporanContent() {
                 ))}
               </div>
             </div>
+          </div>
 
-            {/* Download */}
-            <h3 className="text-lg font-bold text-slate-900 dark:text-white -mb-2">Unduh Laporan</h3>
-            <div className="grid grid-cols-1 gap-4">
+          {/* Row 5: Unduh Laporan */}
+          <div className="bg-white dark:bg-card-dark border border-gray-200 dark:border-border-dark rounded-xl p-5 shadow-sm">
+            <div className="flex items-center gap-2 mb-4">
+              <span className="material-symbols-outlined text-primary text-[20px]">download</span>
+              <h3 className="text-sm font-bold text-slate-900 dark:text-white">Unduh Laporan</h3>
+            </div>
+            <div className="flex flex-col gap-3">
               {[
                 {
                   key: 'pdf' as const,
