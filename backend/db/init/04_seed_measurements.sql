@@ -1,8 +1,24 @@
 -- ============================================================
 -- RE-Valid Seed: Measurement Data (Sintetik 2023)
 -- 365 hari × 6 stasiun = 2190 baris
--- Kecepatan angin: nilai dasar + variasi musiman + noise
--- GHI (W/m²): nilai dasar + siklus musiman + noise
+-- Kecepatan angin: base_wind dikalibrasi terhadap wind_baseline (NASA POWER ERA5)
+--   sehingga bias antara obs dan atlas berada dalam rentang ±5–20% yang realistis
+-- GHI (W/m²): nilai rata-rata harian; tasks.py mengonversi × 24/1000 → kWh/m²/hari
+--   sebelum dibandingkan dengan ghi_baseline (kWh/m²/hari)
+-- base_wind / bias terhadap atlas per stasiun:
+--   CMH-001: 4.0 m/s vs atlas 3.59 → +11.4%
+--   GRT-056: 5.1 m/s vs atlas 4.73 → +7.8%
+--   GWY-089: 4.3 m/s vs atlas 3.59 → +19.8% (mountain ridge, orographic enhancement)
+--   PGD-023: 4.6 m/s vs atlas 4.39 → +4.8%
+--   SBG-105: 3.5 m/s vs atlas 3.93 → -11.0% (dataran rendah, low-wind site)
+--   TSM-034: 4.6 m/s vs atlas 4.73 → -2.8%
+-- base_ghi / bias terhadap atlas per stasiun (setelah konversi ke kWh/m²/hari):
+--   CMH-001: 209 W/m² → 5.02 vs atlas 5.01 → +0.1%
+--   GRT-056: 205 W/m² → 4.92 vs atlas 5.08 → -3.1%
+--   GWY-089: 195 W/m² → 4.68 vs atlas 5.08 → -7.9% (awan lebih banyak di pegunungan)
+--   PGD-023: 215 W/m² → 5.16 vs atlas 4.91 → +5.1%
+--   SBG-105: 210 W/m² → 5.04 vs atlas 5.01 → +0.6%
+--   TSM-034: 200 W/m² → 4.80 vs atlas 4.91 → -2.2%
 -- Run order: 04 (setelah 03_seed.sql)
 -- ============================================================
 
@@ -65,12 +81,12 @@ SELECT
 
 FROM (
     VALUES
-        (1, 'CMH-001', 6.2, 220.0),
-        (2, 'GRT-056', 5.9, 200.0),
-        (3, 'GWY-089', 6.8, 185.0),
-        (4, 'PGD-023', 5.4, 240.0),
-        (5, 'SBG-105', 3.2, 230.0),
-        (6, 'TSM-034', 5.1, 210.0)
+        (1, 'CMH-001', 4.0, 209.0),
+        (2, 'GRT-056', 5.1, 205.0),
+        (3, 'GWY-089', 4.3, 195.0),
+        (4, 'PGD-023', 4.6, 215.0),
+        (5, 'SBG-105', 3.5, 210.0),
+        (6, 'TSM-034', 4.6, 200.0)
 ) AS s(row_num, sid, base_wind, base_ghi)
 
 CROSS JOIN generate_series(

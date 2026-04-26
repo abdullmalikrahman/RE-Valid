@@ -35,16 +35,12 @@ export default function KalkulatorPage() {
     if (!s) return;
     setSelectedStationId(id);
     if (isWind) {
-      // CF angin ≈ windBaseline (atlas) × 3.8, fallback ke windSpeed, clamp 15–42%
-      const speed = s.windBaseline ?? s.windSpeed;
+      // Prioritas: GWA 3.0 → NASA POWER → baseline → terukur
+      const speed = s.windBaselineGwa ?? s.windBaselineNasa ?? s.windBaseline ?? s.windSpeed;
       const cf = Math.round(Math.max(15, Math.min(42, speed * 3.8)));
       setFaktorKapasitas(cf);
     } else {
-      // CF surya ≈ (ghiBaseline atlas / 24) × 100, fallback ke irradiation
-      const ghi = s.ghiBaseline ?? s.irradiation;
-      const cf = Math.round(Math.max(12, Math.min(30, (ghi / 24) * 100)));
-      setFaktorKapasitas(cf);
-      // PR default 75% untuk PLTS tropik
+      // Solar: PR default 75%, CAPEX disesuaikan kapasitas
       setPerformanceRatio(75);
       // CAPEX PLTS lebih rendah (~$0.8–1.2 M/MWp) vs angin (~$1.0–1.5 M/MW)
       setCapex(parseFloat((kapasitas * 0.9).toFixed(1)));
@@ -57,9 +53,11 @@ export default function KalkulatorPage() {
       return (kapasitas * (faktorKapasitas / 100) * 8760) / 1000; // GWh
     } else {
       // AEP PLTS = kapasitas (MWp) × GHI (kWh/m²/day) × 365 × PR
-      // Prioritaskan ghiBaseline (NASA POWER atlas) daripada irradiation terukur
+      // Prioritas sumber GHI: GSA (Solargis) → NASA POWER → baseline → irradiation terukur
       const station = stations.find((s) => s.id === selectedStationId);
-      const ghi = station ? (station.ghiBaseline ?? station.irradiation ?? 4.5) : 4.5;
+      const ghi = station
+        ? (station.ghiBaselineGsa ?? station.ghiBaselineNasa ?? station.ghiBaseline ?? station.irradiation ?? 4.5)
+        : 4.5;
       return (kapasitas * ghi * 365 * (performanceRatio / 100)) / 1000; // GWh
     }
   }, [kapasitas, faktorKapasitas, performanceRatio, energyType, selectedStationId, isWind, stations]);
@@ -106,12 +104,31 @@ export default function KalkulatorPage() {
     const totalNet = cashFlows.reduce((acc, cf) => acc + cf.net, 0);
     const roi = capex > 0 ? (totalNet / capex) * 100 : 0;
 
+    // ── IRR via Newton-Raphson ────────────────────────────────────
+    const flows = [-capex, ...cashFlows.map((cf) => cf.net)];
+    let irr = 0.1;
+    for (let i = 0; i < 200; i++) {
+      let f = 0;
+      let df = 0;
+      flows.forEach((c, t) => {
+        const denom = Math.pow(1 + irr, t);
+        f += c / denom;
+        if (t > 0) df -= (t * c) / (denom * (1 + irr));
+      });
+      if (Math.abs(df) < 1e-12) break;
+      const irr1 = irr - f / df;
+      if (Math.abs(irr1 - irr) < 1e-8) { irr = irr1; break; }
+      irr = irr1 <= -1 ? 0.01 : irr1;
+    }
+    const irrPct = isFinite(irr) ? irr * 100 : null;
+
     return {
       aepY1,
       npv: parseFloat(npv.toFixed(1)),
       lcoeCents: parseFloat(lcoeCents.toFixed(2)),
       payback: parseFloat(payback.toFixed(1)),
       roi: parseFloat(roi.toFixed(1)),
+      irr: irrPct !== null ? parseFloat(irrPct.toFixed(1)) : null,
     };
   }, [cashFlows, capex, diskonto, umurProyek, aepY1]);
 
@@ -198,13 +215,13 @@ export default function KalkulatorPage() {
       pdf.setFontSize(8);
       pdf.setFont('helvetica', 'bold');
       pdf.setTextColor(100, 100, 100);
-      const kpiLabels = ['AEP Thn-1 (GWh)', 'LCOE (¢/kWh)', 'NPV (Jt USD)', 'Payback (Thn)', 'ROI (%)'];
+      const kpiLabels = ['AEP Thn-1 (GWh)', 'LCOE (¢/kWh)', 'NPV (Jt USD)', 'Payback (Thn)', 'IRR (%)'];
       const kpiVals = [
         kpis.aepY1.toFixed(2),
         kpis.lcoeCents.toFixed(2),
         `${kpis.npv >= 0 ? '+' : ''}${kpis.npv.toFixed(1)}`,
         kpis.payback.toFixed(1),
-        `${kpis.roi.toFixed(1)}`,
+        kpis.irr !== null ? `${kpis.irr.toFixed(1)}%` : 'N/A',
       ];
       const colW = (W - 20) / 5;
       kpiLabels.forEach((lbl, i) => {
@@ -469,7 +486,7 @@ export default function KalkulatorPage() {
             </button>
           </div>
           <p className="text-[11px] text-slate-400">
-            {isWind ? 'CF pre-fill dari baseline atlas (ERA5) · CAPEX ref. ~$1.0–1.5 M/MW' : 'CF pre-fill dari GHI baseline atlas (ERA5) · CAPEX ref. ~$0.8–1.2 M/MWp'}
+            {isWind ? 'CF pre-fill dari baseline atlas (GWA 3.0 / NASA POWER ERA5) · CAPEX ref. ~$1.0–1.5 M/MW' : 'AEP dihitung dari GHI baseline (GSA / NASA POWER ERA5) · CAPEX ref. ~$0.8–1.2 M/MWp'}
           </p>
         </div>
 
@@ -492,7 +509,9 @@ export default function KalkulatorPage() {
                   <option value="none">— Pilih Stasiun —</option>
                   {stations.map((s) => (
                     <option key={s.id} value={s.id}>
-                      {s.name} ({s.id}) &mdash; {isWind ? `${s.windBaseline ?? s.windSpeed} m/s` : `${s.ghiBaseline ?? s.irradiation} kWh/m²/hari`}
+                      {s.name} ({s.id}) &mdash; {isWind
+                        ? `${s.windBaselineGwa ?? s.windBaselineNasa ?? s.windBaseline ?? s.windSpeed} m/s`
+                        : `${s.ghiBaselineGsa ?? s.ghiBaselineNasa ?? s.ghiBaseline ?? s.irradiation} kWh/m²/hari`}
                     </option>
                   ))}
                 </select>
@@ -504,14 +523,21 @@ export default function KalkulatorPage() {
                   <div className={`flex items-center gap-2 text-[11px] ${isWind ? 'text-green-500 bg-green-500/10 border-green-500/20' : 'text-amber-500 bg-amber-500/10 border-amber-500/20'} border rounded px-2.5 py-1.5`}>
                     <span className="material-symbols-outlined text-[14px]">check_circle</span>
                     {isWind
-                      ? `CF diperbarui dari baseline atlas ${selectedStation.windBaseline ?? selectedStation.windSpeed} m/s`
-                      : `CF diperbarui dari GHI baseline atlas ${selectedStation.ghiBaseline ?? selectedStation.irradiation} kWh/m²/hari`}
+                      ? `CF dihitung dari baseline angin: ${selectedStation.windBaselineGwa ?? selectedStation.windBaselineNasa ?? selectedStation.windBaseline ?? selectedStation.windSpeed} m/s`
+                      : `GHI aktif: ${selectedStation.ghiBaselineGsa ?? selectedStation.ghiBaselineNasa ?? selectedStation.ghiBaseline ?? selectedStation.irradiation} kWh/m²/hari (GSA/NASA POWER)`}
                   </div>
                   <div className="grid grid-cols-2 gap-1.5 text-[11px]">
                     <div className="bg-gray-50 dark:bg-[#111a22] rounded px-2.5 py-2 flex flex-col gap-0.5">
-                      <span className="text-slate-400 uppercase font-bold text-[10px]">{isWind ? 'Baseline Atlas' : 'GHI Baseline'}</span>
+                      <span className="text-slate-400 uppercase font-bold text-[10px]">{isWind ? 'Baseline Angin' : 'GHI Baseline'}</span>
                       <span className="font-bold text-slate-900 dark:text-white">
-                        {isWind ? `${selectedStation.windBaseline ?? selectedStation.windSpeed} m/s` : `${selectedStation.ghiBaseline ?? selectedStation.irradiation} kWh/m²/d`}
+                        {isWind
+                          ? `${selectedStation.windBaselineGwa ?? selectedStation.windBaselineNasa ?? selectedStation.windBaseline ?? selectedStation.windSpeed} m/s`
+                          : `${selectedStation.ghiBaselineGsa ?? selectedStation.ghiBaselineNasa ?? selectedStation.ghiBaseline ?? selectedStation.irradiation} kWh/m²/d`}
+                      </span>
+                      <span className="text-slate-400 text-[10px]">
+                        {isWind
+                          ? (selectedStation.windBaselineGwa != null ? 'GWA 3.0' : selectedStation.windBaselineNasa != null ? 'NASA POWER' : 'Terukur')
+                          : (selectedStation.ghiBaselineGsa != null ? 'GSA (Solargis)' : selectedStation.ghiBaselineNasa != null ? 'NASA POWER' : 'Terukur')}
                       </span>
                     </div>
                     <div className="bg-gray-50 dark:bg-[#111a22] rounded px-2.5 py-2 flex flex-col gap-0.5">
@@ -528,7 +554,7 @@ export default function KalkulatorPage() {
                       Lihat Analisis
                     </Link>
                     <Link
-                      href={`/laporan?station=${selectedStationId}`}
+                      href={`/laporan?station=${selectedStationId}&from=kalkulator`}
                       className="flex-1 flex items-center justify-center gap-1 py-1.5 text-[11px] font-medium text-slate-600 dark:text-slate-300 border border-slate-300 dark:border-[#233648] rounded-lg hover:bg-slate-50 dark:hover:bg-[#233648] transition-all"
                     >
                       <span className="material-symbols-outlined text-[13px]">description</span>
@@ -602,9 +628,12 @@ export default function KalkulatorPage() {
                         <p className="font-semibold text-amber-600 dark:text-amber-400 mb-1">Rumus AEP PLTS</p>
                         <p className="text-slate-600 dark:text-slate-300 font-mono">AEP = MWp × GHI × 365 × PR</p>
                         {selectedStation ? (
-                          <p className="text-amber-500 mt-1">GHI = {selectedStation.irradiation} kWh/m²/hari (dari stasiun)</p>
+                          <p className="text-amber-500 mt-1">
+                            GHI = {selectedStation.ghiBaselineGsa ?? selectedStation.ghiBaselineNasa ?? selectedStation.ghiBaseline ?? selectedStation.irradiation} kWh/m²/hari
+                            {' '}({selectedStation.ghiBaselineGsa != null ? 'GSA Solargis' : selectedStation.ghiBaselineNasa != null ? 'NASA POWER' : selectedStation.ghiBaseline != null ? 'Baseline Atlas' : 'Terukur'})
+                          </p>
                         ) : (
-                          <p className="text-slate-400 mt-1">Pilih stasiun untuk GHI aktual</p>
+                          <p className="text-slate-400 mt-1">Pilih stasiun untuk GHI aktual (prioritas: GSA → NASA POWER → Terukur)</p>
                         )}
                       </div>
                     </>
@@ -736,7 +765,7 @@ export default function KalkulatorPage() {
             </div>
 
             {/* KPI cards */}
-            <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
+            <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-4">
               <div className="bg-white dark:bg-card-dark rounded-xl p-4 border border-gray-200 dark:border-border-dark relative overflow-hidden group">
                 <div className="absolute right-0 top-0 p-3 opacity-10 group-hover:opacity-20 transition-opacity">
                   <span className={`material-symbols-outlined text-[56px] ${accentClass}`}>{isWind ? 'bolt' : 'solar_power'}</span>
@@ -791,6 +820,32 @@ export default function KalkulatorPage() {
                   <span className="text-xs font-bold text-slate-400">Tahun</span>
                 </div>
                 <p className="text-[10px] text-slate-400 mt-1">ROI total: {kpis.roi.toFixed(1)}%</p>
+              </div>
+
+              <div className="bg-white dark:bg-card-dark rounded-xl p-4 border border-gray-200 dark:border-border-dark relative overflow-hidden group">
+                <div className="absolute right-0 top-0 p-3 opacity-10 group-hover:opacity-20 transition-opacity">
+                  <span className="material-symbols-outlined text-[56px] text-pink-500">trending_up</span>
+                </div>
+                <p className="text-xs text-slate-500 dark:text-text-secondary font-medium uppercase tracking-wide mb-1.5">IRR</p>
+                <div className="flex items-baseline gap-1">
+                  {kpis.irr !== null ? (
+                    <>
+                      <h4 className={`text-2xl font-black ${kpis.irr >= diskonto ? 'text-green-400' : 'text-red-400'}`}>
+                        {kpis.irr.toFixed(1)}
+                      </h4>
+                      <span className="text-xs font-bold text-slate-400">%</span>
+                    </>
+                  ) : (
+                    <h4 className="text-2xl font-black text-slate-400">N/A</h4>
+                  )}
+                </div>
+                <p className={`text-[10px] mt-1 font-medium ${kpis.irr !== null && kpis.irr >= diskonto ? 'text-green-500' : 'text-slate-400'}`}>
+                  {kpis.irr !== null
+                    ? kpis.irr >= diskonto
+                      ? `✓ IRR ≥ Diskonto (${diskonto}%)`
+                      : `× IRR < Diskonto (${diskonto}%)`
+                    : 'Tidak dapat dihitung'}
+                </p>
               </div>
             </div>
 

@@ -2,6 +2,28 @@ import type { Station } from './stationData';
 
 const API_BASE = '/api/v1';
 
+/**
+ * Wrapper fetch yang otomatis redirect ke /login jika server
+ * mengembalikan 401 (token expired atau tidak valid).
+ */
+export async function apiFetch(
+  input: RequestInfo | URL,
+  init?: RequestInit,
+): Promise<Response> {
+  const res = await fetch(input, init);
+  if (res.status === 401) {
+    // Hapus token yang sudah tidak valid
+    localStorage.removeItem('re_valid_token');
+    localStorage.removeItem('re_valid_username');
+    localStorage.removeItem('re_valid_role');
+    // Redirect ke login — gunakan window.location agar bersih dari SWR cache
+    if (typeof window !== 'undefined') {
+      window.location.href = '/login';
+    }
+  }
+  return res;
+}
+
 // Shape returned by backend (snake_case)
 interface ApiStation {
   id: string;
@@ -19,6 +41,10 @@ interface ApiStation {
   irradiation: number | null;
   wind_baseline: number | null;
   ghi_baseline: number | null;
+  wind_baseline_gwa: number | null;
+  ghi_baseline_gsa: number | null;
+  wind_baseline_nasa: number | null;
+  ghi_baseline_nasa: number | null;
   aep: number | null;
   rmse: number | null;
   bias: number | null;
@@ -44,6 +70,10 @@ function mapStation(s: ApiStation): Station {
     irradiation: s.irradiation ?? 0,
     windBaseline: s.wind_baseline,
     ghiBaseline: s.ghi_baseline,
+    windBaselineGwa: s.wind_baseline_gwa,
+    ghiBaselineGsa: s.ghi_baseline_gsa,
+    windBaselineNasa: s.wind_baseline_nasa,
+    ghiBaselineNasa: s.ghi_baseline_nasa,
     aep: s.aep ?? 0,
     rmse: s.rmse ?? 0,
     bias: s.bias ?? 0,
@@ -52,8 +82,23 @@ function mapStation(s: ApiStation): Station {
 }
 
 export async function fetchStations(): Promise<Station[]> {
-  const res = await fetch(`${API_BASE}/stations`);
+  const res = await apiFetch(`${API_BASE}/stations`);
   if (!res.ok) throw new Error(`API error: ${res.status}`);
   const data: ApiStation[] = await res.json();
   return data.map(mapStation);
+}
+
+export interface HeatmapData {
+  type: 'wind' | 'solar';
+  source: string;
+  points: [number, number, number][];   // [lat, lon, intensity 0-1]
+  min_val: number;
+  max_val: number;
+  unit: string;
+}
+
+export async function fetchHeatmapData(type: 'wind' | 'solar'): Promise<HeatmapData> {
+  const res = await apiFetch(`${API_BASE}/atlas/heatmap?type=${type}`);
+  if (!res.ok) throw new Error(`Heatmap API error: ${res.status}`);
+  return res.json();
 }

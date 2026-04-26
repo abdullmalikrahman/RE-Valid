@@ -32,3 +32,9 @@ logs/
 
 # Editor
 .vscode/settings.json
+
+# Atlas GeoTIFF — file besar, jangan di-commit (download manual, lihat DOWNLOAD_INSTRUCTIONS.txt)
+*.tif
+*.tiff
+backend/data/atlas/*.tif
+backend/data/atlas/*.tiff

@@ -8,7 +8,23 @@ validate_station_mcp:
       ghi         → baseline = nilai ghi_baseline (kWh/m²/hari) dari kolom stations (NASA POWER / PVGIS)
   · Baseline adalah konstanta per-stasiun (long-term atlas mean) yang dibanding dengan
     distribusi observasi untuk menilai deviasi relatif sensor terhadap referensi iklim.
-  · Tulis hasilnya ke kolom rmse, bias, r2, mcp_status di tabel stations
+  · Setelah validasi: hitung AEP estimasi dan score kesesuaian lokasi secara otomatis.
+  · Tulis hasilnya ke kolom rmse, bias, r2, aep, score, mcp_status di tabel stations
+
+Rumus AEP estimasi (referensi kapasitas terpasang 10 MW / 10 MWp):
+  · Angin : AEP = wind_baseline³ × Cp × ρ/2 × A × 8760 / 1e6
+            Pendekatan praktis: AEP (GWh) = (wind_baseline/vrated)^3 × CF_rated × 8760 × P_rated
+            Implementasi: AEP (MWh) = wind_baseline × 520 × 8760 / 1000  (≈ 10 MW pada CF realistis)
+  · Surya : AEP (MWh) = ghi_baseline × 365 × P_rated_MWp × PR
+            Implementasi: AEP (MWh) = ghi_baseline × 365 × 10 × 0.78
+
+Rumus Score kesesuaian lokasi (0–100, berbasis metrik validasi MCP):
+  · Komponen R²     : bobot 40%  → sub_r2   = r2 × 100
+  · Komponen Bias   : bobot 30%  → sub_bias = max(0, 100 - |bias_pct| × 2)
+  · Komponen RMSE   : bobot 20%  → sub_rmse = max(0, 100 - rmse × 20)
+  · Komponen atlas  : bobot 10%  → sub_atlas = min(100, wind_baseline/10 × 100) untuk angin
+                                              = min(100, ghi_baseline/7 × 100) untuk surya
+  Score = 0.40×sub_r2 + 0.30×sub_bias + 0.20×sub_rmse + 0.10×sub_atlas
 """
 
 import math
@@ -17,6 +33,45 @@ import logging
 from app.workers.celery_app import celery_app
 
 logger = logging.getLogger(__name__)
+
+
+def _compute_aep(variable: str, atlas_value: float) -> int:
+    """Estimasi AEP (MWh/tahun) untuk kapasitas referensi 10 MW / 10 MWp.
+
+    Angin : AEP ≈ wind_baseline × 520 × 8760 / 1000
+      Asumsi: rata-rata daya ∝ kecepatan angin (linear approximation untuk screening)
+      dengan faktor 520 W per (m/s) kapasitas untuk turbin 10 MW di kondisi Jawa Barat.
+    Surya : AEP = ghi_baseline × 365 × 10 MWp × PR(0.78)
+    """
+    if variable == "wind":
+        # MWh/thn = m/s × 520 W/(m/s) × 8760 jam / 1e6 × 1e3 (ke MWh)
+        return round(atlas_value * 520 * 8760 / 1000)
+    else:
+        # MWh/thn = kWh/m²/hari × 365 × 10 MWp × 0.78 PR
+        return round(atlas_value * 365 * 10 * 0.78 * 1000)
+
+
+def _compute_score(r2: float, bias_pct: float, rmse: float, variable: str, atlas_value: float) -> int:
+    """Hitung skor kesesuaian lokasi (0–100) berbasis metrik validasi MCP.
+
+    Komponen:
+      40% R² (skill score): seberapa dekat rata-rata obs dengan atlas
+      30% Bias: penalti untuk deviasi sistematis terhadap atlas
+      20% RMSE: penalti untuk error absolut (dalam unit asli)
+      10% Potensi atlas: bonus untuk lokasi dengan potensi energi tinggi
+    """
+    sub_r2   = r2 * 100                              # 0–100
+    sub_bias = max(0.0, 100.0 - abs(bias_pct) * 2)  # 100 jika bias=0%, 0 jika bias≥50%
+    sub_rmse = max(0.0, 100.0 - rmse * 20)           # 100 jika rmse=0, 0 jika rmse≥5
+    if variable == "wind":
+        # Angin: atlas > 7 m/s = sangat baik (kelas 4+); < 3 m/s = buruk
+        sub_atlas = min(100.0, max(0.0, (atlas_value - 2.0) / 6.0 * 100))
+    else:
+        # Surya: atlas > 6 kWh/m²/hari = sangat baik; < 3 = buruk
+        sub_atlas = min(100.0, max(0.0, (atlas_value - 2.0) / 5.0 * 100))
+
+    score = 0.40 * sub_r2 + 0.30 * sub_bias + 0.20 * sub_rmse + 0.10 * sub_atlas
+    return max(0, min(100, round(score)))
 
 
 def _rmse(obs: list[float], baseline: list[float]) -> float:
@@ -32,25 +87,26 @@ def _bias_pct(obs: list[float], baseline: list[float]) -> float:
 
 
 def _r2(obs: list[float], baseline: list[float]) -> float:
-    """Nash-Sutcliffe Efficiency (NSE).
+    """Skill score berbasis bias relatif untuk baseline konstan (atlas climatology).
 
-    Bila baseline adalah konstanta atlas (seperti NASA POWER ERA5), ss_tot = 0
-    sehingga formula NSE standar tidak terdefinisi. Dalam kasus ini, gunakan
-    variansi obs sebagai denominator — mengukur seberapa jauh atlas dari mean obs.
-      NSE = 1 : obs sempurna cocok dengan atlas (no bias, no random error)
-      NSE = 0 : atlas tidak lebih baik dari mean obs sebagai prediktor
-      NSE < 0 : terdapat bias sistematis besar antara obs dan atlas (clamped ke 0)
+    Bila baseline adalah konstanta atlas (NASA POWER ERA5), tidak ada variasi
+    temporal pada referensi sehingga korelasi Pearson tidak terdefinisi.
+    Gunakan skill score: R² = 1 - |bias_relatif|, di mana:
+      R² = 1.0 : rata-rata obs sama persis dengan atlas (tidak ada bias sistematis)
+      R² = 0.8 : rata-rata obs menyimpang 20% dari atlas
+      R² = 0.0 : bias ≥ 100% (obs jauh dari atlas)
+    Bila baseline bervariasi (misal ERA5 time-series), gunakan R² Pearson standar.
     """
     mean_b = sum(baseline) / len(baseline)
     ss_tot = sum((b - mean_b) ** 2 for b in baseline)
-    ss_res = sum((o - b) ** 2 for o, b in zip(obs, baseline))
     if ss_tot == 0:
-        # Baseline konstan — gunakan variansi obs sebagai referensi (NSE modified)
+        # Baseline konstan — hitung skill score berbasis bias relatif
+        if mean_b == 0:
+            return 0.0
         mean_obs = sum(obs) / len(obs)
-        ss_obs = sum((o - mean_obs) ** 2 for o in obs)
-        if ss_obs == 0:
-            return 1.0  # obs tidak bervariasi dan sama persis dengan atlas
-        return 1.0 - ss_res / ss_obs
+        norm_bias = abs(mean_obs - mean_b) / mean_b
+        return max(0.0, 1.0 - norm_bias)
+    ss_res = sum((o - b) ** 2 for o, b in zip(obs, baseline))
     return 1.0 - ss_res / ss_tot
 
 
@@ -108,6 +164,11 @@ def validate_station_mcp(self, station_id: str, variable: str = "wind", n: int =
 
         obs = [float(r[0]) for r in rows]
 
+        # Untuk solar: konversi GHI dari W/m² (rata-rata harian) ke kWh/m²/hari
+        # agar unit konsisten dengan ghi_baseline yang disimpan dalam kWh/m²/hari
+        if variable == "solar":
+            obs = [o * 24 / 1000 for o in obs]
+
         # Ambil nilai baseline atlas dari kolom stations
         if variable == "wind":
             cur.execute("SELECT wind_baseline FROM stations WHERE id = %s", (station_id,))
@@ -149,26 +210,32 @@ def validate_station_mcp(self, station_id: str, variable: str = "wind", n: int =
         # Clamp R² to [0, 1]
         r2 = max(0.0, min(1.0, r2))
 
+        # Kalkulasi AEP estimasi dan score kesesuaian lokasi secara otomatis
+        aep   = _compute_aep(variable, atlas_value)
+        score = _compute_score(r2, bias, rmse, variable, atlas_value)
+
         # Persist to stations table
         cur.execute(
             """
             UPDATE stations
-            SET    rmse       = %s,
-                   bias       = %s,
-                   r2         = %s,
-                   mcp_status = 'selesai',
+            SET    rmse        = %s,
+                   bias        = %s,
+                   r2          = %s,
+                   aep         = %s,
+                   score       = %s,
+                   mcp_status  = 'selesai',
                    last_update = NOW()
             WHERE  id = %s
             """,
-            (rmse, bias, r2, station_id),
+            (rmse, bias, r2, aep, score, station_id),
         )
         conn.commit()
         cur.close()
         conn.close()
 
         logger.info(
-            "validate_station_mcp DONE: station=%s var=%s rmse=%.3f bias=%.2f r2=%.3f",
-            station_id, variable, rmse, bias, r2,
+            "validate_station_mcp DONE: station=%s var=%s rmse=%.3f bias=%.2f r2=%.3f aep=%d score=%d",
+            station_id, variable, rmse, bias, r2, aep, score,
         )
         return {
             "station_id": station_id,
@@ -177,6 +244,8 @@ def validate_station_mcp(self, station_id: str, variable: str = "wind", n: int =
             "rmse": rmse,
             "bias": bias,
             "r2": r2,
+            "aep": aep,
+            "score": score,
             "mcp_status": "selesai",
         }
 

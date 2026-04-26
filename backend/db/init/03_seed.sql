@@ -15,30 +15,30 @@ INSERT INTO stations (
         'Pos Pegunungan Wayang',
         -7.2184, 107.6452,
         'Bandung Selatan, Jawa Barat', 1820,
-        'prioritas', 92,
+        'prioritas', 68,
         'Jan 2023 – Des 2023', 'Angin, Iradiasi', 'selesai',
-        6.8, 5.1, 14200,
-        1.450, 1.20, 0.890
+        6.8, 5.1, 16353,
+        1.09, 19.80, 0.800
     ),
     (
         'CMH-001',
         'Stasiun Cimahi Utara',
         -6.8712, 107.5432,
         'Cimahi, Jawa Barat', 752,
-        'prioritas', 87,
+        'prioritas', 78,
         'Jan 2023 – Des 2023', 'Angin, Iradiasi', 'selesai',
-        6.2, 4.8, 12450,
-        1.820, -0.80, 0.840
+        6.2, 4.8, 16353,
+        0.93, 11.42, 0.886
     ),
     (
         'PGD-023',
         'Pos Pesisir Pangandaran',
         -7.7041, 108.6508,
         'Pangandaran, Jawa Barat', 12,
-        'kandidat', 71,
+        'kandidat', 86,
         'Mar 2023 – Des 2023', 'Angin, Iradiasi', 'berjalan',
-        5.4, 4.6, 9800,
-        2.310, 4.70, 0.710
+        5.4, 4.6, 19997,
+        0.86, 4.78, 0.952
     ),
     (
         'SBG-105',
@@ -47,7 +47,7 @@ INSERT INTO stations (
         'Subang, Jawa Barat', 48,
         'tidak_sesuai', 44,
         NULL, 'Surya', 'pending',
-        3.2, 4.2, NULL,
+        3.2, 4.2, 17902,
         NULL, NULL, NULL
     ),
     (
@@ -55,20 +55,20 @@ INSERT INTO stations (
         'Stasiun Garut Selatan',
         -7.4833, 107.8717,
         'Garut, Jawa Barat', 730,
-        'kandidat', 76,
+        'kandidat', 83,
         'Feb 2023 – Des 2023', 'Angin, Iradiasi', 'selesai',
-        5.9, 4.9, 11100,
-        1.930, 2.10, 0.810
+        5.9, 4.9, 21546,
+        0.91, 7.82, 0.922
     ),
     (
         'TSM-034',
         'Pos Tasikmalaya Timur',
         -7.3544, 108.2248,
         'Tasikmalaya, Jawa Barat', 368,
-        'kandidat', 68,
+        'kandidat', 88,
         'Jan 2023 – Sep 2023', 'Angin', 'berjalan',
-        5.1, 4.5, 8700,
-        2.540, 3.80, 0.740
+        5.1, 4.5, 21546,
+        0.84, -2.75, 0.972
     )
 ON CONFLICT (id) DO UPDATE SET
     name        = EXCLUDED.name,

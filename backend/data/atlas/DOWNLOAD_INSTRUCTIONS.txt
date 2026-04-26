@@ -1,0 +1,34 @@
+INSTRUKSI DOWNLOAD FILE ATLAS GeoTIFF
+=====================================
+
+Folder ini berisi file GeoTIFF dari Global Wind Atlas (GWA) yang digunakan
+sebagai referensi baseline kecepatan angin per stasiun (resolusi ~250m).
+
+File yang dibutuhkan
+--------------------
+  IDN_wind-speed_100m.tif
+
+  Sumber  : Global Wind Atlas 3.0 — https://globalwindatlas.info
+  Dataset : Mean wind speed at 100m height
+  Area    : Indonesia (IDN)
+
+Cara download
+-------------
+1. Buka https://globalwindatlas.info/en/download/gis-files
+2. Pilih negara: Indonesia
+3. Pilih layer : Wind speed
+4. Pilih height: 100m
+5. Klik Download → simpan sebagai IDN_wind-speed_100m.tif
+6. Letakkan file di folder ini (backend/data/atlas/)
+
+Catatan
+-------
+- Ukuran file sekitar 30-80 MB
+- File ini TIDAK di-commit ke git (sudah ditambahkan ke .gitignore)
+- Jika file tidak ada, sistem otomatis fallback ke NASA POWER ERA5
+- Untuk GSA (Global Solar Atlas), tidak perlu download karena menggunakan
+  REST API langsung: https://api.globalsolaratlas.info/data/lta?loc={lat},{lon}
+
+Format nilai
+------------
+  IDN_wind-speed_100m.tif : nilai dalam m/s (langsung dipakai)

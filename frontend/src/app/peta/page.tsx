@@ -4,8 +4,9 @@ import dynamic from 'next/dynamic';
 import Link from 'next/link';
 import { useState, useCallback, useEffect, useRef } from 'react';
 import Navbar from '@/components/Navbar';
-import { windHeatPoints, solarHeatPoints, relativeTime, type Station } from '@/lib/stationData';
+import { relativeTime, type Station } from '@/lib/stationData';
 import { useStations } from '@/hooks/useStations';
+import { fetchHeatmapData, type HeatmapData } from '@/lib/api';
 
 // Leaflet must be client-side only (no SSR)
 const LeafletMap = dynamic(() => import('@/components/LeafletMap'), {
@@ -181,6 +182,50 @@ function StationPanel({
           </div>
         </section>
 
+        {/* Baseline atlas 3 sumber */}
+        {(station.windBaselineGwa != null || station.windBaselineNasa != null || station.ghiBaselineGsa != null || station.ghiBaselineNasa != null) && (
+          <section>
+            <h3 className="text-[13px] font-bold text-slate-900 dark:text-white mb-2 flex items-center gap-1.5">
+              <span className="material-symbols-outlined text-cyan-400 text-[17px]">public</span>
+              Baseline Atlas
+            </h3>
+            <div className="bg-slate-50 dark:bg-[#111a22] rounded-lg border border-slate-200 dark:border-[#233648] divide-y divide-slate-100 dark:divide-[#1e2d3d] text-[12px]">
+              {station.windBaselineGwa != null && (
+                <div className="flex justify-between items-center px-3 py-2">
+                  <span className="text-slate-500 dark:text-text-secondary flex items-center gap-1">
+                    <span className="material-symbols-outlined text-[13px] text-blue-400">air</span> GWA 3.0
+                  </span>
+                  <span className="font-semibold text-slate-800 dark:text-slate-200">{station.windBaselineGwa} m/s</span>
+                </div>
+              )}
+              {station.windBaselineNasa != null && (
+                <div className="flex justify-between items-center px-3 py-2">
+                  <span className="text-slate-500 dark:text-text-secondary flex items-center gap-1">
+                    <span className="material-symbols-outlined text-[13px] text-blue-400">air</span> NASA POWER
+                  </span>
+                  <span className="font-semibold text-slate-800 dark:text-slate-200">{station.windBaselineNasa} m/s</span>
+                </div>
+              )}
+              {station.ghiBaselineGsa != null && (
+                <div className="flex justify-between items-center px-3 py-2">
+                  <span className="text-slate-500 dark:text-text-secondary flex items-center gap-1">
+                    <span className="material-symbols-outlined text-[13px] text-yellow-400">wb_sunny</span> GSA
+                  </span>
+                  <span className="font-semibold text-slate-800 dark:text-slate-200">{station.ghiBaselineGsa} kWh/m²/hr</span>
+                </div>
+              )}
+              {station.ghiBaselineNasa != null && (
+                <div className="flex justify-between items-center px-3 py-2">
+                  <span className="text-slate-500 dark:text-text-secondary flex items-center gap-1">
+                    <span className="material-symbols-outlined text-[13px] text-yellow-400">wb_sunny</span> NASA POWER
+                  </span>
+                  <span className="font-semibold text-slate-800 dark:text-slate-200">{station.ghiBaselineNasa} kWh/m²/hr</span>
+                </div>
+              )}
+            </div>
+          </section>
+        )}
+
       </div>
 
       <div className="p-4 border-t border-slate-200 dark:border-[#233648] shrink-0 flex gap-2">
@@ -192,7 +237,7 @@ function StationPanel({
           <span>Analisis</span>
         </Link>
         <Link
-          href={`/laporan?station=${station.id}`}
+          href={`/laporan?station=${station.id}&from=peta`}
           className="flex-1 flex items-center justify-center gap-1.5 rounded-lg h-10 px-3 bg-primary hover:bg-blue-600 text-white text-[12px] font-bold shadow-lg shadow-blue-500/20 transition-all"
         >
           <span className="material-symbols-outlined text-[15px]">description</span>
@@ -317,6 +362,13 @@ export default function PetaPage() {
   const [searchQuery, setSearchQuery] = useState('');
   const [showMobileSidebar, setShowMobileSidebar] = useState(false);
 
+  // ── Heatmap data (fetched lazily dari backend) ────────────────────────────
+  const [windHeatData, setWindHeatData] = useState<[number, number, number][]>([]);
+  const [solarHeatData, setSolarHeatData] = useState<[number, number, number][]>([]);
+  const [heatmapMeta, setHeatmapMeta] = useState<Partial<Record<'wind' | 'solar', HeatmapData>>>({});
+  const [heatmapLoading, setHeatmapLoading] = useState(false);
+  const heatmapLoadedRef = useRef<Set<string>>(new Set());
+
   const handleSelectStation = useCallback((s: Station | null) => setSelectedStation(s), []);
 
   const searchRef = useRef<HTMLDivElement>(null);
@@ -362,6 +414,24 @@ export default function PetaPage() {
       setSelectedStation(null);
     }
   }, [filteredStations, selectedStation]);
+
+  // ── Fetch heatmap dari backend saat layer diaktifkan ──────────────────────
+  useEffect(() => {
+    if (activeLayer === 'none') return;
+    const type = activeLayer;
+    if (heatmapLoadedRef.current.has(type)) return;
+    setHeatmapLoading(true);
+    fetchHeatmapData(type)
+      .then((data) => {
+        heatmapLoadedRef.current.add(type);
+        if (type === 'wind') setWindHeatData(data.points);
+        else setSolarHeatData(data.points);
+        setHeatmapMeta((prev) => ({ ...prev, [type]: data }));
+      })
+      .catch((err) => console.error('Heatmap fetch error:', err))
+      .finally(() => setHeatmapLoading(false));
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [activeLayer]);
 
   return (
     <div className="bg-background-light dark:bg-background-dark text-slate-900 dark:text-white font-display overflow-hidden h-screen flex flex-col">
@@ -460,16 +530,22 @@ export default function PetaPage() {
                   <label className="flex items-center gap-3 py-1.5 cursor-pointer group border-t border-slate-200 dark:border-[#233648]/50">
                     <input type="checkbox" checked={activeLayer === 'wind'} onChange={() => setActiveLayer(v => v === 'wind' ? 'none' : 'wind')} className="h-4 w-4 rounded border-slate-300 dark:border-[#324d67] accent-primary" />
                     <div>
-                      <p className="text-slate-700 dark:text-white text-[13px] font-medium group-hover:text-primary transition-colors">Kecepatan Angin (Heatmap)</p>
-                      <p className="text-slate-400 text-[11px]">ERA5 (ECMWF) &middot; m/s</p>
+                      <p className="text-slate-700 dark:text-white text-[13px] font-medium group-hover:text-primary transition-colors flex items-center gap-1">
+                        Kecepatan Angin (Heatmap)
+                        {heatmapLoading && activeLayer === 'wind' && <span className="material-symbols-outlined text-[13px] animate-spin text-primary">progress_activity</span>}
+                      </p>
+                      <p className="text-slate-400 text-[11px]">{heatmapMeta.wind ? heatmapMeta.wind.source : 'GWA 3.0 / NASA POWER · m/s'}</p>
                     </div>
                   </label>
                   {/* Iradiasi Surya */}
                   <label className="flex items-center gap-3 py-1.5 cursor-pointer group border-t border-slate-200 dark:border-[#233648]/50">
                     <input type="checkbox" checked={activeLayer === 'solar'} onChange={() => setActiveLayer(v => v === 'solar' ? 'none' : 'solar')} className="h-4 w-4 rounded border-slate-300 dark:border-[#324d67] accent-primary" />
                     <div>
-                      <p className="text-slate-700 dark:text-white text-[13px] font-medium group-hover:text-primary transition-colors">Iradiasi Surya (Heatmap)</p>
-                      <p className="text-slate-400 text-[11px]">GWA/GSA &middot; kWh/m&sup2;/hari</p>
+                      <p className="text-slate-700 dark:text-white text-[13px] font-medium group-hover:text-primary transition-colors flex items-center gap-1">
+                        Iradiasi Surya (Heatmap)
+                        {heatmapLoading && activeLayer === 'solar' && <span className="material-symbols-outlined text-[13px] animate-spin text-primary">progress_activity</span>}
+                      </p>
+                      <p className="text-slate-400 text-[11px]">{heatmapMeta.solar ? heatmapMeta.solar.source : 'GSA / NASA POWER · kWh/m²/hari'}</p>
                     </div>
                   </label>
                   {/* Prioritas GIS-MCDA */}
@@ -548,8 +624,8 @@ export default function PetaPage() {
             showMCDA={showMCDA}
             selectedStation={selectedStation}
             onSelectStation={handleSelectStation}
-            windPoints={windHeatPoints}
-            solarPoints={solarHeatPoints}
+            windPoints={windHeatData}
+            solarPoints={solarHeatData}
           />
 
           {/* Zoom controls - wired via leaflet map ref via window */}
@@ -594,7 +670,10 @@ export default function PetaPage() {
             {/* Active layer badge */}
             {activeLayer !== 'none' && (
               <div className={`flex items-center gap-2 px-3 py-1.5 rounded-full text-[11px] font-bold border backdrop-blur-sm ${activeLayer === 'wind' ? 'bg-primary/20 border-primary/50 text-primary' : 'bg-yellow-500/20 border-yellow-500/50 text-yellow-400'}`}>
-                <span className="material-symbols-outlined text-[14px]">{activeLayer === 'wind' ? 'air' : 'wb_sunny'}</span>
+                {heatmapLoading
+                  ? <span className="material-symbols-outlined text-[14px] animate-spin">progress_activity</span>
+                  : <span className="material-symbols-outlined text-[14px]">{activeLayer === 'wind' ? 'air' : 'wb_sunny'}</span>
+                }
                 {activeLayer === 'wind' ? 'Layer: Kecepatan Angin' : 'Layer: Iradiasi Surya'}
                 <button onClick={() => setActiveLayer('none')} className="ml-1 opacity-70 hover:opacity-100">
                   <span className="material-symbols-outlined text-[13px]">close</span>
@@ -615,9 +694,21 @@ export default function PetaPage() {
                     ? 'linear-gradient(to right, #2563eb, #22c55e, #eab308, #f97316, #ef4444)'
                     : 'linear-gradient(to right, #fde68a, #f59e0b, #f97316, #dc2626)'
                 }} />
-                <div className="flex justify-between text-[10px] text-slate-400 mt-0.5">
-                  <span>Rendah</span><span>Tinggi</span>
-                </div>
+                {heatmapMeta[activeLayer] ? (
+                  <div className="flex justify-between text-[10px] text-slate-500 dark:text-slate-400 mt-0.5">
+                    <span>{heatmapMeta[activeLayer]!.min_val} {heatmapMeta[activeLayer]!.unit}</span>
+                    <span>{heatmapMeta[activeLayer]!.max_val} {heatmapMeta[activeLayer]!.unit}</span>
+                  </div>
+                ) : (
+                  <div className="flex justify-between text-[10px] text-slate-400 mt-0.5">
+                    <span>Rendah</span><span>Tinggi</span>
+                  </div>
+                )}
+                {heatmapMeta[activeLayer] && (
+                  <p className="text-[10px] text-slate-400 mt-1 leading-tight max-w-36 truncate" title={heatmapMeta[activeLayer]!.source}>
+                    Sumber: {heatmapMeta[activeLayer]!.source}
+                  </p>
+                )}
               </div>
             )}
             {showMCDA && (

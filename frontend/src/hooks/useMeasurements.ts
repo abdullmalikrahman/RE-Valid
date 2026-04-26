@@ -1,4 +1,5 @@
 import useSWR from 'swr';
+import { apiFetch } from '@/lib/api';
 
 export interface Measurement {
   id: number;
@@ -14,7 +15,7 @@ export interface Measurement {
 }
 
 async function fetchMeasurements(url: string): Promise<Measurement[]> {
-  const res = await fetch(url);
+  const res = await apiFetch(url);
   if (!res.ok) throw new Error('Failed to fetch measurements');
   return res.json();
 }

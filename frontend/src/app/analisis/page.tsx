@@ -11,6 +11,7 @@ import Navbar from '@/components/Navbar';
 import Footer from '@/components/Footer';
 import { useStations } from '@/hooks/useStations';
 import { useMeasurements } from '@/hooks/useMeasurements';
+import { apiFetch } from '@/lib/api';
 
 const mcpStatusLabel: Record<string, Record<string, string>> = {
   wind: { selesai: 'Analisis MCP Selesai', berjalan: 'Analisis MCP Berjalan', pending: 'Belum Dijalankan' },
@@ -52,7 +53,7 @@ function AnalisisContent() {
     setTaskMsg('');
     const token = typeof window !== 'undefined' ? localStorage.getItem('re_valid_token') : null;
     try {
-      const res = await fetch('/api/v1/analyze', {
+      const res = await apiFetch('/api/v1/analyze', {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
@@ -70,7 +71,7 @@ function AnalisisContent() {
 
       // Poll until done
       const poll = async () => {
-        const r = await fetch(`/api/v1/analyze/${task_id}`);
+        const r = await apiFetch(`/api/v1/analyze/${task_id}`);
         const data = await r.json();
         if (data.status === 'success') {
           setTaskState('success');
@@ -101,6 +102,13 @@ function AnalisisContent() {
   const windBaselineVal = station.windBaseline ?? station.windSpeed * 1.046;
   const windLongTerm = windBaselineVal.toFixed(1);
   const windDiff = (((station.windSpeed - windBaselineVal) / windBaselineVal) * 100).toFixed(1);
+  // Per-source deviations
+  const windDiffGwa = (station.windBaselineGwa != null && station.windBaselineGwa > 0)
+    ? parseFloat((((station.windSpeed - station.windBaselineGwa) / station.windBaselineGwa) * 100).toFixed(1))
+    : null;
+  const windDiffNasa = (station.windBaselineNasa != null && station.windBaselineNasa > 0)
+    ? parseFloat((((station.windSpeed - station.windBaselineNasa) / station.windBaselineNasa) * 100).toFixed(1))
+    : null;
   const aepGross = station.aep;
   const aepNetP50 = Math.round(station.aep * 0.877);
   const aepNetP90 = Math.round(station.aep * 0.767);
@@ -113,6 +121,12 @@ function AnalisisContent() {
   // GHI baseline dari atlas (NASA POWER/PVGIS) jika tersedia; fallback ke aproksimasi
   const ghiBaseline = parseFloat((station.ghiBaseline ?? station.irradiation * 0.958).toFixed(2));
   const ghiDiff = parseFloat((((station.irradiation - ghiBaseline) / ghiBaseline) * 100).toFixed(1));
+  const ghiDiffGsa = (station.ghiBaselineGsa != null && station.ghiBaselineGsa > 0)
+    ? parseFloat((((station.irradiation - station.ghiBaselineGsa) / station.ghiBaselineGsa) * 100).toFixed(1))
+    : null;
+  const ghiDiffNasa = (station.ghiBaselineNasa != null && station.ghiBaselineNasa > 0)
+    ? parseFloat((((station.irradiation - station.ghiBaselineNasa) / station.ghiBaselineNasa) * 100).toFixed(1))
+    : null;
   // Clearness Index: Kt = GHI_obs / GHI_extraterrestrial (≈ 8.5 kWh/m²/hari at 7°S lat)
   const ktIndex = parseFloat((station.irradiation / 8.5).toFixed(2));
   const ktLabel = ktIndex >= 0.55 ? 'Cerah' : ktIndex >= 0.40 ? 'Campuran' : 'Berawan';
@@ -181,13 +195,14 @@ function AnalisisContent() {
   const windValidationRows: { metric: string; value: string; target: string; pass: boolean | null }[] = [
     { metric: 'RMSE (m/s)', value: station.rmse.toFixed(2), target: '< 2.0', pass: station.rmse < 2.0 },
     { metric: 'MAE (m/s)', value: mae !== null ? mae.toFixed(2) : '–', target: '< 1.5', pass: mae !== null ? mae < 1.5 : null },
-    { metric: 'Bias vs GWA (%)', value: biasDisplay, target: '± 5%', pass: Math.abs(station.bias) <= 5 },
+    { metric: 'Bias vs GWA (%)', value: windDiffGwa !== null ? (windDiffGwa >= 0 ? '+' : '') + windDiffGwa + '%' : '–', target: '± 5%', pass: windDiffGwa !== null ? Math.abs(windDiffGwa) <= 5 : null },
+    { metric: 'Bias vs NASA POWER (%)', value: windDiffNasa !== null ? (windDiffNasa >= 0 ? '+' : '') + windDiffNasa + '%' : '–', target: '± 5%', pass: windDiffNasa !== null ? Math.abs(windDiffNasa) <= 5 : null },
     { metric: 'Ketersediaan Data', value: availDisplay, target: '> 90%', pass: availPct !== null ? availPct > 90 : null },
   ];
-  const solarBiasDisplay = (station.bias > 0 ? '+' : '') + station.bias.toFixed(1) + '%';
   const solarValidationRows: { metric: string; value: string; target: string; pass: boolean | null }[] = [
     { metric: 'Korelasi Atlas (R²)', value: station.r2.toFixed(2), target: '> 0.70', pass: station.r2 > 0.70 },
-    { metric: 'Bias vs GSA (%)', value: solarBiasDisplay, target: '± 5%', pass: Math.abs(station.bias) <= 5 },
+    { metric: 'Bias vs GSA (%)', value: ghiDiffGsa !== null ? (ghiDiffGsa >= 0 ? '+' : '') + ghiDiffGsa + '%' : '–', target: '± 5%', pass: ghiDiffGsa !== null ? Math.abs(ghiDiffGsa) <= 5 : null },
+    { metric: 'Bias vs NASA POWER (%)', value: ghiDiffNasa !== null ? (ghiDiffNasa >= 0 ? '+' : '') + ghiDiffNasa + '%' : '–', target: '± 5%', pass: ghiDiffNasa !== null ? Math.abs(ghiDiffNasa) <= 5 : null },
     { metric: 'Clearness Index (Kt)', value: ktIndex.toFixed(2), target: '0.40–0.65', pass: ktIndex >= 0.40 && ktIndex <= 0.65 },
     { metric: 'Ketersediaan Data', value: availDisplay, target: '> 90%', pass: availPct !== null ? availPct > 90 : null },
   ];
@@ -213,7 +228,7 @@ function AnalisisContent() {
             <div className="flex flex-col items-end gap-2">
               <div className="flex gap-2">
                 <Link
-                  href={`/laporan?station=${station.id}`}
+                  href={`/laporan?station=${station.id}&from=analisis`}
                   className="flex items-center gap-1.5 px-3 py-2 bg-transparent border border-gray-300 dark:border-gray-600 text-slate-700 dark:text-white rounded-lg hover:bg-gray-50 dark:hover:bg-white/5 transition-all text-xs font-medium"
                 >
                   <span className="material-symbols-outlined text-[16px]">description</span>
@@ -326,7 +341,7 @@ function AnalisisContent() {
           <div className="flex flex-wrap gap-x-4 gap-y-1 text-xs text-slate-400">
             <span>Sumber: <span className="text-slate-200 font-semibold">ERA5 (ECMWF)</span></span>
             <span>&middot;</span>
-            <span>Atlas: <span className="text-slate-200 font-semibold">{isWind ? 'GWA 3.0' : 'GSA (Global Solar Atlas)'}</span></span>
+            <span>Atlas: <span className="text-slate-200 font-semibold">{isWind ? 'GWA 3.0 + NASA POWER' : 'GSA (Solargis) + NASA POWER'}</span></span>
             <span>&middot;</span>
             <span>Periode: <span className="text-slate-200 font-semibold">{station.period}</span></span>
           </div>
@@ -546,7 +561,11 @@ function AnalisisContent() {
             <div className="bg-gray-50 dark:bg-[#111a22] rounded-lg p-3 text-xs text-slate-500 dark:text-slate-400">
               <div className="flex justify-between mb-1.5">
                 <span>Baseline atlas:</span>
-                <span className="font-mono">{isWind ? `${windLongTerm} m/s (NASA/GWA)` : `${ghiBaseline} kWh/m²/hr (NASA/GSA)`}</span>
+                <span className="font-mono">
+                {isWind
+                  ? `${windLongTerm} m/s (${station.windBaselineGwa != null ? 'GWA 3.0' : 'NASA POWER'})`
+                  : `${ghiBaseline} kWh/m²/hr (${station.ghiBaselineGsa != null ? 'GSA Solargis' : 'NASA POWER'})`}
+              </span>
               </div>
               <div className={`flex justify-between items-center font-bold ${r2Color}`}>
                 <span>R² =</span>
@@ -563,7 +582,7 @@ function AnalisisContent() {
               <h3 className="text-sm font-bold text-slate-900 dark:text-white">
                 Parameter Validasi {isWind ? 'Angin' : 'Surya'}
               </h3>
-              <Link href={`/laporan?station=${station.id}`} className="text-xs text-primary font-medium hover:underline">
+              <Link href={`/laporan?station=${station.id}&from=analisis`} className="text-xs text-primary font-medium hover:underline">
                 Lihat Laporan Lengkap
               </Link>
             </div>
@@ -724,6 +743,143 @@ function AnalisisContent() {
                 </div>
               </>
             )}
+          </div>
+        </div>
+
+        {/* ── Perbandingan Sumber Baseline ─────────────────────────────── */}
+        <div className="bg-white dark:bg-card-dark rounded-xl border border-gray-200 dark:border-border-dark overflow-hidden mb-4">
+          <div className="px-4 py-3 border-b border-gray-200 dark:border-border-dark flex items-center gap-2">
+            <span className="material-symbols-outlined text-primary text-[18px]">compare_arrows</span>
+            <h3 className="text-sm font-bold text-slate-900 dark:text-white">Perbandingan Sumber Baseline</h3>
+            <span className="ml-auto text-[10px] text-slate-400 bg-slate-100 dark:bg-slate-800 px-2 py-0.5 rounded-full">
+              {isWind ? 'Angin · m/s' : 'Surya · kWh/m²/hari'}
+            </span>
+          </div>
+          <div className="overflow-x-auto">
+            <table className="w-full text-xs">
+              <thead className="text-[10px] text-slate-500 dark:text-text-secondary uppercase bg-gray-50 dark:bg-[#1a232c] border-b border-gray-200 dark:border-border-dark">
+                <tr>
+                  <th className="px-4 py-3 font-semibold text-left">Sumber Atlas</th>
+                  <th className="px-4 py-3 font-semibold text-right">Nilai Baseline</th>
+                  <th className="px-4 py-3 font-semibold text-right">Nilai Obs</th>
+                  <th className="px-4 py-3 font-semibold text-right">Deviasi</th>
+                  <th className="px-4 py-3 font-semibold text-center">Status</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-gray-100 dark:divide-slate-800">
+                {isWind ? (
+                  <>
+                    <tr className="hover:bg-gray-50 dark:hover:bg-slate-800/50 transition-colors">
+                      <td className="px-4 py-3">
+                        <div className="flex items-center gap-2">
+                          <span className="w-2 h-2 rounded-full bg-primary shrink-0" />
+                          <span className="font-semibold text-slate-900 dark:text-white">GWA 3.0</span>
+                          <span className="text-[10px] text-slate-400">GeoTIFF 250m · 100m hub</span>
+                        </div>
+                      </td>
+                      <td className="px-4 py-3 text-right font-mono text-slate-700 dark:text-slate-300">
+                        {station.windBaselineGwa != null ? `${station.windBaselineGwa} m/s` : <span className="text-slate-400">–</span>}
+                      </td>
+                      <td className="px-4 py-3 text-right font-mono text-slate-700 dark:text-slate-300">{station.windSpeed} m/s</td>
+                      <td className="px-4 py-3 text-right font-mono">
+                        {windDiffGwa !== null
+                          ? <span className={windDiffGwa >= 0 ? 'text-green-500 font-bold' : 'text-red-400 font-bold'}>{windDiffGwa >= 0 ? '+' : ''}{windDiffGwa}%</span>
+                          : <span className="text-slate-400">–</span>}
+                      </td>
+                      <td className="px-4 py-3 text-center">
+                        {station.windBaselineGwa != null
+                          ? <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-primary/10 text-primary border border-primary/30">Aktif</span>
+                          : <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-slate-100 dark:bg-slate-800 text-slate-400">Belum Tersedia</span>}
+                      </td>
+                    </tr>
+                    <tr className="hover:bg-gray-50 dark:hover:bg-slate-800/50 transition-colors">
+                      <td className="px-4 py-3">
+                        <div className="flex items-center gap-2">
+                          <span className="w-2 h-2 rounded-full bg-slate-400 shrink-0" />
+                          <span className="font-semibold text-slate-900 dark:text-white">NASA POWER ERA5</span>
+                          <span className="text-[10px] text-slate-400">Klimatologi 1991–2020</span>
+                        </div>
+                      </td>
+                      <td className="px-4 py-3 text-right font-mono text-slate-700 dark:text-slate-300">
+                        {station.windBaselineNasa != null ? `${station.windBaselineNasa} m/s` : <span className="text-slate-400">–</span>}
+                      </td>
+                      <td className="px-4 py-3 text-right font-mono text-slate-700 dark:text-slate-300">{station.windSpeed} m/s</td>
+                      <td className="px-4 py-3 text-right font-mono">
+                        {windDiffNasa !== null
+                          ? <span className={windDiffNasa >= 0 ? 'text-green-500 font-bold' : 'text-red-400 font-bold'}>{windDiffNasa >= 0 ? '+' : ''}{windDiffNasa}%</span>
+                          : <span className="text-slate-400">–</span>}
+                      </td>
+                      <td className="px-4 py-3 text-center">
+                        {station.windBaselineNasa != null
+                          ? <span className={`px-2 py-0.5 rounded-full text-[10px] font-bold ${
+                              station.windBaselineGwa != null
+                                ? 'bg-slate-100 dark:bg-slate-800 text-slate-400'
+                                : 'bg-primary/10 text-primary border border-primary/30'
+                            }`}>{station.windBaselineGwa != null ? 'Pembanding' : 'Aktif (Fallback)'}</span>
+                          : <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-slate-100 dark:bg-slate-800 text-slate-400">Belum Tersedia</span>}
+                      </td>
+                    </tr>
+                  </>
+                ) : (
+                  <>
+                    <tr className="hover:bg-gray-50 dark:hover:bg-slate-800/50 transition-colors">
+                      <td className="px-4 py-3">
+                        <div className="flex items-center gap-2">
+                          <span className="w-2 h-2 rounded-full bg-amber-400 shrink-0" />
+                          <span className="font-semibold text-slate-900 dark:text-white">GSA (Solargis)</span>
+                          <span className="text-[10px] text-slate-400">REST API · resolusi 1km</span>
+                        </div>
+                      </td>
+                      <td className="px-4 py-3 text-right font-mono text-slate-700 dark:text-slate-300">
+                        {station.ghiBaselineGsa != null ? `${station.ghiBaselineGsa} kWh/m²/hr` : <span className="text-slate-400">–</span>}
+                      </td>
+                      <td className="px-4 py-3 text-right font-mono text-slate-700 dark:text-slate-300">{station.irradiation.toFixed(2)} kWh/m²/hr</td>
+                      <td className="px-4 py-3 text-right font-mono">
+                        {ghiDiffGsa !== null
+                          ? <span className={ghiDiffGsa >= 0 ? 'text-green-500 font-bold' : 'text-red-400 font-bold'}>{ghiDiffGsa >= 0 ? '+' : ''}{ghiDiffGsa}%</span>
+                          : <span className="text-slate-400">–</span>}
+                      </td>
+                      <td className="px-4 py-3 text-center">
+                        {station.ghiBaselineGsa != null
+                          ? <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-amber-500/10 text-amber-500 border border-amber-500/30">Aktif</span>
+                          : <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-slate-100 dark:bg-slate-800 text-slate-400">Belum Tersedia</span>}
+                      </td>
+                    </tr>
+                    <tr className="hover:bg-gray-50 dark:hover:bg-slate-800/50 transition-colors">
+                      <td className="px-4 py-3">
+                        <div className="flex items-center gap-2">
+                          <span className="w-2 h-2 rounded-full bg-slate-400 shrink-0" />
+                          <span className="font-semibold text-slate-900 dark:text-white">NASA POWER ERA5</span>
+                          <span className="text-[10px] text-slate-400">Klimatologi 1991–2020</span>
+                        </div>
+                      </td>
+                      <td className="px-4 py-3 text-right font-mono text-slate-700 dark:text-slate-300">
+                        {station.ghiBaselineNasa != null ? `${station.ghiBaselineNasa} kWh/m²/hr` : <span className="text-slate-400">–</span>}
+                      </td>
+                      <td className="px-4 py-3 text-right font-mono text-slate-700 dark:text-slate-300">{station.irradiation.toFixed(2)} kWh/m²/hr</td>
+                      <td className="px-4 py-3 text-right font-mono">
+                        {ghiDiffNasa !== null
+                          ? <span className={ghiDiffNasa >= 0 ? 'text-green-500 font-bold' : 'text-red-400 font-bold'}>{ghiDiffNasa >= 0 ? '+' : ''}{ghiDiffNasa}%</span>
+                          : <span className="text-slate-400">–</span>}
+                      </td>
+                      <td className="px-4 py-3 text-center">
+                        {station.ghiBaselineNasa != null
+                          ? <span className={`px-2 py-0.5 rounded-full text-[10px] font-bold ${
+                              station.ghiBaselineGsa != null
+                                ? 'bg-slate-100 dark:bg-slate-800 text-slate-400'
+                                : 'bg-amber-500/10 text-amber-500 border border-amber-500/30'
+                            }`}>{station.ghiBaselineGsa != null ? 'Pembanding' : 'Aktif (Fallback)'}</span>
+                          : <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-slate-100 dark:bg-slate-800 text-slate-400">Belum Tersedia</span>}
+                      </td>
+                    </tr>
+                  </>
+                )}
+              </tbody>
+            </table>
+          </div>
+          <div className="px-4 py-2 bg-blue-50/50 dark:bg-blue-900/10 border-t border-blue-100 dark:border-blue-900/30 text-[10px] text-slate-400 flex items-center gap-1.5">
+            <span className="material-symbols-outlined text-[13px] text-blue-400">info</span>
+            Nilai <strong className="text-slate-500 dark:text-slate-300">Aktif</strong> dipakai sebagai baseline primer (GWA &gt; NASA untuk angin · GSA &gt; NASA untuk surya). Kolom kosong (–) artinya data atlas belum diambil — klik <em>Ambil dari GWA + GSA + NASA</em> di halaman Admin.
           </div>
         </div>
 

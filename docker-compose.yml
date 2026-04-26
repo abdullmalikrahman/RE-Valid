@@ -51,8 +51,120 @@ services:
       - mqtt_data:/mosquitto/data
       - mqtt_log:/mosquitto/log
 
+  # FastAPI Backend
+  backend:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    image: re-valid-backend:local
+    container_name: re_valid_backend
+    restart: unless-stopped
+    depends_on:
+      db:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      mqtt:
+        condition: service_started
+    environment:
+      DATABASE_URL: postgresql+asyncpg://${POSTGRES_USER:-revalid}:${POSTGRES_PASSWORD:-revalidpassword}@db:5432/${POSTGRES_DB:-revalid}
+      REDIS_URL: redis://redis:6379/0
+      MQTT_BROKER: mqtt
+      MQTT_PORT: 1883
+      MQTT_USERNAME: ${MQTT_USERNAME:-}
+      MQTT_PASSWORD: ${MQTT_PASSWORD:-}
+      SECRET_KEY: ${SECRET_KEY:-change-this-secret-key-in-production}
+      ALGORITHM: HS256
+      ACCESS_TOKEN_EXPIRE_MINUTES: ${ACCESS_TOKEN_EXPIRE_MINUTES:-60}
+      FRONTEND_URL: ${FRONTEND_URL:-http://localhost:3000}
+    ports:
+      - "8000:8000"
+    volumes:
+      # Mount direktori atlas agar GWA GeoTIFF bisa diakses tanpa rebuild
+      - ./backend/data/atlas:/app/data/atlas:ro
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000/health"]
+      interval: 30s
+      timeout: 10s
+      start_period: 30s
+      retries: 3
+
+  # Celery Worker (background tasks: atlas fetch, analyze, etc.)
+  celery:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    image: re-valid-backend:local
+    container_name: re_valid_celery
+    restart: unless-stopped
+    depends_on:
+      db:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    environment:
+      DATABASE_URL: postgresql+asyncpg://${POSTGRES_USER:-revalid}:${POSTGRES_PASSWORD:-revalidpassword}@db:5432/${POSTGRES_DB:-revalid}
+      REDIS_URL: redis://redis:6379/0
+      MQTT_BROKER: mqtt
+      MQTT_PORT: 1883
+      MQTT_USERNAME: ${MQTT_USERNAME:-}
+      MQTT_PASSWORD: ${MQTT_PASSWORD:-}
+      SECRET_KEY: ${SECRET_KEY:-change-this-secret-key-in-production}
+      ALGORITHM: HS256
+      ACCESS_TOKEN_EXPIRE_MINUTES: ${ACCESS_TOKEN_EXPIRE_MINUTES:-60}
+      FRONTEND_URL: ${FRONTEND_URL:-http://localhost:3000}
+    volumes:
+      - ./backend/data/atlas:/app/data/atlas:ro
+    command: ["celery", "-A", "app.workers.celery_app", "worker", "--loglevel=info", "--concurrency=2"]
+
+  # Alembic migration runner (runs once and exits)
+  migrate:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    image: re-valid-backend:local
+    container_name: re_valid_migrate
+    restart: "no"
+    depends_on:
+      db:
+        condition: service_healthy
+    environment:
+      DATABASE_URL: postgresql+asyncpg://${POSTGRES_USER:-revalid}:${POSTGRES_PASSWORD:-revalidpassword}@db:5432/${POSTGRES_DB:-revalid}
+      REDIS_URL: redis://redis:6379/0
+      SECRET_KEY: ${SECRET_KEY:-change-this-secret-key-in-production}
+      ALGORITHM: HS256
+      ACCESS_TOKEN_EXPIRE_MINUTES: 60
+      FRONTEND_URL: http://localhost:3000
+    command: ["python", "-m", "alembic", "upgrade", "head"]
+
+  # Next.js Frontend
+  frontend:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
+      args:
+        NEXT_PUBLIC_API_URL: http://backend:8000
+    image: re-valid-frontend:local
+    container_name: re_valid_frontend
+    restart: unless-stopped
+    depends_on:
+      backend:
+        condition: service_healthy
+    environment:
+      # Runtime: API proxy target (next.config.ts rewrites menggunakan ini)
+      NEXT_PUBLIC_API_URL: http://backend:8000
+    ports:
+      - "3000:3000"
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://localhost:3000"]
+      interval: 30s
+      timeout: 10s
+      start_period: 30s
+      retries: 3
+
 volumes:
   pg_data:
   redis_data:
   mqtt_data:
   mqtt_log:
+

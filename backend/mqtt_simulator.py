@@ -29,14 +29,18 @@ BROKER_PORT = 1883
 DEFAULT_INTERVAL = 60  # detik
 
 # ─── Profil setiap stasiun ─────────────────────────────────────────────────────
-# base_wind, base_ghi diambil dari data seed 03_seed.sql
+# base_wind: dikalibrasi terhadap wind_baseline (NASA POWER ERA5) per stasiun
+#   sehingga rata-rata obs mendekati nilai atlas dengan bias ±5–20%
+# base_ghi : dalam W/m² (rata-rata harian). Konsisten dengan 04_seed_measurements.sql
+#   MQTT client menyimpan ke measurements.ghi (W/m²)
+#   tasks.py mengonversi × 24/1000 → kWh/m²/hari sebelum dibanding ghi_baseline
 STATIONS = {
-    "GWY-089": {"base_wind": 6.8, "base_ghi": 350.0, "altitude": 1820},
-    "CMH-001": {"base_wind": 6.2, "base_ghi": 330.0, "altitude": 752},
-    "PGD-023": {"base_wind": 5.4, "base_ghi": 310.0, "altitude": 12},
-    "SBG-105": {"base_wind": 3.2, "base_ghi": 290.0, "altitude": 48},
-    "GRT-056": {"base_wind": 5.9, "base_ghi": 340.0, "altitude": 730},
-    "TSM-034": {"base_wind": 5.1, "base_ghi": 308.0, "altitude": 368},
+    "GWY-089": {"base_wind": 4.3, "base_ghi": 195.0, "altitude": 1820},
+    "CMH-001": {"base_wind": 4.0, "base_ghi": 209.0, "altitude": 752},
+    "PGD-023": {"base_wind": 4.6, "base_ghi": 215.0, "altitude": 12},
+    "SBG-105": {"base_wind": 3.5, "base_ghi": 210.0, "altitude": 48},
+    "GRT-056": {"base_wind": 5.1, "base_ghi": 205.0, "altitude": 730},
+    "TSM-034": {"base_wind": 4.6, "base_ghi": 200.0, "altitude": 368},
 }
 
 

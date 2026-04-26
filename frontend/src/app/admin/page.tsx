@@ -4,6 +4,7 @@ import { useRef, useState, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
 import Link from 'next/link';
 import { useStations } from '@/hooks/useStations';
+import { apiFetch } from '@/lib/api';
 
 function getToken(): string {
   if (typeof window === 'undefined') return '';
@@ -30,6 +31,10 @@ type AdminStation = {
   irradiation: number;
   windBaseline: number | null;
   ghiBaseline: number | null;
+  windBaselineGwa: number | null;
+  ghiBaselineGsa: number | null;
+  windBaselineNasa: number | null;
+  ghiBaselineNasa: number | null;
   lastUpdate: string;
 };
 
@@ -85,6 +90,10 @@ function StationModal({ station, onClose, onSave }: ModalProps) {
     score: station?.score ?? 50,
     windBaseline: station?.windBaseline ?? null as number | null,
     ghiBaseline: station?.ghiBaseline ?? null as number | null,
+    windBaselineGwa: station?.windBaselineGwa ?? null as number | null,
+    ghiBaselineGsa: station?.ghiBaselineGsa ?? null as number | null,
+    windBaselineNasa: station?.windBaselineNasa ?? null as number | null,
+    ghiBaselineNasa: station?.ghiBaselineNasa ?? null as number | null,
   });
 
   const isEdit = station !== null;
@@ -108,7 +117,7 @@ function StationModal({ station, onClose, onSave }: ModalProps) {
     setIsFetchingAtlas(true);
     setAtlasMsg(null);
     try {
-      const res = await fetch(`/api/v1/stations/${station.id}/fetch-atlas`, {
+      const res = await apiFetch(`/api/v1/stations/${station.id}/fetch-atlas`, {
         method: 'POST',
         headers: { ...authHeaders() },
       });
@@ -121,8 +130,14 @@ function StationModal({ station, onClose, onSave }: ModalProps) {
         ...prev,
         windBaseline: json.wind_baseline ?? prev.windBaseline,
         ghiBaseline: json.ghi_baseline ?? prev.ghiBaseline,
+        windBaselineGwa: json.wind_baseline_gwa ?? prev.windBaselineGwa,
+        ghiBaselineGsa: json.ghi_baseline_gsa ?? prev.ghiBaselineGsa,
+        windBaselineNasa: json.wind_baseline_nasa ?? prev.windBaselineNasa,
+        ghiBaselineNasa: json.ghi_baseline_nasa ?? prev.ghiBaselineNasa,
       }));
-      setAtlasMsg('Data atlas berhasil diambil dari NASA POWER dan disimpan.');
+      const srcWind = json.wind_baseline_gwa ? 'GWA' : 'NASA POWER';
+      const srcGhi = json.ghi_baseline_gsa ? 'GSA' : 'NASA POWER';
+      setAtlasMsg(`Berhasil: Angin=${json.wind_baseline} m/s (${srcWind}), GHI=${json.ghi_baseline} kWh/m²/hari (${srcGhi}).`);
     } catch {
       setAtlasMsg('Tidak dapat terhubung ke server.');
     } finally {
@@ -242,7 +257,7 @@ function StationModal({ station, onClose, onSave }: ModalProps) {
               <div className="flex items-center justify-between">
                 <div>
                   <p className="text-xs font-semibold text-blue-700 dark:text-blue-400 uppercase tracking-wide">Baseline Referensi Atlas</p>
-                  <p className="text-[11px] text-blue-500 dark:text-blue-500 mt-0.5">Sumber: NASA POWER (ERA5). Digunakan untuk MCP analysis.</p>
+                  <p className="text-[11px] text-blue-500 dark:text-blue-500 mt-0.5">Sumber: GWA (angin, GeoTIFF) · GSA (surya, API) · NASA POWER ERA5 (pembanding)</p>
                 </div>
                 <button
                   type="button"
@@ -261,9 +276,40 @@ function StationModal({ station, onClose, onSave }: ModalProps) {
                   {atlasMsg}
                 </p>
               )}
+              {/* Tabel perbandingan 3 sumber */}
+              {(form.windBaselineGwa || form.ghiBaselineGsa || form.windBaselineNasa) && (
+                <div className="rounded-lg border border-blue-200 dark:border-blue-800 overflow-hidden text-[11px]">
+                  <table className="w-full">
+                    <thead>
+                      <tr className="bg-blue-100 dark:bg-blue-900/30">
+                        <th className="text-left px-3 py-1.5 text-blue-700 dark:text-blue-400 font-semibold">Sumber</th>
+                        <th className="text-right px-3 py-1.5 text-blue-700 dark:text-blue-400 font-semibold">Angin (m/s)</th>
+                        <th className="text-right px-3 py-1.5 text-blue-700 dark:text-blue-400 font-semibold">GHI (kWh/m²/hr)</th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-blue-100 dark:divide-blue-900/30">
+                      <tr className="bg-white dark:bg-transparent">
+                        <td className="px-3 py-1.5 font-medium text-gray-700 dark:text-gray-300">GWA</td>
+                        <td className="px-3 py-1.5 text-right font-mono text-gray-800 dark:text-gray-200">{form.windBaselineGwa ?? <span className="text-gray-400">—</span>}</td>
+                        <td className="px-3 py-1.5 text-right font-mono text-gray-400">—</td>
+                      </tr>
+                      <tr className="bg-white dark:bg-transparent">
+                        <td className="px-3 py-1.5 font-medium text-gray-700 dark:text-gray-300">GSA</td>
+                        <td className="px-3 py-1.5 text-right font-mono text-gray-400">—</td>
+                        <td className="px-3 py-1.5 text-right font-mono text-gray-800 dark:text-gray-200">{form.ghiBaselineGsa ?? <span className="text-gray-400">—</span>}</td>
+                      </tr>
+                      <tr className="bg-blue-50/50 dark:bg-blue-900/10">
+                        <td className="px-3 py-1.5 font-medium text-gray-700 dark:text-gray-300">NASA POWER</td>
+                        <td className="px-3 py-1.5 text-right font-mono text-gray-800 dark:text-gray-200">{form.windBaselineNasa ?? <span className="text-gray-400">—</span>}</td>
+                        <td className="px-3 py-1.5 text-right font-mono text-gray-800 dark:text-gray-200">{form.ghiBaselineNasa ?? <span className="text-gray-400">—</span>}</td>
+                      </tr>
+                    </tbody>
+                  </table>
+                </div>
+              )}
               <div className="grid grid-cols-2 gap-3">
                 <div className="flex flex-col gap-1">
-                  <label className="text-[11px] text-gray-500 dark:text-gray-400">Angin 100m · m/s (GWA/NASA)</label>
+                  <label className="text-[11px] text-gray-500 dark:text-gray-400">Angin 100m · m/s (best: GWA &gt; NASA)</label>
                   <input
                     type="number"
                     step="0.01"
@@ -275,7 +321,7 @@ function StationModal({ station, onClose, onSave }: ModalProps) {
                   />
                 </div>
                 <div className="flex flex-col gap-1">
-                  <label className="text-[11px] text-gray-500 dark:text-gray-400">GHI · kWh/m²/hari (PVGIS/NASA)</label>
+                  <label className="text-[11px] text-gray-500 dark:text-gray-400">GHI · kWh/m²/hari (best: GSA &gt; NASA)</label>
                   <input
                     type="number"
                     step="0.01"
@@ -354,6 +400,10 @@ export default function AdminPage() {
     irradiation: s.irradiation,
     windBaseline: s.windBaseline ?? null,
     ghiBaseline: s.ghiBaseline ?? null,
+    windBaselineGwa: s.windBaselineGwa ?? null,
+    ghiBaselineGsa: s.ghiBaselineGsa ?? null,
+    windBaselineNasa: s.windBaselineNasa ?? null,
+    ghiBaselineNasa: s.ghiBaselineNasa ?? null,
     lastUpdate: s.lastUpdate,
   }));
 
@@ -397,7 +447,7 @@ export default function AdminPage() {
         // Konversi camelCase ke snake_case untuk backend
         const { windBaseline, ghiBaseline, id: _id, ...rest } = form as typeof form & { windBaseline: number | null; ghiBaseline: number | null };
         const payload = { ...rest, wind_baseline: windBaseline, ghi_baseline: ghiBaseline };
-        const res = await fetch(`/api/v1/stations/${editStation.id}`, {
+        const res = await apiFetch(`/api/v1/stations/${editStation.id}`, {
           method: 'PATCH',
           headers: { 'Content-Type': 'application/json', ...authHeaders() },
           body: JSON.stringify(payload),
@@ -408,7 +458,7 @@ export default function AdminPage() {
         }
         setEditStation(null);
       } else {
-        const res = await fetch(`/api/v1/stations`, {
+        const res = await apiFetch(`/api/v1/stations`, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json', ...authHeaders() },
           body: JSON.stringify(form),
@@ -429,7 +479,7 @@ export default function AdminPage() {
   async function handleDelete(id: string) {
     setCrudError(null);
     try {
-      const res = await fetch(`/api/v1/stations/${id}`, { method: 'DELETE', headers: authHeaders() });
+      const res = await apiFetch(`/api/v1/stations/${id}`, { method: 'DELETE', headers: authHeaders() });
       if (!res.ok && res.status !== 204) {
         const json = await res.json();
         setCrudError(json.detail ?? 'Gagal menghapus stasiun');

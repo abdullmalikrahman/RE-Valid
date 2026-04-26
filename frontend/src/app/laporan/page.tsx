@@ -1,8 +1,12 @@
 'use client';
 
-import { Suspense, useState, useMemo } from 'react';
+import { Suspense, useState, useMemo, useRef } from 'react';
 import { useSearchParams, useRouter } from 'next/navigation';
 import Link from 'next/link';
+import {
+  LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip,
+  ResponsiveContainer, ScatterChart, Scatter, ReferenceLine,
+} from 'recharts';
 import Navbar from '@/components/Navbar';
 import Footer from '@/components/Footer';
 import { useStations } from '@/hooks/useStations';
@@ -39,48 +43,72 @@ function LaporanContent() {
   const stationId = searchParams.get('station') ?? stations[0].id;
   const station = stations.find((s) => s.id === stationId) ?? stations[0];
 
+  const fromPage = searchParams.get('from') ?? 'peta';
+  const backHref = fromPage === 'analisis' ? '/analisis' : fromPage === 'kalkulator' ? '/kalkulator' : '/peta';
+  const backLabel = fromPage === 'analisis' ? 'Kembali ke Analisis Lokasi' : fromPage === 'kalkulator' ? 'Kembali ke Kalkulator' : 'Kembali ke Peta';
+
   const { measurements } = useMeasurements(stationId);
               
   // Gunakan data angin jika stasiun memiliki variabel angin, surya jika tidak
-  const chartIsWind = station.variables.toLowerCase().includes('angin');
-  // Baseline konstanta per stasiun dari atlas (NASA POWER/ERA5)
-  // Fallback ke aproksimasi jika belum terisi di DB
-  const atlasBaselineValue = chartIsWind
-    ? (station.windBaseline ?? station.windSpeed * 1.046)
-    : (station.ghiBaseline ?? station.irradiation * 0.958);
-  const chartUnit = chartIsWind ? 'm/s' : 'kWh/m²/hari';
-  const chartLabel = chartIsWind ? 'Kecepatan angin rata-rata bulanan (m/s)' : 'GHI rata-rata bulanan (kWh/m²/hari)';
+  const hasWind = station.variables.toLowerCase().includes('angin');
+  const hasSolar = station.variables.toLowerCase().includes('iradiasi')
+    || station.variables.toLowerCase().includes('surya')
+    || station.variables.toLowerCase().includes('ghi');
+  // keep chartIsWind for legacy refs
+  const chartIsWind = hasWind;
+  const windBaselineVal = station.windBaseline ?? station.windSpeed * 1.046;
+  const ghiBaselineVal = station.ghiBaseline ?? station.irradiation * 0.958;
+  // keep for compatibility with existing scatter plot refs
+  const atlasBaselineValue = chartIsWind ? windBaselineVal : ghiBaselineVal;
 
-  const chartData = useMemo(() => {
-    const daily = measurements.map((m) => {
-      const raw = chartIsWind
-        ? parseFloat((m.wind_speed ?? 0).toString())
-        : parseFloat(((m.ghi ?? 0) * 24 / 1000).toFixed(2));
-      return { obs: raw, baseline: atlasBaselineValue };
-    });
-    const groups = new Map<string, { obs: number[]; base: number[] }>();
-    measurements.forEach((m, i) => {
+  function makeMonthly(
+    meas: typeof measurements,
+    getValue: (m: (typeof measurements)[number]) => number,
+    baseline: number,
+  ) {
+    const groups = new Map<string, number[]>();
+    meas.forEach((m) => {
       const key = new Date(m.measured_at).toLocaleDateString('id-ID', { month: 'short', year: '2-digit' });
-      if (!groups.has(key)) groups.set(key, { obs: [], base: [] });
-      const g = groups.get(key)!;
-      g.obs.push(daily[i].obs);
-      g.base.push(daily[i].baseline);
+      if (!groups.has(key)) groups.set(key, []);
+      const v = getValue(m);
+      if (v > 0) groups.get(key)!.push(v);
     });
-    return [...groups.entries()].map(([date, g]) => ({
-      date,
-      obs: parseFloat((g.obs.reduce((a, b) => a + b, 0) / g.obs.length).toFixed(2)),
-      baseline: parseFloat((g.base.reduce((a, b) => a + b, 0) / g.base.length).toFixed(2)),
-    }));
-  }, [measurements, chartIsWind, atlasBaselineValue]);
+    return [...groups.entries()]
+      .filter(([, vs]) => vs.length > 0)
+      .map(([date, vs]) => ({
+        date,
+        obs: parseFloat((vs.reduce((a, b) => a + b, 0) / vs.length).toFixed(2)),
+        baseline,
+      }));
+  }
 
-  const scatterData = useMemo(() => {
-    return measurements.map((m) => {
-      const raw = chartIsWind
-        ? parseFloat((m.wind_speed ?? 0).toString())
-        : parseFloat(((m.ghi ?? 0) * 24 / 1000).toFixed(2));
-      return { obs: raw, baseline: atlasBaselineValue };
-    });
-  }, [measurements, chartIsWind, atlasBaselineValue]);
+  const windChartData = useMemo(
+    () => makeMonthly(measurements, (m) => parseFloat((m.wind_speed ?? 0).toString()), windBaselineVal),
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [measurements, windBaselineVal],
+  );
+  const ghiChartData = useMemo(
+    () => makeMonthly(measurements, (m) => parseFloat(((m.ghi ?? 0) * 24 / 1000).toFixed(2)), ghiBaselineVal),
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [measurements, ghiBaselineVal],
+  );
+  const windScatterData = useMemo(
+    () => measurements.map((m) => ({ obs: parseFloat((m.wind_speed ?? 0).toString()), baseline: windBaselineVal })).filter((p) => p.obs > 0),
+    [measurements, windBaselineVal],
+  );
+  const ghiScatterData = useMemo(
+    () => measurements.map((m) => ({ obs: parseFloat(((m.ghi ?? 0) * 24 / 1000).toFixed(2)), baseline: ghiBaselineVal })).filter((p) => p.obs > 0),
+    [measurements, ghiBaselineVal],
+  );
+
+  // keep legacy aliases used by existing Recharts preview
+  const chartData = chartIsWind ? windChartData : ghiChartData;
+  const scatterData = chartIsWind ? windScatterData : ghiScatterData;
+
+  const chartTsRef = useRef<HTMLDivElement>(null);
+  const chartScatterRef = useRef<HTMLDivElement>(null);
+  const chartTsGhiRef = useRef<HTMLDivElement>(null);
+  const chartScatterGhiRef = useRef<HTMLDivElement>(null);
 
   const [exporting, setExporting] = useState<'pdf' | 'csv' | 'geojson' | null>(null);
 
@@ -163,9 +191,18 @@ function LaporanContent() {
       // Validasi Surya
       sectionTitle('Validasi Surya — GHI (GSA vs Observasi)');
       row('GHI Observasi', `${station.irradiation.toFixed(1)} kWh/m²/hari`);
-      row('GHI Baseline (NASA POWER/GSA)', `${(station.ghiBaseline ?? station.irradiation * 0.958).toFixed(1)} kWh/m²/hari`);
+      row('GHI Baseline GSA (Solargis)', station.ghiBaselineGsa != null ? `${station.ghiBaselineGsa.toFixed(2)} kWh/m²/hari` : '—');
+      row('GHI Baseline NASA POWER', station.ghiBaselineNasa != null ? `${station.ghiBaselineNasa.toFixed(2)} kWh/m²/hari` : '—');
+      row('GHI Best-Value', `${(station.ghiBaseline ?? station.irradiation * 0.958).toFixed(2)} kWh/m²/hari`);
       row('Clearness Index (Kt)', (station.irradiation / 8.5).toFixed(2));
-      row('Bias vs GSA', `${station.bias > 0 ? '+' : ''}${station.bias.toFixed(1)} %`);
+      y += 3;
+
+      // Perbandingan Sumber Angin
+      sectionTitle('Perbandingan Sumber Baseline Angin');
+      row('Obs Lapangan', `${station.windSpeed} m/s`);
+      row('GWA 3.0 (GeoTIFF 250m)', station.windBaselineGwa != null ? `${station.windBaselineGwa} m/s` : '— (belum tersedia)');
+      row('NASA POWER ERA5', station.windBaselineNasa != null ? `${station.windBaselineNasa} m/s` : '— (belum tersedia)');
+      row('Best-Value (dipakai MCP)', `${(station.windBaseline ?? station.windSpeed).toFixed(2)} m/s`);
       y += 3;
 
       // Potensi Energi
@@ -202,152 +239,210 @@ function LaporanContent() {
       pdf.setFont('helvetica', 'normal');
       pdf.text(`${station.name} (${station.id})`, W - 10, 9.5, { align: 'right' });
 
-      if (chartData.length === 0) {
-        pdf.setFontSize(9);
-        pdf.setFont('helvetica', 'italic');
-        pdf.setTextColor(150, 150, 150);
-        pdf.text('Data pengukuran tidak tersedia. Pastikan backend aktif dan data telah diunggah.', W / 2, 110, { align: 'center' });
-      } else {
-        // ── Chart 1: Visualisasi Perbandingan Data ──────────────────────────
-        pdf.setFontSize(10);
-        pdf.setFont('helvetica', 'bold');
-        pdf.setTextColor(30, 30, 30);
-        pdf.text('Visualisasi Perbandingan Data', 10, y);
-        y += 5;
-        pdf.setFontSize(8);
-        pdf.setFont('helvetica', 'normal');
-        pdf.setTextColor(100, 100, 100);
-        pdf.text(`${chartLabel}  —  ERA5/GSA (baseline) vs Observasi lapangan`, 10, y);
-        y += 6;
-        {
-          const tsX = 20;
-          const tsW = W - 30;
-          const tsH = 48;
-          const tsObsArr = chartData.map((d) => d.obs);
-          const tsBslArr = chartData.map((d) => d.baseline);
-          const tsMin = Math.min(...tsObsArr, ...tsBslArr) * 0.85;
-          const tsMax = Math.max(...tsObsArr, ...tsBslArr) * 1.1;
-          const tsRange = tsMax - tsMin || 1;
-          const tsToY = (v: number) => y + tsH - ((v - tsMin) / tsRange) * tsH;
-          const tsToX = (i: number) => tsX + (i / Math.max(chartData.length - 1, 1)) * tsW;
+      // ── Helpers: build chart data ─────────────────────────────────────────
+      function buildMonthly(
+        meas: typeof measurements,
+        getValue: (m: (typeof measurements)[number]) => number,
+        baseline: number,
+      ): { date: string; obs: number; baseline: number }[] {
+        const groups = new Map<string, number[]>();
+        meas.forEach((m) => {
+          const key = new Date(m.measured_at).toLocaleDateString('id-ID', { month: 'short', year: '2-digit' });
+          if (!groups.has(key)) groups.set(key, []);
+          const v = getValue(m);
+          if (v > 0) groups.get(key)!.push(v);
+        });
+        return [...groups.entries()]
+          .filter(([, vs]) => vs.length > 0)
+          .map(([date, vs]) => ({
+            date,
+            obs: parseFloat((vs.reduce((a, b) => a + b, 0) / vs.length).toFixed(2)),
+            baseline,
+          }));
+      }
 
-          pdf.setFillColor(248, 250, 252);
-          pdf.setDrawColor(210, 215, 220);
-          pdf.setLineWidth(0.2);
-          pdf.rect(tsX, y, tsW, tsH, 'FD');
-          pdf.setDrawColor(225, 230, 235);
-          for (let tg = 1; tg <= 4; tg++) {
-            pdf.line(tsX, y + (tg / 5) * tsH, tsX + tsW, y + (tg / 5) * tsH);
-          }
+      function buildScatter(
+        meas: typeof measurements,
+        getValue: (m: (typeof measurements)[number]) => number,
+        baseline: number,
+      ): { obs: number; baseline: number }[] {
+        return meas.map((m) => ({ obs: getValue(m), baseline })).filter((p) => p.obs > 0);
+      }
 
-          pdf.setDrawColor(19, 127, 236);
-          pdf.setLineWidth(0.7);
-          for (let i = 1; i < chartData.length; i++) {
-            pdf.line(tsToX(i - 1), tsToY(tsBslArr[i - 1]), tsToX(i), tsToY(tsBslArr[i]));
-          }
-          pdf.setDrawColor(249, 115, 22);
-          pdf.setLineWidth(0.7);
-          for (let i = 1; i < chartData.length; i++) {
-            pdf.line(tsToX(i - 1), tsToY(tsObsArr[i - 1]), tsToX(i), tsToY(tsObsArr[i]));
-          }
-          pdf.setFillColor(249, 115, 22);
-          chartData.forEach((_, i) => {
-            pdf.circle(tsToX(i), tsToY(tsObsArr[i]), 0.8, 'F');
-          });
-
-          pdf.setFontSize(6);
-          pdf.setFont('helvetica', 'normal');
-          pdf.setTextColor(100, 100, 100);
-          chartData.forEach((d, i) => {
-            if (i % 2 === 0 || i === chartData.length - 1) {
-              pdf.text(d.date, tsToX(i), y + tsH + 4, { align: 'center' });
-            }
-          });
-          pdf.text(`${tsMax.toFixed(1)}`, tsX - 1, y + 2, { align: 'right' });
-          pdf.text(`${tsMin.toFixed(1)}`, tsX - 1, y + tsH, { align: 'right' });
-          pdf.setFontSize(6);
-          pdf.text(chartUnit, tsX - 1, y + tsH / 2, { align: 'right' });
-
-          const tsLegY = y + 4;
-          pdf.setFontSize(7);
-          pdf.setDrawColor(19, 127, 236); pdf.setLineWidth(0.8);
-          pdf.line(tsX + tsW - 52, tsLegY, tsX + tsW - 44, tsLegY);
-          pdf.setTextColor(50, 50, 50);
-          pdf.text('ERA5/GSA', tsX + tsW - 43, tsLegY + 1.5);
-          pdf.setDrawColor(249, 115, 22);
-          pdf.line(tsX + tsW - 27, tsLegY, tsX + tsW - 19, tsLegY);
-          pdf.text('Observasi', tsX + tsW - 18, tsLegY + 1.5);
-          y += tsH + 12;
+      // ── Helpers: draw charts onto offscreen canvas ────────────────────────
+      function drawLineChart(
+        data: { date: string; obs: number; baseline: number }[],
+        obsColor: string,
+        obsLabel: string,
+        unit: string,
+      ): HTMLCanvasElement {
+        const CW = 1100, CH = 340;
+        const cvs = document.createElement('canvas');
+        cvs.width = CW; cvs.height = CH;
+        const c = cvs.getContext('2d')!;
+        const ML = 65, MR = 55, MT = 24, MB = 52;
+        const PW = CW - ML - MR, PH = CH - MT - MB;
+        c.fillStyle = '#f8fafc'; c.fillRect(0, 0, CW, CH);
+        c.strokeStyle = '#e2e8f0'; c.lineWidth = 1; c.strokeRect(0.5, 0.5, CW - 1, CH - 1);
+        if (data.length === 0) {
+          c.fillStyle = '#94a3b8'; c.font = '22px sans-serif'; c.textAlign = 'center';
+          c.fillText('Belum ada data pengukuran', CW / 2, CH / 2);
+          return cvs;
         }
+        const vals = data.flatMap((d) => [d.obs, d.baseline]).filter(isFinite);
+        const minV = Math.min(...vals), maxV = Math.max(...vals);
+        const pad = (maxV - minV || 1) * 0.15;
+        const lo = minV - pad, hi = maxV + pad;
+        const xS = (i: number) => ML + (data.length < 2 ? PW / 2 : (i / (data.length - 1)) * PW);
+        const yS = (v: number) => MT + PH - ((v - lo) / (hi - lo)) * PH;
+        for (let i = 0; i <= 5; i++) {
+          const yp = MT + (i / 5) * PH;
+          c.strokeStyle = '#e2e8f0'; c.lineWidth = 1;
+          c.beginPath(); c.moveTo(ML, yp); c.lineTo(ML + PW, yp); c.stroke();
+          c.fillStyle = '#94a3b8'; c.font = '17px sans-serif'; c.textAlign = 'right';
+          c.fillText((hi - (i / 5) * (hi - lo)).toFixed(1), ML - 7, yp + 6);
+        }
+        const step = data.length <= 12 ? 1 : Math.ceil(data.length / 12);
+        c.fillStyle = '#94a3b8'; c.font = '16px sans-serif'; c.textAlign = 'center';
+        data.forEach((d, i) => { if (i % step === 0) c.fillText(d.date, xS(i), MT + PH + 30); });
+        c.strokeStyle = '#94a3b8'; c.lineWidth = 2; c.setLineDash([7, 4]);
+        c.beginPath();
+        data.forEach((d, i) => { i === 0 ? c.moveTo(xS(i), yS(d.baseline)) : c.lineTo(xS(i), yS(d.baseline)); });
+        c.stroke(); c.setLineDash([]);
+        c.strokeStyle = obsColor; c.lineWidth = 2.5;
+        c.beginPath();
+        data.forEach((d, i) => { i === 0 ? c.moveTo(xS(i), yS(d.obs)) : c.lineTo(xS(i), yS(d.obs)); });
+        c.stroke();
+        c.fillStyle = obsColor;
+        data.forEach((d, i) => { c.beginPath(); c.arc(xS(i), yS(d.obs), 4, 0, Math.PI * 2); c.fill(); });
+        c.strokeStyle = '#cbd5e1'; c.lineWidth = 1; c.setLineDash([]);
+        c.beginPath(); c.moveTo(ML, MT); c.lineTo(ML, MT + PH); c.lineTo(ML + PW, MT + PH); c.stroke();
+        const lx = ML + PW - 230, ly = MT + 10;
+        c.strokeStyle = obsColor; c.lineWidth = 2.5; c.setLineDash([]);
+        c.beginPath(); c.moveTo(lx, ly); c.lineTo(lx + 25, ly); c.stroke();
+        c.fillStyle = '#374151'; c.font = '16px sans-serif'; c.textAlign = 'left';
+        c.fillText(obsLabel, lx + 30, ly + 5);
+        c.strokeStyle = '#94a3b8'; c.lineWidth = 2; c.setLineDash([7, 4]);
+        c.beginPath(); c.moveTo(lx, ly + 22); c.lineTo(lx + 25, ly + 22); c.stroke();
+        c.setLineDash([]); c.fillStyle = '#374151'; c.fillText('Baseline Atlas', lx + 30, ly + 27);
+        c.save(); c.translate(14, MT + PH / 2); c.rotate(-Math.PI / 2);
+        c.fillStyle = '#94a3b8'; c.font = '15px sans-serif'; c.textAlign = 'center';
+        c.fillText(unit, 0, 0); c.restore();
+        return cvs;
+      }
 
-        // ── Chart 2: Analisis Korelasi ───────────────────────────────────────
-        pdf.setFontSize(10);
-        pdf.setFont('helvetica', 'bold');
-        pdf.setTextColor(30, 30, 30);
-        pdf.text('Analisis Korelasi', 10, y);
-        y += 5;
-        pdf.setFontSize(8);
-        pdf.setFont('helvetica', 'normal');
-        pdf.setTextColor(100, 100, 100);
-        pdf.text(`ERA5/GSA vs Observasi  ·  R² = ${station.r2.toFixed(2)}  ·  RMSE = ${station.rmse.toFixed(2)} ${chartIsWind ? 'm/s' : 'kWh/m²/hari'}  ·  Bias = ${station.bias > 0 ? '+' : ''}${station.bias.toFixed(1)}%`, 10, y);
-        y += 6;
-        {
-          const scSize = 68;
-          const scX = W / 2 - scSize / 2;
-          const allPts = scatterData;
-          const scMin = Math.min(...allPts.map((d) => Math.min(d.obs, d.baseline)), 0);
-          const scMax = Math.max(...allPts.map((d) => Math.max(d.obs, d.baseline))) * 1.05 || 10;
-          const scRange = scMax - scMin || 1;
-          const scToX = (v: number) => scX + ((v - scMin) / scRange) * scSize;
-          const scToY = (v: number) => y + scSize - ((v - scMin) / scRange) * scSize;
+      function drawScatterChart(
+        data: { obs: number; baseline: number }[],
+        pointColor: string,
+        unit: string,
+        refLine: number,
+      ): HTMLCanvasElement {
+        const CW = 1100, CH = 300;
+        const cvs = document.createElement('canvas');
+        cvs.width = CW; cvs.height = CH;
+        const c = cvs.getContext('2d')!;
+        const ML = 65, MR = 55, MT = 20, MB = 55;
+        const PW = CW - ML - MR, PH = CH - MT - MB;
+        c.fillStyle = '#f8fafc'; c.fillRect(0, 0, CW, CH);
+        c.strokeStyle = '#e2e8f0'; c.lineWidth = 1; c.strokeRect(0.5, 0.5, CW - 1, CH - 1);
+        if (data.length === 0) {
+          c.fillStyle = '#94a3b8'; c.font = '22px sans-serif'; c.textAlign = 'center';
+          c.fillText('Belum ada data', CW / 2, CH / 2); return cvs;
+        }
+        const xVals = data.map((d) => d.baseline), yVals = data.map((d) => d.obs);
+        const xPad = (Math.max(...xVals) - Math.min(...xVals) || 1) * 0.2;
+        const yPad = (Math.max(...yVals) - Math.min(...yVals) || 1) * 0.2;
+        const xl = Math.min(...xVals) - xPad, xh = Math.max(...xVals) + xPad;
+        const yl = Math.min(...yVals) - yPad, yh = Math.max(...yVals) + yPad;
+        const xS = (v: number) => ML + ((v - xl) / (xh - xl)) * PW;
+        const yS = (v: number) => MT + PH - ((v - yl) / (yh - yl)) * PH;
+        for (let i = 0; i <= 5; i++) {
+          const yp = MT + (i / 5) * PH, xp = ML + (i / 5) * PW;
+          c.strokeStyle = '#e2e8f0'; c.lineWidth = 1;
+          c.beginPath(); c.moveTo(ML, yp); c.lineTo(ML + PW, yp); c.stroke();
+          c.beginPath(); c.moveTo(xp, MT); c.lineTo(xp, MT + PH); c.stroke();
+          c.fillStyle = '#94a3b8'; c.font = '16px sans-serif';
+          c.textAlign = 'right'; c.fillText((yh - (i / 5) * (yh - yl)).toFixed(1), ML - 7, yp + 5);
+          c.textAlign = 'center'; c.fillText((xl + (i / 5) * (xh - xl)).toFixed(1), xp, MT + PH + 22);
+        }
+        if (refLine >= yl && refLine <= yh) {
+          c.strokeStyle = '#94a3b8'; c.lineWidth = 1.5; c.setLineDash([6, 3]);
+          c.beginPath(); c.moveTo(ML, yS(refLine)); c.lineTo(ML + PW, yS(refLine)); c.stroke();
+          c.setLineDash([]); c.fillStyle = '#94a3b8'; c.font = '15px sans-serif'; c.textAlign = 'left';
+          c.fillText('baseline', ML + 6, yS(refLine) - 5);
+        }
+        c.fillStyle = pointColor + 'bb';
+        data.forEach((d) => { c.beginPath(); c.arc(xS(d.baseline), yS(d.obs), 5, 0, Math.PI * 2); c.fill(); });
+        c.strokeStyle = '#cbd5e1'; c.lineWidth = 1; c.setLineDash([]);
+        c.beginPath(); c.moveTo(ML, MT); c.lineTo(ML, MT + PH); c.lineTo(ML + PW, MT + PH); c.stroke();
+        c.fillStyle = '#6b7280'; c.font = '17px sans-serif'; c.textAlign = 'center';
+        c.fillText(`Baseline Atlas (${unit})`, ML + PW / 2, CH - 5);
+        c.save(); c.translate(16, MT + PH / 2); c.rotate(-Math.PI / 2);
+        c.fillText(`Observasi (${unit})`, 0, 0); c.restore();
+        // info jumlah data
+        c.fillStyle = '#94a3b8'; c.font = '15px sans-serif'; c.textAlign = 'right';
+        c.fillText(`n = ${data.length} titik data`, ML + PW - 4, MT + 18);
+        return cvs;
+      }
 
-          pdf.setFillColor(248, 250, 252);
-          pdf.setDrawColor(210, 215, 220);
-          pdf.setLineWidth(0.2);
-          pdf.rect(scX, y, scSize, scSize, 'FD');
-          pdf.setDrawColor(225, 230, 235);
-          for (let sg = 1; sg <= 3; sg++) {
-            pdf.line(scX, y + (sg / 4) * scSize, scX + scSize, y + (sg / 4) * scSize);
-            pdf.line(scX + (sg / 4) * scSize, y, scX + (sg / 4) * scSize, y + scSize);
-          }
+      // ── Section renderer: title + line chart + scatter ────────────────────
+      function addChartSection(
+        title: string,
+        subtitle: string,
+        lineCanv: HTMLCanvasElement,
+        scatCanv: HTMLCanvasElement,
+      ) {
+        const lH = Math.round((W - 20) * lineCanv.height / lineCanv.width);
+        const sH = Math.round((W - 20) * scatCanv.height / scatCanv.width);
+        if (y + 10 + lH + 14 + sH + 8 > 286) { pdf.addPage(); y = 18; }
+        pdf.setFontSize(10); pdf.setFont('helvetica', 'bold'); pdf.setTextColor(30, 30, 30);
+        pdf.text(title, 10, y); y += 5;
+        pdf.setFontSize(8); pdf.setFont('helvetica', 'normal'); pdf.setTextColor(100, 100, 100);
+        pdf.text(subtitle, 10, y); y += 5;
+        pdf.addImage(lineCanv.toDataURL('image/png'), 'PNG', 10, y, W - 20, lH);
+        y += lH + 4;
+        pdf.setFontSize(8); pdf.setFont('helvetica', 'bold'); pdf.setTextColor(60, 60, 60);
+        pdf.text('Analisis Korelasi (Distribusi Observasi vs Baseline)', 10, y); y += 4;
+        pdf.addImage(scatCanv.toDataURL('image/png'), 'PNG', 10, y, W - 20, sH);
+        y += sH + 8;
+      }
 
-          pdf.setDrawColor(160, 160, 160);
-          pdf.setLineWidth(0.4);
-          pdf.line(scX, y + scSize, scX + scSize, y);
+      // ── Draw wind + solar charts ──────────────────────────────────────────
+      const hasWind = station.variables.toLowerCase().includes('angin');
+      const hasSolar = station.variables.toLowerCase().includes('iradiasi')
+        || station.variables.toLowerCase().includes('surya')
+        || station.variables.toLowerCase().includes('ghi');
+      const windBaseline = station.windBaseline ?? station.windSpeed * 1.046;
+      const solarBaseline = station.ghiBaseline ?? station.irradiation * 0.958;
 
-          pdf.setFillColor(19, 127, 236);
-          const maxDots = Math.min(allPts.length, 200);
-          for (let i = 0; i < maxDots; i++) {
-            const d = allPts[i];
-            pdf.rect(scToX(d.baseline) - 0.4, scToY(d.obs) - 0.4, 0.8, 0.8, 'F');
-          }
-
-          pdf.setFontSize(6);
-          pdf.setFont('helvetica', 'normal');
-          pdf.setTextColor(100, 100, 100);
-          pdf.text('ERA5 →', scX + scSize / 2, y + scSize + 4, { align: 'center' });
-          pdf.text(`${scMin.toFixed(1)}`, scX, y + scSize + 4, { align: 'left' });
-          pdf.text(`${scMax.toFixed(1)}`, scX + scSize, y + scSize + 4, { align: 'right' });
-          pdf.text(`${scMax.toFixed(1)}`, scX - 1, y + 2, { align: 'right' });
-          pdf.text(`${scMin.toFixed(1)}`, scX - 1, y + scSize, { align: 'right' });
-          pdf.text('Obs', scX - 1, y + scSize / 2, { align: 'right' });
-
-          pdf.setFontSize(7);
-          pdf.setTextColor(50, 50, 50);
-          pdf.setFillColor(19, 127, 236);
-          pdf.rect(scX + scSize + 5, y + 4, 3, 3, 'F');
-          pdf.text('Data harian', scX + scSize + 9, y + 6.5);
-          pdf.setDrawColor(160, 160, 160); pdf.setLineWidth(0.4);
-          pdf.line(scX + scSize + 5, y + 12, scX + scSize + 8, y + 12);
-          pdf.text('Garis y = x', scX + scSize + 9, y + 13.5);
-          y += scSize + 12;
+      if (!hasWind && !hasSolar) {
+        pdf.setFontSize(9); pdf.setFont('helvetica', 'italic'); pdf.setTextColor(150, 150, 150);
+        pdf.text('Tidak ada data grafik tersedia untuk stasiun ini.', W / 2, 150, { align: 'center' });
+      } else {
+        if (hasWind) {
+          const wMon = buildMonthly(measurements, (m) => parseFloat((m.wind_speed ?? 0).toString()), windBaseline);
+          const wSca = buildScatter(measurements, (m) => parseFloat((m.wind_speed ?? 0).toString()), windBaseline);
+          addChartSection(
+            'Kecepatan Angin — Baseline Atlas vs Observasi',
+            `GWA/ERA5 Baseline: ${windBaseline.toFixed(2)} m/s  ·  RMSE: ${station.rmse.toFixed(2)} m/s  ·  Bias: ${station.bias > 0 ? '+' : ''}${station.bias.toFixed(1)}%  ·  R²: ${station.r2.toFixed(2)}`,
+            drawLineChart(wMon, '#137fec', 'Terukur (Obs)', 'm/s'),
+            drawScatterChart(wSca, '#137fec', 'm/s', windBaseline),
+          );
+        }
+        if (hasSolar) {
+          const sMon = buildMonthly(measurements, (m) => parseFloat(((m.ghi ?? 0) * 24 / 1000).toFixed(2)), solarBaseline);
+          const sSca = buildScatter(measurements, (m) => parseFloat(((m.ghi ?? 0) * 24 / 1000).toFixed(2)), solarBaseline);
+          addChartSection(
+            'Iradiasi Matahari (GHI) — Baseline Atlas vs Observasi',
+            `GSA/NASA Baseline: ${solarBaseline.toFixed(2)} kWh/m²/hari  ·  Clearness Index Kt: ${(station.irradiation / 8.5).toFixed(2)}`,
+            drawLineChart(sMon, '#f59e0b', 'GHI Terukur (Obs)', 'kWh/m²/hari'),
+            drawScatterChart(sSca, '#f59e0b', 'kWh/m²/hari', solarBaseline),
+          );
         }
       }
 
-      pdf.setFontSize(7);
-      pdf.setFont('helvetica', 'italic');
-      pdf.setTextColor(160, 160, 160);
-      pdf.text('RE-Valid DSS — Halaman 2/2  ·  ERA5/GWA/GSA', W / 2, y, { align: 'center' });
+      pdf.setFontSize(7); pdf.setFont('helvetica', 'italic'); pdf.setTextColor(160, 160, 160);
+      pdf.text('RE-Valid DSS — Grafik Validasi  ·  ERA5/GWA/GSA', W / 2, y, { align: 'center' });
 
       pdf.save(`RE-Valid_Laporan_${station.id}_${new Date().toISOString().slice(0, 10)}.pdf`);
     } finally {
@@ -378,8 +473,16 @@ function LaporanContent() {
       [],
       ['--- Validasi Surya ---'],
       ['GHI Observasi (kWh/m²/hari)', station.irradiation],
-      ['GHI Baseline NASA/GSA (kWh/m²/hari)', (station.ghiBaseline ?? station.irradiation * 0.958).toFixed(2)],
+      ['GHI Baseline GSA/Solargis (kWh/m²/hari)', station.ghiBaselineGsa?.toFixed(2) ?? '—'],
+      ['GHI Baseline NASA POWER (kWh/m²/hari)', station.ghiBaselineNasa?.toFixed(2) ?? '—'],
+      ['GHI Best-Value (kWh/m²/hari)', (station.ghiBaseline ?? station.irradiation * 0.958).toFixed(2)],
       ['Clearness Index (Kt)', (station.irradiation / 8.5).toFixed(2)],
+      [],
+      ['--- Baseline Angin ---'],
+      ['Angin Obs Lapangan (m/s)', station.windSpeed],
+      ['Angin Baseline GWA 3.0 (m/s)', station.windBaselineGwa?.toString() ?? '—'],
+      ['Angin Baseline NASA POWER (m/s)', station.windBaselineNasa?.toString() ?? '—'],
+      ['Angin Best-Value (m/s)', (station.windBaseline ?? station.windSpeed).toFixed(2)],
       [],
       ['--- Potensi Energi ---'],
       ['AEP PLTB P50 (MWh/thn)', station.aep],
@@ -418,7 +521,13 @@ function LaporanContent() {
             status: station.status,
             score: station.score,
             wind_speed_ms: station.windSpeed,
+            wind_baseline_gwa_ms: station.windBaselineGwa ?? null,
+            wind_baseline_nasa_ms: station.windBaselineNasa ?? null,
+            wind_baseline_best_ms: station.windBaseline ?? null,
             ghi_kwh_m2_day: station.irradiation,
+            ghi_baseline_gsa_kwh: station.ghiBaselineGsa ?? null,
+            ghi_baseline_nasa_kwh: station.ghiBaselineNasa ?? null,
+            ghi_baseline_best_kwh: station.ghiBaseline ?? null,
             aep_mwh_yr: station.aep,
             rmse: station.rmse,
             bias_pct: station.bias,
@@ -450,11 +559,11 @@ function LaporanContent() {
           <div className="flex flex-wrap justify-between items-end gap-3">
             <div className="flex flex-col gap-1.5 max-w-2xl">
               <Link
-                href="/peta"
+                href={backHref}
                 className="flex items-center gap-1 text-xs font-semibold text-primary mb-0.5 hover:underline"
               >
                 <span className="material-symbols-outlined text-[14px]">arrow_back</span>
-                Kembali ke Peta
+                {backLabel}
               </Link>
               <div className="flex items-center gap-3 flex-wrap">
                 <h1 className="text-xl font-black leading-tight tracking-tight text-slate-900 dark:text-white">
@@ -493,7 +602,7 @@ function LaporanContent() {
                     </span>
                     <select
                       value={station.id}
-                      onChange={(e) => router.push(`/laporan?station=${e.target.value}`)}
+                      onChange={(e) => router.push(`/laporan?station=${e.target.value}${fromPage !== 'peta' ? `&from=${fromPage}` : ''}`)}
                       className="w-full bg-gray-50 dark:bg-[#111a22] border border-gray-200 dark:border-border-dark rounded-lg py-2 pl-9 pr-8 text-sm text-slate-900 dark:text-white focus:ring-1 focus:ring-primary focus:border-primary outline-none transition-all appearance-none"
                     >
                       {stations.map((s) => (
@@ -631,9 +740,10 @@ function LaporanContent() {
                 <div className="bg-slate-50 dark:bg-[#111a22] rounded-xl p-4 border border-slate-100 dark:border-[#233648] text-center">
                   <p className="text-[10px] text-slate-400 uppercase tracking-wide mb-1">GHI Baseline (GSA)</p>
                   <p className="text-2xl font-black text-slate-400 dark:text-slate-300">
-                    {(station.irradiation * 0.958).toFixed(1)}
+                    {(station.ghiBaseline ?? station.irradiation * 0.958).toFixed(1)}
                     <span className="text-[12px] font-medium text-slate-400 ml-0.5">kWh/m²/hari</span>
                   </p>
+                  <p className="text-[10px] text-slate-400 mt-0.5">{station.ghiBaselineGsa != null ? 'GSA Solargis' : station.ghiBaselineNasa != null ? 'NASA POWER' : 'Estimasi'}</p>
                 </div>
                 <div className="bg-slate-50 dark:bg-[#111a22] rounded-xl p-4 border border-slate-100 dark:border-[#233648] text-center">
                   <p className="text-[10px] text-slate-400 uppercase tracking-wide mb-1">Clearness Index (Kt)</p>
@@ -665,6 +775,178 @@ function LaporanContent() {
                 }`}>
                   {'Kt = '}{(station.irradiation / 8.5).toFixed(2)}{station.irradiation / 8.5 >= 0.40 && station.irradiation / 8.5 <= 0.65 ? ' ✓ Valid' : ' ⚠ Di luar rentang'}
                 </span>
+              </div>
+            </div>
+
+            {/* Grafik Validasi Preview */}
+            <div className="bg-white dark:bg-card-dark border border-gray-200 dark:border-border-dark rounded-xl p-5 shadow-sm">
+              <div className="flex items-center gap-2 mb-4">
+                <span className="material-symbols-outlined text-primary text-[20px]">ssid_chart</span>
+                <h4 className="text-sm font-bold text-slate-900 dark:text-white">Grafik Validasi</h4>
+                <span className="ml-auto text-[11px] text-slate-400">
+                  {hasWind && hasSolar ? 'Angin & GHI — Obs vs Baseline Atlas' : hasWind ? 'Angin — Obs vs Baseline Atlas' : 'GHI — Obs vs Baseline Atlas'}
+                </span>
+              </div>
+
+              {/* ── Angin ──────────────────────────────────────────── */}
+              {hasWind && (
+                <>
+                  <p className="text-[11px] font-semibold text-slate-500 dark:text-slate-400 mb-2 flex items-center gap-1">
+                    <span className="material-symbols-outlined text-primary text-[14px]">air</span>
+                    Kecepatan Angin (m/s)
+                  </p>
+                  <div ref={chartTsRef} className="w-full bg-[#111a22] rounded-lg overflow-hidden border border-gray-800 py-3 pr-3 mb-2" style={{ height: 200 }}>
+                    {windChartData.length === 0 ? (
+                      <div className="flex flex-col items-center justify-center h-full text-sm text-slate-500 gap-2">
+                        <span className="material-symbols-outlined text-[28px]">ssid_chart</span><span>Belum ada data angin</span>
+                      </div>
+                    ) : (
+                      <ResponsiveContainer width="100%" height="100%">
+                        <LineChart data={windChartData} margin={{ top: 10, right: 15, bottom: 5, left: 10 }}>
+                          <CartesianGrid strokeDasharray="3 3" stroke="#2d3b4a" vertical={false} />
+                          <XAxis dataKey="date" tick={{ fontSize: 9, fill: '#64748b' }} tickLine={false} interval={0} />
+                          <YAxis tick={{ fontSize: 9, fill: '#64748b' }} tickLine={false} axisLine={false} />
+                          <Tooltip contentStyle={{ backgroundColor: '#1c2630', border: '1px solid #2d3b4a', borderRadius: '8px', fontSize: 11 }} labelStyle={{ color: '#92adc9' }} />
+                          <Line type="monotone" dataKey="obs" name="Terukur (Obs)" stroke="#137fec" dot={{ r: 3 }} strokeWidth={2.5} />
+                          <Line type="monotone" dataKey="baseline" name="Baseline Atlas" stroke="#94a3b8" strokeDasharray="5 3" dot={false} strokeWidth={2} />
+                        </LineChart>
+                      </ResponsiveContainer>
+                    )}
+                  </div>
+                  <div ref={chartScatterRef} className="w-full bg-[#111a22] rounded-lg overflow-hidden border border-gray-800 py-3 pr-3 mb-4" style={{ height: 180 }}>
+                    {windScatterData.length === 0 ? (
+                      <div className="flex flex-col items-center justify-center h-full text-sm text-slate-500 gap-2">
+                        <span className="material-symbols-outlined text-[28px]">scatter_plot</span><span>Belum ada data</span>
+                      </div>
+                    ) : (
+                      <ResponsiveContainer width="100%" height="100%">
+                        <ScatterChart margin={{ top: 8, right: 10, bottom: 24, left: 15 }}>
+                          <CartesianGrid strokeDasharray="3 3" stroke="#2d3b4a" />
+                          <XAxis dataKey="baseline" name="Baseline" type="number" domain={['auto','auto']} tick={{ fontSize: 9, fill: '#64748b' }} tickLine={false}
+                            label={{ value: 'Baseline Atlas (m/s)', position: 'insideBottom', offset: -16, fill: '#64748b', fontSize: 9 }} />
+                          <YAxis dataKey="obs" name="Observasi" type="number" domain={['auto','auto']} tick={{ fontSize: 9, fill: '#64748b' }} tickLine={false} axisLine={false}
+                            label={{ value: 'Obs (m/s)', angle: -90, position: 'insideLeft', offset: 10, fill: '#64748b', fontSize: 9 }} />
+                          <Tooltip contentStyle={{ backgroundColor: '#1c2630', border: '1px solid #2d3b4a', borderRadius: '8px', fontSize: 11 }} />
+                          <Scatter data={windScatterData} fill="#137fec" opacity={0.5} />
+                          <ReferenceLine y={windBaselineVal} stroke="#e2e8f0" strokeDasharray="5 3" strokeWidth={1.5}
+                            label={{ value: `baseline (${windBaselineVal.toFixed(2)})`, position: 'insideTopLeft', fill: '#94a3b8', fontSize: 9 }} />
+                        </ScatterChart>
+                      </ResponsiveContainer>
+                    )}
+                  </div>
+                  <p className="text-[10px] text-slate-400 -mt-2 mb-3">
+                    n = {windScatterData.length} titik data
+                  </p>
+                </>
+              )}
+
+              {/* ── GHI / Surya ─────────────────────────────────────── */}
+              {hasSolar && (
+                <>
+                  <p className="text-[11px] font-semibold text-slate-500 dark:text-slate-400 mb-2 flex items-center gap-1">
+                    <span className="material-symbols-outlined text-amber-400 text-[14px]">wb_sunny</span>
+                    Iradiasi Matahari / GHI (kWh/m²/hari)
+                  </p>
+                  <div ref={chartTsGhiRef} className="w-full bg-[#111a22] rounded-lg overflow-hidden border border-gray-800 py-3 pr-3 mb-2" style={{ height: 200 }}>
+                    {ghiChartData.length === 0 ? (
+                      <div className="flex flex-col items-center justify-center h-full text-sm text-slate-500 gap-2">
+                        <span className="material-symbols-outlined text-[28px]">wb_sunny</span><span>Belum ada data GHI</span>
+                      </div>
+                    ) : (
+                      <ResponsiveContainer width="100%" height="100%">
+                        <LineChart data={ghiChartData} margin={{ top: 10, right: 15, bottom: 5, left: 10 }}>
+                          <CartesianGrid strokeDasharray="3 3" stroke="#2d3b4a" vertical={false} />
+                          <XAxis dataKey="date" tick={{ fontSize: 9, fill: '#64748b' }} tickLine={false} interval={0} />
+                          <YAxis tick={{ fontSize: 9, fill: '#64748b' }} tickLine={false} axisLine={false} />
+                          <Tooltip contentStyle={{ backgroundColor: '#1c2630', border: '1px solid #2d3b4a', borderRadius: '8px', fontSize: 11 }} labelStyle={{ color: '#92adc9' }} />
+                          <Line type="monotone" dataKey="obs" name="GHI Terukur (Obs)" stroke="#f59e0b" dot={{ r: 3 }} strokeWidth={2.5} />
+                          <Line type="monotone" dataKey="baseline" name="Baseline Atlas" stroke="#94a3b8" strokeDasharray="5 3" dot={false} strokeWidth={2} />
+                        </LineChart>
+                      </ResponsiveContainer>
+                    )}
+                  </div>
+                  <div ref={chartScatterGhiRef} className="w-full bg-[#111a22] rounded-lg overflow-hidden border border-gray-800 py-3 pr-3 mb-4" style={{ height: 180 }}>
+                    {ghiScatterData.length === 0 ? (
+                      <div className="flex flex-col items-center justify-center h-full text-sm text-slate-500 gap-2">
+                        <span className="material-symbols-outlined text-[28px]">scatter_plot</span><span>Belum ada data</span>
+                      </div>
+                    ) : (
+                      <ResponsiveContainer width="100%" height="100%">
+                        <ScatterChart margin={{ top: 8, right: 10, bottom: 24, left: 15 }}>
+                          <CartesianGrid strokeDasharray="3 3" stroke="#2d3b4a" />
+                          <XAxis dataKey="baseline" name="Baseline" type="number" domain={['auto','auto']} tick={{ fontSize: 9, fill: '#64748b' }} tickLine={false}
+                            label={{ value: 'Baseline Atlas (kWh/m²/hari)', position: 'insideBottom', offset: -16, fill: '#64748b', fontSize: 9 }} />
+                          <YAxis dataKey="obs" name="Observasi" type="number" domain={['auto','auto']} tick={{ fontSize: 9, fill: '#64748b' }} tickLine={false} axisLine={false}
+                            label={{ value: 'Obs (kWh)', angle: -90, position: 'insideLeft', offset: 10, fill: '#64748b', fontSize: 9 }} />
+                          <Tooltip contentStyle={{ backgroundColor: '#1c2630', border: '1px solid #2d3b4a', borderRadius: '8px', fontSize: 11 }} />
+                          <Scatter data={ghiScatterData} fill="#f59e0b" opacity={0.5} />
+                          <ReferenceLine y={ghiBaselineVal} stroke="#e2e8f0" strokeDasharray="5 3" strokeWidth={1.5}
+                            label={{ value: `baseline (${ghiBaselineVal.toFixed(2)})`, position: 'insideTopLeft', fill: '#94a3b8', fontSize: 9 }} />
+                        </ScatterChart>
+                      </ResponsiveContainer>
+                    )}
+                  </div>
+                  <p className="text-[10px] text-slate-400 -mt-2 mb-1">
+                    n = {ghiScatterData.length} titik data
+                  </p>
+                </>
+              )}
+
+              <p className="text-[10px] text-slate-400 mt-2 flex items-center gap-1">
+                <span className="material-symbols-outlined text-[13px]">picture_as_pdf</span>
+                Grafik di atas akan tertanam sebagai canvas di PDF yang diunduh.
+              </p>
+            </div>
+
+            {/* Perbandingan 3 sumber baseline */}
+            <div className="bg-white dark:bg-card-dark border border-gray-200 dark:border-border-dark rounded-xl p-5 shadow-sm">
+              <div className="flex items-center gap-2 mb-4">
+                <span className="material-symbols-outlined text-violet-400 text-[20px]">compare_arrows</span>
+                <h4 className="text-sm font-bold text-slate-900 dark:text-white">Perbandingan Sumber Baseline</h4>
+              </div>
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                {/* Wind */}
+                <div>
+                  <p className="text-[11px] font-bold text-slate-500 dark:text-slate-400 uppercase tracking-wide mb-2 flex items-center gap-1.5">
+                    <span className="material-symbols-outlined text-primary text-[14px]">air</span>Angin (m/s)
+                  </p>
+                  <div className="flex flex-col gap-2">
+                    {[
+                      { label: 'Observasi Lapangan', value: `${station.windSpeed} m/s`, color: 'text-slate-900 dark:text-white', badge: null },
+                      { label: 'GWA 3.0', value: station.windBaselineGwa != null ? `${station.windBaselineGwa} m/s` : '—', color: 'text-primary font-bold', badge: station.windBaselineGwa != null ? 'Aktif' : null },
+                      { label: 'NASA POWER ERA5', value: station.windBaselineNasa != null ? `${station.windBaselineNasa} m/s` : '—', color: 'text-slate-600 dark:text-slate-400', badge: station.windBaselineGwa == null && station.windBaselineNasa != null ? 'Fallback' : null },
+                    ].map((r) => (
+                      <div key={r.label} className="flex items-center justify-between bg-slate-50 dark:bg-[#111a22] rounded-lg px-3 py-2 text-xs">
+                        <span className="text-slate-500 dark:text-slate-400">{r.label}</span>
+                        <div className="flex items-center gap-2">
+                          <span className={`font-mono ${r.color}`}>{r.value}</span>
+                          {r.badge && <span className="text-[10px] font-bold px-1.5 py-0.5 rounded bg-primary/10 text-primary border border-primary/30">{r.badge}</span>}
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+                {/* Solar */}
+                <div>
+                  <p className="text-[11px] font-bold text-slate-500 dark:text-slate-400 uppercase tracking-wide mb-2 flex items-center gap-1.5">
+                    <span className="material-symbols-outlined text-amber-400 text-[14px]">wb_sunny</span>GHI (kWh/m²/hari)
+                  </p>
+                  <div className="flex flex-col gap-2">
+                    {[
+                      { label: 'Observasi Lapangan', value: `${station.irradiation.toFixed(2)} kWh/m²/hr`, color: 'text-slate-900 dark:text-white', badge: null },
+                      { label: 'GSA Solargis', value: station.ghiBaselineGsa != null ? `${station.ghiBaselineGsa} kWh/m²/hr` : '—', color: 'text-amber-500 font-bold', badge: station.ghiBaselineGsa != null ? 'Aktif' : null },
+                      { label: 'NASA POWER ERA5', value: station.ghiBaselineNasa != null ? `${station.ghiBaselineNasa} kWh/m²/hr` : '—', color: 'text-slate-600 dark:text-slate-400', badge: station.ghiBaselineGsa == null && station.ghiBaselineNasa != null ? 'Fallback' : null },
+                    ].map((r) => (
+                      <div key={r.label} className="flex items-center justify-between bg-slate-50 dark:bg-[#111a22] rounded-lg px-3 py-2 text-xs">
+                        <span className="text-slate-500 dark:text-slate-400">{r.label}</span>
+                        <div className="flex items-center gap-2">
+                          <span className={`font-mono ${r.color}`}>{r.value}</span>
+                          {r.badge && <span className="text-[10px] font-bold px-1.5 py-0.5 rounded bg-amber-500/10 text-amber-500 border border-amber-500/30">{r.badge}</span>}
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                </div>
               </div>
             </div>
 
