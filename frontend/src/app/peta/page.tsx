@@ -37,9 +37,9 @@ function StationPanel({
     tidak_sesuai: 'text-slate-400',
   };
   const statusBg: Record<string, string> = {
-    prioritas: 'bg-green-500/10 border-green-500/30 text-green-400',
-    kandidat: 'bg-amber-500/10 border-amber-500/30 text-amber-300',
-    tidak_sesuai: 'bg-slate-500/10 border-slate-500/30 text-slate-400',
+    prioritas: 'bg-green-500/10 border-green-500/30 text-green-700 dark:text-green-400',
+    kandidat: 'bg-amber-500/10 border-amber-500/30 text-amber-700 dark:text-amber-300',
+    tidak_sesuai: 'bg-slate-500/10 border-slate-500/30 text-slate-600 dark:text-slate-400',
   };
   const statusLabel: Record<string, string> = {
     prioritas: 'Prioritas',
@@ -48,8 +48,8 @@ function StationPanel({
   };
   const mcpBadge: Record<string, string> = {
     selesai: 'bg-primary/10 border-primary/30 text-primary',
-    berjalan: 'bg-yellow-500/10 border-yellow-500/30 text-yellow-400',
-    pending: 'bg-slate-500/10 border-slate-500/30 text-slate-400',
+    berjalan: 'bg-yellow-500/10 border-yellow-500/30 text-yellow-700 dark:text-yellow-400',
+    pending: 'bg-slate-500/10 border-slate-500/30 text-slate-600 dark:text-slate-400',
   };
   const mcpLabel: Record<string, string> = {
     selesai: 'Selesai',

@@ -516,7 +516,7 @@ function AnalisisContent() {
                 Deviasi obs dari referensi atlas {isWind ? 'GWA/ERA5' : 'GSA/ERA5'} (Y = obs − atlas)
               </p>
             </div>
-            <div className="w-full bg-input-bg-dark rounded-lg border border-gray-800 mb-3" style={{ flex: '1 1 0', minHeight: '320px' }}>
+            <div className="w-full bg-gray-50 dark:bg-input-bg-dark rounded-lg border border-gray-200 dark:border-gray-800 mb-3" style={{ flex: '1 1 0', minHeight: '320px' }}>
               {measLoading ? (
                 <div className="flex items-center justify-center h-full min-h-55 text-sm text-slate-500">
                   <span className="material-symbols-outlined mr-2 text-[18px]">refresh</span>

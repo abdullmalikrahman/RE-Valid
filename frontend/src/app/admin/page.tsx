@@ -378,6 +378,7 @@ export default function AdminPage() {
 
   // Auth guard — redirect to login if no token
   const [adminUsername, setAdminUsername] = useState('');
+  const [isDark, setIsDark] = useState(true);
   useEffect(() => {
     const token = getToken();
     if (!token) {
@@ -385,7 +386,20 @@ export default function AdminPage() {
       return;
     }
     setAdminUsername(localStorage.getItem('re_valid_username') ?? 'Admin');
+    setIsDark(localStorage.getItem('re_valid_theme') !== 'light');
   }, [router]);
+
+  function toggleTheme() {
+    const next = !isDark;
+    setIsDark(next);
+    if (next) {
+      document.documentElement.classList.add('dark');
+      localStorage.setItem('re_valid_theme', 'dark');
+    } else {
+      document.documentElement.classList.remove('dark');
+      localStorage.setItem('re_valid_theme', 'light');
+    }
+  }
   const stationList: AdminStation[] = initialStations.map((s) => ({
     id: s.id,
     name: s.name,
@@ -602,7 +616,17 @@ export default function AdminPage() {
               </ol>
             </nav>
           </div>
-          <div className="flex items-center gap-4" />
+          <div className="flex items-center gap-2">
+            <button
+              onClick={toggleTheme}
+              className="p-1.5 rounded-lg text-gray-400 hover:text-gray-600 dark:hover:text-white hover:bg-gray-100 dark:hover:bg-gray-800 transition-colors"
+              aria-label="Toggle theme"
+            >
+              <span className="material-symbols-outlined text-[20px]">
+                {isDark ? 'light_mode' : 'dark_mode'}
+              </span>
+            </button>
+          </div>
         </header>
 
         {/* Page content */}

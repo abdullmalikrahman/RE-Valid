@@ -15,6 +15,7 @@ export default function Navbar() {
   const pathname = usePathname();
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
   const [isLoggedIn, setIsLoggedIn] = useState(false);
+  const [isDark, setIsDark] = useState(true);
 
   useEffect(() => {
     const check = () => {
@@ -23,11 +24,28 @@ export default function Navbar() {
     };
     check();
     window.addEventListener('storage', check);
+
+    // Read initial theme
+    const saved = localStorage.getItem('re_valid_theme');
+    setIsDark(saved !== 'light');
+
     return () => window.removeEventListener('storage', check);
   }, []);
 
+  function toggleTheme() {
+    const next = !isDark;
+    setIsDark(next);
+    if (next) {
+      document.documentElement.classList.add('dark');
+      localStorage.setItem('re_valid_theme', 'dark');
+    } else {
+      document.documentElement.classList.remove('dark');
+      localStorage.setItem('re_valid_theme', 'light');
+    }
+  }
+
   return (
-    <header className="relative h-14 flex-none flex items-center justify-between whitespace-nowrap border-b border-slate-200 dark:border-[#233648] bg-white dark:bg-[#111a22] px-4 lg:px-8 z-50">
+    <header className="relative h-14 flex-none flex items-center justify-between whitespace-nowrap border-b border-slate-300 dark:border-[#233648] bg-white dark:bg-[#111a22] px-4 lg:px-8 z-50">
       <Link href="/" className="flex items-center gap-2.5">
         <div className="size-7 flex items-center justify-center rounded-lg bg-primary/10">
           <span className="material-symbols-outlined text-[18px] text-primary">bolt</span>
@@ -61,9 +79,18 @@ export default function Navbar() {
           })}
         </nav>
 
-        <div className="h-5 w-px bg-slate-700 mx-1 hidden md:block" />
+        <div className="h-5 w-px bg-slate-300 dark:bg-slate-700 mx-1 hidden md:block" />
 
         <div className="flex items-center gap-2">
+          <button
+            onClick={toggleTheme}
+            className="p-1.5 rounded-lg text-slate-500 dark:text-text-secondary hover:text-slate-900 dark:hover:text-white hover:bg-slate-100 dark:hover:bg-[#233648] transition-colors"
+            aria-label="Toggle theme"
+          >
+            <span className="material-symbols-outlined text-[20px]">
+              {isDark ? 'light_mode' : 'dark_mode'}
+            </span>
+          </button>
           <Link
             href={isLoggedIn ? '/admin' : '/login'}
             className="text-[13px] bg-primary hover:bg-blue-600 text-white px-3 py-1.5 rounded-lg transition-colors font-medium"
@@ -102,7 +129,16 @@ export default function Navbar() {
               </Link>
             );
           })}
-          <div className="flex gap-2 px-4 py-3 border-t border-slate-200 dark:border-[#233648]">
+          <div className="flex items-center justify-between gap-2 px-4 py-3 border-t border-slate-200 dark:border-[#233648]">
+            <button
+              onClick={toggleTheme}
+              className="flex items-center gap-2 text-[13px] text-slate-600 dark:text-text-secondary border border-slate-200 dark:border-[#233648] rounded-lg px-3 py-2 font-medium hover:bg-slate-50 dark:hover:bg-[#192633] transition-colors"
+            >
+              <span className="material-symbols-outlined text-[16px]">
+                {isDark ? 'light_mode' : 'dark_mode'}
+              </span>
+              {isDark ? 'Light Mode' : 'Dark Mode'}
+            </button>
             <Link
               href={isLoggedIn ? '/admin' : '/login'}
               onClick={() => setMobileMenuOpen(false)}

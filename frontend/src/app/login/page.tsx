@@ -55,7 +55,7 @@ export default function LoginPage() {
   }
 
   return (
-    <div className="bg-background-dark text-gray-100 h-screen overflow-hidden flex flex-col antialiased font-display">
+    <div className="bg-background-light dark:bg-background-dark text-gray-900 dark:text-gray-100 h-screen overflow-hidden flex flex-col antialiased font-display">
       <main className="w-full h-screen grid grid-cols-1 lg:grid-cols-2">
 
         {/* Left — hero panel (visual only, no external image) */}

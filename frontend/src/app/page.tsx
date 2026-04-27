@@ -8,7 +8,7 @@ const features = [
     icon: 'map',
     title: 'Peta Utama',
     desc: 'Visualisasi spasial stasiun meteorologi dan potensi EBT berbasis WebGIS.',
-    color: 'text-sky-400',
+    color: 'text-sky-500 dark:text-sky-400',
     border: 'border-sky-800',
   },
   {
@@ -16,7 +16,7 @@ const features = [
     icon: 'bar_chart',
     title: 'Analisis Lokasi',
     desc: 'Validasi data angin & surya, time-series, scatter plot, dan metrik MCP.',
-    color: 'text-violet-400',
+    color: 'text-violet-500 dark:text-violet-400',
     border: 'border-violet-800',
   },
   {
@@ -24,14 +24,14 @@ const features = [
     icon: 'calculate',
     title: 'Kalkulator EBT',
     desc: 'Simulasi screening LCOE, NPV, dan kelayakan ekonomi proyek energi.',
-    color: 'text-emerald-400',
+    color: 'text-emerald-500 dark:text-emerald-400',
     border: 'border-emerald-800',
   },
 ];
 
 export default function Home() {
   return (
-    <div className="min-h-screen bg-background-dark text-white flex flex-col font-display">
+    <div className="min-h-screen bg-background-light dark:bg-background-dark text-slate-900 dark:text-white flex flex-col font-display">
       <Navbar />
 
       {/* Hero */}
@@ -60,7 +60,7 @@ export default function Home() {
           </Link>
           <Link
             href="/analisis"
-            className="inline-flex items-center gap-2 px-5 py-2.5 bg-card-dark hover:bg-panel-dark text-white font-semibold rounded-xl border border-border-dark transition-all text-sm"
+            className="inline-flex items-center gap-2 px-5 py-2.5 bg-white dark:bg-card-dark hover:bg-gray-50 dark:hover:bg-panel-dark text-slate-900 dark:text-white font-semibold rounded-xl border border-gray-200 dark:border-border-dark transition-all text-sm"
           >
             <span className="material-symbols-outlined text-[18px]">analytics</span>
             Mulai Analisis
@@ -73,12 +73,12 @@ export default function Home() {
             <Link
               key={f.href}
               href={f.href}
-              className="group p-4 bg-card-dark rounded-xl border border-border-dark hover:border-primary text-left transition-all hover:shadow-lg"
+              className="group p-4 bg-white dark:bg-card-dark rounded-xl border border-gray-200 dark:border-border-dark hover:border-primary text-left transition-all hover:shadow-lg"
             >
               <span className={`material-symbols-outlined text-[22px] mb-2 block ${f.color}`}>
                 {f.icon}
               </span>
-              <h3 className="text-sm font-semibold text-white mb-1">
+              <h3 className="text-sm font-semibold text-slate-900 dark:text-white mb-1">
                 {f.title}
               </h3>
               <p className="text-xs text-text-secondary leading-relaxed">{f.desc}</p>
