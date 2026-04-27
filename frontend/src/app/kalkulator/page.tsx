@@ -423,8 +423,8 @@ export default function KalkulatorPage() {
       <main className="flex-1 flex flex-col w-full max-w-360 mx-auto px-4 lg:px-8 py-4">
         {/* Page header */}
         <div className="flex flex-col gap-3 mb-4 pt-1">
-          <div className="flex flex-wrap justify-between items-center gap-3">
-            <div className="flex flex-col gap-1.5 max-w-2xl">
+          <div className="flex flex-wrap justify-between items-start gap-3">
+            <div className="flex flex-col gap-1">
               <h1 className="text-xl font-black leading-tight tracking-tight text-slate-900 dark:text-white">
                 Kalkulator Energi &amp; Ekonomi
               </h1>
@@ -433,17 +433,8 @@ export default function KalkulatorPage() {
                   ? 'Simulasi estimasi AEP PLTB dan kelayakan ekonomi (LCOE, NPV, ROI) berdasarkan data angin tervalidasi.'
                   : 'Simulasi estimasi AEP PLTS dan kelayakan ekonomi (LCOE, NPV, ROI) berdasarkan data iradiasi surya tervalidasi.'}
               </p>
-              <div className="bg-yellow-500/10 border border-yellow-500/30 rounded-lg px-4 py-3 mt-1">
-                <div className="flex items-start gap-2">
-                  <span className="material-symbols-outlined text-yellow-500 text-[18px] shrink-0 mt-0.5">warning</span>
-                  <p className="text-xs text-yellow-700 dark:text-yellow-500/80 leading-relaxed">
-                    <span className="font-bold text-yellow-600 dark:text-yellow-400">Simulasi Screening Awal — </span>
-                    Tidak menggantikan studi kelayakan finansial atau analisis detail konsultan EBT bersertifikat.
-                  </p>
-                </div>
-              </div>
             </div>
-            <div className="flex gap-3">
+            <div className="flex gap-3 shrink-0">
               <button
                 onClick={handleExportPDF}
                 disabled={exportingPDF}
@@ -454,6 +445,16 @@ export default function KalkulatorPage() {
                   : <><span className="material-symbols-outlined text-[18px]">download</span>Ekspor PDF</>
                 }
               </button>
+            </div>
+          </div>
+          {/* Warning full-width */}
+          <div className="bg-yellow-500/10 border border-yellow-500/30 rounded-lg px-4 py-2.5">
+            <div className="flex items-center gap-2">
+              <span className="material-symbols-outlined text-yellow-500 text-[16px] shrink-0">warning</span>
+              <p className="text-xs text-yellow-700 dark:text-yellow-500/80">
+                <span className="font-bold text-yellow-600 dark:text-yellow-400">Simulasi Screening Awal — </span>
+                Tidak menggantikan studi kelayakan finansial atau analisis detail konsultan EBT bersertifikat.
+              </p>
             </div>
           </div>
         </div>
@@ -490,9 +491,9 @@ export default function KalkulatorPage() {
           </p>
         </div>
 
-        <div className="grid grid-cols-1 xl:grid-cols-12 gap-6 lg:gap-8 flex-1">
+        <div className="grid grid-cols-1 lg:grid-cols-12 gap-6 flex-1 items-start">
           {/* ─── Input sidebar ─────────────────────────────────────────────── */}
-          <aside className="xl:col-span-4 flex flex-col gap-4">
+          <aside className="lg:col-span-4 xl:col-span-4 flex flex-col gap-4 lg:sticky lg:top-4">
 
             {/* Station pre-fill */}
             <div className="bg-white dark:bg-card-dark rounded-lg border border-gray-200 dark:border-border-dark p-4 flex flex-col gap-3">
@@ -754,7 +755,7 @@ export default function KalkulatorPage() {
           </aside>
 
           {/* ─── Results section ────────────────────────────────────────────── */}
-          <section className="xl:col-span-8 flex flex-col gap-6">
+          <section className="lg:col-span-8 xl:col-span-8 flex flex-col gap-5">
             <div className="flex justify-between items-center">
               <h3 className="text-lg font-bold text-slate-900 dark:text-white">
                 Hasil Simulasi &mdash; {isWind ? 'PLTB' : 'PLTS'}
@@ -765,7 +766,7 @@ export default function KalkulatorPage() {
             </div>
 
             {/* KPI cards */}
-            <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-4">
+            <div className="grid grid-cols-2 md:grid-cols-3 xl:grid-cols-5 gap-3">
               <div className="bg-white dark:bg-card-dark rounded-xl p-4 border border-gray-200 dark:border-border-dark relative overflow-hidden group">
                 <div className="absolute right-0 top-0 p-3 opacity-10 group-hover:opacity-20 transition-opacity">
                   <span className={`material-symbols-outlined text-[56px] ${accentClass}`}>{isWind ? 'bolt' : 'solar_power'}</span>
@@ -850,7 +851,7 @@ export default function KalkulatorPage() {
             </div>
 
             {/* Charts */}
-            <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 min-h-90">
+            <div className="grid grid-cols-1 lg:grid-cols-2 gap-5">
               {/* Cumulative cash flow */}
               <div className="bg-white dark:bg-card-dark rounded-xl p-5 border border-gray-200 dark:border-border-dark flex flex-col">
                 <div className="flex justify-between items-start mb-5">
@@ -860,7 +861,7 @@ export default function KalkulatorPage() {
                     <span className="text-xs text-slate-500 dark:text-text-secondary">Proyeksi</span>
                   </div>
                 </div>
-                <div className="flex-1 w-full relative h-55 flex items-end px-4 pb-6 border-l border-b border-gray-200 dark:border-slate-700">
+                <div className="flex-1 w-full relative min-h-50 flex items-end px-4 pb-6 border-l border-b border-gray-200 dark:border-slate-700">
                   <div className="absolute -left-7 top-0 bottom-6 flex flex-col justify-between text-[10px] text-slate-400 font-mono h-full">
                     <span>+</span><span></span><span>0</span><span></span><span>-</span>
                   </div>
@@ -899,7 +900,7 @@ export default function KalkulatorPage() {
                     </div>
                   </div>
                 </div>
-                <div className="flex-1 flex items-end justify-between gap-2 border-b border-gray-200 dark:border-slate-700 pb-2 px-2 relative h-55">
+                <div className="flex-1 flex items-end justify-between gap-2 border-b border-gray-200 dark:border-slate-700 pb-2 px-2 relative min-h-50">
                   <div className="absolute inset-0 flex flex-col justify-between pointer-events-none">
                     {[0,1,2,3].map((i) => <div key={i} className="w-full h-px bg-gray-100 dark:bg-slate-800" />)}
                     <div className="w-full h-px bg-transparent" />
