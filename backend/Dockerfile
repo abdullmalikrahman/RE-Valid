@@ -22,7 +22,7 @@ WORKDIR /app
 
 # Runtime system deps saja (tidak butuh build-essential)
 RUN apt-get update && apt-get install -y --no-install-recommends \
-    libgdal34 \
+    libgdal36 \
     libpq5 \
     curl \
     && rm -rf /var/lib/apt/lists/*

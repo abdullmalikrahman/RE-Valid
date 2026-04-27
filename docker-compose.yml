@@ -91,9 +91,6 @@ services:
 
   # Celery Worker (background tasks: atlas fetch, analyze, etc.)
   celery:
-    build:
-      context: ./backend
-      dockerfile: Dockerfile
     image: re-valid-backend:local
     container_name: re_valid_celery
     restart: unless-stopped
@@ -119,9 +116,6 @@ services:
 
   # Alembic migration runner (runs once and exits)
   migrate:
-    build:
-      context: ./backend
-      dockerfile: Dockerfile
     image: re-valid-backend:local
     container_name: re_valid_migrate
     restart: "no"
