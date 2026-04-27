@@ -158,7 +158,7 @@ function StationModal({ station, onClose, onSave }: ModalProps) {
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm p-4">
-      <div className="bg-white dark:bg-surface-dark rounded-2xl border border-gray-200 dark:border-border-dark shadow-2xl w-full max-w-lg">
+      <div className="bg-white dark:bg-surface-dark rounded-2xl border border-gray-200 dark:border-border-dark shadow-2xl w-full max-w-2xl max-h-[90vh] flex flex-col">
         <div className="flex items-center justify-between px-6 py-4 border-b border-gray-200 dark:border-border-dark">
           <h3 className="text-base font-bold text-gray-900 dark:text-white">
             {isEdit ? 'Edit Stasiun' : 'Tambah Stasiun Baru'}
@@ -167,8 +167,9 @@ function StationModal({ station, onClose, onSave }: ModalProps) {
             <span className="material-symbols-outlined text-[20px]">close</span>
           </button>
         </div>
-        <div className="p-6 flex flex-col gap-4">
-          <div className="grid grid-cols-2 gap-4">
+        <div className="p-5 flex flex-col gap-4 overflow-y-auto flex-1">
+          {/* Row 1: Kode + Status + Nama */}
+          <div className="grid grid-cols-3 gap-3">
             <div className="flex flex-col gap-1.5">
               <label className="text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wide">Kode Stasiun</label>
               <input
@@ -191,29 +192,28 @@ function StationModal({ station, onClose, onSave }: ModalProps) {
                 <option value="tidak_sesuai">Tidak Sesuai</option>
               </select>
             </div>
+            <div className="flex flex-col gap-1.5">
+              <label className="text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wide">Nama Stasiun</label>
+              <input
+                className="bg-gray-50 dark:bg-input-bg-dark border border-gray-300 dark:border-border-dark rounded-lg px-3 py-2 text-sm text-gray-900 dark:text-white focus:outline-none focus:border-primary"
+                placeholder="Pos Pegunungan Wayang"
+                value={form.name}
+                onChange={(e) => setForm({ ...form, name: e.target.value })}
+              />
+            </div>
           </div>
 
-          <div className="flex flex-col gap-1.5">
-            <label className="text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wide">Nama Stasiun</label>
-            <input
-              className="bg-gray-50 dark:bg-input-bg-dark border border-gray-300 dark:border-border-dark rounded-lg px-3 py-2 text-sm text-gray-900 dark:text-white focus:outline-none focus:border-primary"
-              placeholder="Pos Pegunungan Wayang"
-              value={form.name}
-              onChange={(e) => setForm({ ...form, name: e.target.value })}
-            />
-          </div>
-
-          <div className="flex flex-col gap-1.5">
-            <label className="text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wide">Wilayah</label>
-            <input
-              className="bg-gray-50 dark:bg-input-bg-dark border border-gray-300 dark:border-border-dark rounded-lg px-3 py-2 text-sm text-gray-900 dark:text-white focus:outline-none focus:border-primary"
-              placeholder="Bandung Selatan, Jawa Barat"
-              value={form.region}
-              onChange={(e) => setForm({ ...form, region: e.target.value })}
-            />
-          </div>
-
-          <div className="grid grid-cols-3 gap-4">
+          {/* Row 2: Wilayah + Koordinat */}
+          <div className="grid grid-cols-4 gap-3">
+            <div className="flex flex-col gap-1.5 col-span-1">
+              <label className="text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wide">Wilayah</label>
+              <input
+                className="bg-gray-50 dark:bg-input-bg-dark border border-gray-300 dark:border-border-dark rounded-lg px-3 py-2 text-sm text-gray-900 dark:text-white focus:outline-none focus:border-primary"
+                placeholder="Bandung Selatan, Jawa Barat"
+                value={form.region}
+                onChange={(e) => setForm({ ...form, region: e.target.value })}
+              />
+            </div>
             <div className="flex flex-col gap-1.5">
               <label className="text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wide">Latitude</label>
               <input
@@ -243,6 +243,7 @@ function StationModal({ station, onClose, onSave }: ModalProps) {
             </div>
           </div>
 
+          {/* Row 3: Skor */}
           <div className="flex flex-col gap-1.5">
             <label className="text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wide">Skor GIS-MCDA (0–100)</label>
             <div className="flex items-center gap-3">
@@ -336,28 +337,26 @@ function StationModal({ station, onClose, onSave }: ModalProps) {
             </div>
           )}
         </div>
-        <div className="flex gap-3 px-6 pb-5">
+        {/* Footer */}
+        <div className="flex flex-col gap-2 px-5 py-4 border-t border-gray-200 dark:border-border-dark shrink-0">
           {saveError && (
-            <div className="mb-0 -mt-2 w-full px-1">
-              <div className="flex items-center gap-2 px-3 py-2 rounded-lg bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800 text-red-700 dark:text-red-400 text-xs">
-                <span className="material-symbols-outlined text-[15px] shrink-0">error</span>
-                <span className="flex-1">{saveError}</span>
-              </div>
+            <div className="flex items-center gap-2 px-3 py-2 rounded-lg bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800 text-red-700 dark:text-red-400 text-xs">
+              <span className="material-symbols-outlined text-[15px] shrink-0">error</span>
+              <span className="flex-1">{saveError}</span>
             </div>
           )}
-        </div>
-        <div className="flex gap-3 px-6 pb-5">
+          <div className="flex gap-3">
           <button
             onClick={onClose}
             disabled={isSaving}
-            className="flex-1 h-10 rounded-lg border border-gray-300 dark:border-border-dark text-gray-600 dark:text-gray-300 text-sm font-medium hover:bg-gray-50 dark:hover:bg-gray-800 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+            className="flex-1 h-9 rounded-lg border border-gray-300 dark:border-border-dark text-gray-600 dark:text-gray-300 text-sm font-medium hover:bg-gray-50 dark:hover:bg-gray-800 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
           >
             Batal
           </button>
           <button
             onClick={handleSubmit}
             disabled={isSaving}
-            className="flex-1 h-10 rounded-lg bg-primary hover:bg-blue-600 disabled:opacity-70 disabled:cursor-not-allowed text-white text-sm font-bold transition-colors flex items-center justify-center gap-2"
+            className="flex-1 h-9 rounded-lg bg-primary hover:bg-blue-600 disabled:opacity-70 disabled:cursor-not-allowed text-white text-sm font-bold transition-colors flex items-center justify-center gap-2"
           >
             {isSaving ? (
               <><span className="material-symbols-outlined text-[16px] animate-spin">refresh</span>Menyimpan...</>
@@ -365,6 +364,7 @@ function StationModal({ station, onClose, onSave }: ModalProps) {
               isEdit ? 'Simpan Perubahan' : 'Tambah Stasiun'
             )}
           </button>
+          </div>
         </div>
       </div>
     </div>
