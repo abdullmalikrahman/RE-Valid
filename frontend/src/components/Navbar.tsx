@@ -2,7 +2,7 @@
 
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 
 const navItems = [
   { href: '/', label: 'Beranda' },
@@ -14,6 +14,17 @@ const navItems = [
 export default function Navbar() {
   const pathname = usePathname();
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
+  const [isLoggedIn, setIsLoggedIn] = useState(false);
+
+  useEffect(() => {
+    const check = () => {
+      const token = localStorage.getItem('re_valid_token');
+      setIsLoggedIn(!!token);
+    };
+    check();
+    window.addEventListener('storage', check);
+    return () => window.removeEventListener('storage', check);
+  }, []);
 
   return (
     <header className="relative h-14 flex-none flex items-center justify-between whitespace-nowrap border-b border-slate-200 dark:border-[#233648] bg-white dark:bg-[#111a22] px-4 lg:px-8 z-50">
@@ -54,16 +65,10 @@ export default function Navbar() {
 
         <div className="flex items-center gap-2">
           <Link
-            href="/admin"
-            className="text-[13px] text-slate-500 dark:text-text-secondary hover:text-slate-900 dark:hover:text-white transition-colors font-medium"
-          >
-            Admin
-          </Link>
-          <Link
-            href="/login"
+            href={isLoggedIn ? '/admin' : '/login'}
             className="text-[13px] bg-primary hover:bg-blue-600 text-white px-3 py-1.5 rounded-lg transition-colors font-medium"
           >
-            Masuk
+            {isLoggedIn ? 'Admin' : 'Masuk'}
           </Link>
         </div>
       </div>
@@ -99,18 +104,11 @@ export default function Navbar() {
           })}
           <div className="flex gap-2 px-4 py-3 border-t border-slate-200 dark:border-[#233648]">
             <Link
-              href="/admin"
-              onClick={() => setMobileMenuOpen(false)}
-              className="flex-1 text-center text-[13px] text-slate-600 dark:text-text-secondary border border-slate-200 dark:border-[#233648] rounded-lg py-2 font-medium hover:bg-slate-50 dark:hover:bg-[#192633] transition-colors"
-            >
-              Admin
-            </Link>
-            <Link
-              href="/login"
+              href={isLoggedIn ? '/admin' : '/login'}
               onClick={() => setMobileMenuOpen(false)}
               className="flex-1 text-center text-[13px] bg-primary hover:bg-blue-600 text-white px-3 py-2 rounded-lg transition-colors font-medium"
             >
-              Masuk
+              {isLoggedIn ? 'Admin' : 'Masuk'}
             </Link>
           </div>
         </div>
