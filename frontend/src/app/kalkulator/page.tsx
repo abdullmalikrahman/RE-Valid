@@ -425,7 +425,7 @@ export default function KalkulatorPage() {
         <div className="flex flex-col gap-3 mb-4 pt-1">
           <div className="flex flex-wrap justify-between items-start gap-3">
             <div className="flex flex-col gap-1">
-              <h1 className="text-xl font-black leading-tight tracking-tight text-slate-900 dark:text-white">
+              <h1 className="text-xl font-bold leading-tight text-slate-900 dark:text-white">
                 Kalkulator Energi &amp; Ekonomi
               </h1>
               <p className="text-slate-600 dark:text-text-secondary text-sm font-normal leading-relaxed">
@@ -568,7 +568,7 @@ export default function KalkulatorPage() {
 
             <div className="flex flex-col gap-3">
               <div className="flex justify-between items-center">
-                <h3 className="text-lg font-bold text-slate-900 dark:text-white">Parameter Masukan</h3>
+                <h3 className="text-sm font-bold text-slate-900 dark:text-white">Parameter Masukan</h3>
                 <button onClick={handleReset} className={`text-xs font-medium ${accentClass} hover:opacity-70`}>Reset Default</button>
               </div>
 
@@ -757,7 +757,7 @@ export default function KalkulatorPage() {
           {/* ─── Results section ────────────────────────────────────────────── */}
           <section className="lg:col-span-8 xl:col-span-8 flex flex-col gap-5">
             <div className="flex justify-between items-center">
-              <h3 className="text-lg font-bold text-slate-900 dark:text-white">
+              <h3 className="text-sm font-bold text-slate-900 dark:text-white">
                 Hasil Simulasi &mdash; {isWind ? 'PLTB' : 'PLTS'}
               </h3>
               <div className={`text-xs px-2.5 py-1 rounded-full font-bold border ${isViable ? 'bg-green-500/10 border-green-500/30 text-green-400' : 'bg-red-500/10 border-red-500/30 text-red-400'}`}>
@@ -775,7 +775,7 @@ export default function KalkulatorPage() {
                   {isWind ? 'AEP PLTB (Thn-1)' : 'AEP PLTS (Thn-1)'}
                 </p>
                 <div className="flex items-baseline gap-1">
-                  <h4 className="text-2xl font-black text-slate-900 dark:text-white">{kpis.aepY1.toFixed(2)}</h4>
+                  <h4 className="text-2xl font-bold text-slate-900 dark:text-white">{kpis.aepY1.toFixed(2)}</h4>
                   <span className="text-xs font-bold text-slate-400">GWh</span>
                 </div>
                 <p className="text-[10px] text-slate-400 mt-1">
@@ -789,7 +789,7 @@ export default function KalkulatorPage() {
                 </div>
                 <p className="text-xs text-slate-500 dark:text-text-secondary font-medium uppercase tracking-wide mb-1.5">LCOE</p>
                 <div className="flex items-baseline gap-1">
-                  <h4 className="text-2xl font-black text-slate-900 dark:text-white">{kpis.lcoeCents.toFixed(2)}</h4>
+                  <h4 className="text-2xl font-bold text-slate-900 dark:text-white">{kpis.lcoeCents.toFixed(2)}</h4>
                   <span className="text-xs font-bold text-slate-400">¢/kWh</span>
                 </div>
                 <p className="text-[10px] text-slate-400 mt-1">Levelized Cost of Energy</p>
@@ -801,7 +801,7 @@ export default function KalkulatorPage() {
                 </div>
                 <p className="text-xs text-slate-500 dark:text-text-secondary font-medium uppercase tracking-wide mb-1.5">NPV</p>
                 <div className="flex items-baseline gap-1">
-                  <h4 className={`text-2xl font-black ${kpis.npv >= 0 ? 'text-green-400' : 'text-red-400'}`}>
+                  <h4 className={`text-2xl font-bold ${kpis.npv >= 0 ? 'text-green-400' : 'text-red-400'}`}>
                     {kpis.npv >= 0 ? '+' : ''}{kpis.npv.toFixed(1)}
                   </h4>
                   <span className="text-xs font-bold text-slate-400">M USD</span>
@@ -817,7 +817,7 @@ export default function KalkulatorPage() {
                 </div>
                 <p className="text-xs text-slate-500 dark:text-text-secondary font-medium uppercase tracking-wide mb-1.5">Periode Pengembalian</p>
                 <div className="flex items-baseline gap-1">
-                  <h4 className="text-2xl font-black text-slate-900 dark:text-white">{kpis.payback.toFixed(1)}</h4>
+                  <h4 className="text-2xl font-bold text-slate-900 dark:text-white">{kpis.payback.toFixed(1)}</h4>
                   <span className="text-xs font-bold text-slate-400">Tahun</span>
                 </div>
                 <p className="text-[10px] text-slate-400 mt-1">ROI total: {kpis.roi.toFixed(1)}%</p>
@@ -831,13 +831,13 @@ export default function KalkulatorPage() {
                 <div className="flex items-baseline gap-1">
                   {kpis.irr !== null ? (
                     <>
-                      <h4 className={`text-2xl font-black ${kpis.irr >= diskonto ? 'text-green-400' : 'text-red-400'}`}>
+                      <h4 className={`text-2xl font-bold ${kpis.irr >= diskonto ? 'text-green-400' : 'text-red-400'}`}>
                         {kpis.irr.toFixed(1)}
                       </h4>
                       <span className="text-xs font-bold text-slate-400">%</span>
                     </>
                   ) : (
-                    <h4 className="text-2xl font-black text-slate-400">N/A</h4>
+                    <h4 className="text-2xl font-bold text-slate-400">N/A</h4>
                   )}
                 </div>
                 <p className={`text-[10px] mt-1 font-medium ${kpis.irr !== null && kpis.irr >= diskonto ? 'text-green-500' : 'text-slate-400'}`}>
@@ -855,7 +855,7 @@ export default function KalkulatorPage() {
               {/* Cumulative cash flow */}
               <div className="bg-white dark:bg-card-dark rounded-xl p-5 border border-gray-200 dark:border-border-dark flex flex-col">
                 <div className="flex justify-between items-start mb-5">
-                  <h4 className="text-base font-bold text-slate-900 dark:text-white">Arus Kas Kumulatif</h4>
+                  <h4 className="text-sm font-bold text-slate-900 dark:text-white">Arus Kas Kumulatif</h4>
                   <div className="flex gap-2 items-center">
                     <span className={`size-2.5 rounded-full ${isWind ? 'bg-primary/20 border border-primary' : 'bg-amber-400/20 border border-amber-400'}`} />
                     <span className="text-xs text-slate-500 dark:text-text-secondary">Proyeksi</span>
@@ -888,7 +888,7 @@ export default function KalkulatorPage() {
               {/* Revenue vs cost bar chart */}
               <div className="bg-white dark:bg-card-dark rounded-xl p-5 border border-gray-200 dark:border-border-dark flex flex-col">
                 <div className="flex justify-between items-start mb-5">
-                  <h4 className="text-base font-bold text-slate-900 dark:text-white">Pendapatan vs Biaya</h4>
+                  <h4 className="text-sm font-bold text-slate-900 dark:text-white">Pendapatan vs Biaya</h4>
                   <div className="flex gap-4">
                     <div className="flex items-center gap-2">
                       <span className={`size-2.5 rounded-full ${accentBg}`} />
@@ -921,7 +921,7 @@ export default function KalkulatorPage() {
             {/* Cash flow table */}
             <div className="bg-white dark:bg-card-dark rounded-xl border border-gray-200 dark:border-border-dark overflow-hidden">
               <div className="px-5 py-3 border-b border-gray-200 dark:border-border-dark flex justify-between items-center">
-                <h4 className="text-base font-bold text-slate-900 dark:text-white">
+                <h4 className="text-sm font-bold text-slate-900 dark:text-white">
                   Rincian Arus Kas (5 Tahun Pertama)
                 </h4>
                 <span className="text-xs text-slate-400">

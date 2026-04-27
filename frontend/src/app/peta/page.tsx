@@ -12,7 +12,7 @@ import { fetchHeatmapData, type HeatmapData } from '@/lib/api';
 const LeafletMap = dynamic(() => import('@/components/LeafletMap'), {
   ssr: false,
   loading: () => (
-    <div className="absolute inset-0 flex items-center justify-center bg-[#e8e0d8]">
+    <div className="absolute inset-0 flex items-center justify-center bg-[#e8e0d8] dark:bg-[#101922]">
       <div className="flex flex-col items-center gap-3">
         <span className="material-symbols-outlined text-primary animate-spin text-[40px]">progress_activity</span>
         <p className="text-text-secondary text-sm">Memuat peta...</p>
@@ -614,7 +614,7 @@ export default function PetaPage() {
         </aside>
 
         {/* Map area */}
-        <div className="flex-1 relative bg-[#e8e0d8] w-full h-full">
+        <div className="flex-1 relative bg-[#e8e0d8] dark:bg-[#101922] w-full h-full">
 
           <LeafletMap
             stations={filteredStations}

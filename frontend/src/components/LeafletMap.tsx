@@ -147,7 +147,7 @@ export default function LeafletMap({
           .on('click', () => onSelectStation(selectedStationRef.current?.id === station.id ? null : station));
 
         marker.bindTooltip(
-          `<div style="font-size:12px;font-weight:700;color:#fff;background:#192633;border:1px solid #233648;padding:6px 10px;border-radius:6px;line-height:1.5;"><span style="color:${color}">&#9679;</span> ${station.id}<br/><span style="font-weight:400;color:#92adc9;">${station.name}</span></div>`,
+          `<div class="lf-tt-inner"><span style="color:${color}">&#9679;</span> ${station.id}<br/><span class="lf-tt-name">${station.name}</span></div>`,
           { permanent: false, direction: 'top', offset: [0, -10], className: 'leaflet-tooltip-custom' }
         );
         markersRef.current.push(marker);
@@ -243,7 +243,7 @@ export default function LeafletMap({
         .leaflet-tooltip-custom { background: transparent !important; border: none !important; box-shadow: none !important; }
         .leaflet-attribution-flag { display: none !important; }
       `}</style>
-      <div ref={mapRef} className="absolute inset-0 w-full h-full" style={{ background: '#e8e0d8', zIndex: 0 }} />
+      <div ref={mapRef} className="absolute inset-0 w-full h-full bg-[#e8e0d8] dark:bg-[#101922]" style={{ zIndex: 0 }} />
     </>
   );
 }

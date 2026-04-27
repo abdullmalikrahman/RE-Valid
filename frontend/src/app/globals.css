@@ -53,6 +53,7 @@ body {
 
 /* ===== Light mode: boost low-contrast text utilities ===== */
 /* Slate neutrals */
+html:not(.dark) .text-slate-200 { color: #334155; }
 html:not(.dark) .text-slate-300 { color: #94a3b8; }
 html:not(.dark) .text-slate-400 { color: #475569; }
 html:not(.dark) .text-gray-300  { color: #9ca3af; }
@@ -62,12 +63,19 @@ html:not(.dark) .text-green-400 { color: #15803d; }
 html:not(.dark) .text-green-500 { color: #15803d; }
 html:not(.dark) .text-amber-300 { color: #92400e; }
 html:not(.dark) .text-amber-400 { color: #92400e; }
+html:not(.dark) .text-amber-500 { color: #92400e; }
 html:not(.dark) .text-yellow-400 { color: #92400e; }
 html:not(.dark) .text-red-400   { color: #b91c1c; }
 html:not(.dark) .text-violet-400 { color: #6d28d9; }
 html:not(.dark) .text-sky-400   { color: #0369a1; }
 html:not(.dark) .text-emerald-400 { color: #065f46; }
 html:not(.dark) .text-blue-400  { color: #1d4ed8; }
+
+/* ===== Leaflet tooltip — light/dark theming ===== */
+.lf-tt-inner { font-size:12px; font-weight:700; color:#1e293b; background:#f8fafc; border:1px solid #cbd5e1; padding:6px 10px; border-radius:6px; line-height:1.5; }
+.dark .lf-tt-inner { color:#fff; background:#192633; border-color:#233648; }
+.lf-tt-name { font-weight:400; color:#475569; }
+.dark .lf-tt-name { color:#92adc9; }
 
 /* ===== Scrollbar styling ===== */
 ::-webkit-scrollbar {

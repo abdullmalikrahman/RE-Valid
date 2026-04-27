@@ -48,6 +48,15 @@ function AnalisisContent() {
     setTaskMsg('');
   }, [station.id, energyType]);
 
+  const [isDark, setIsDark] = useState(true);
+  useEffect(() => {
+    setIsDark(localStorage.getItem('re_valid_theme') !== 'light');
+  }, []);
+  const gridColor = isDark ? '#2d3b4a' : '#e2e8f0';
+  const tooltipBg = isDark ? '#1c2630' : '#ffffff';
+  const tooltipBorder = isDark ? '#2d3b4a' : '#e2e8f0';
+  const tooltipLabel = isDark ? '#92adc9' : '#374151';
+
   async function runAnalysis() {
     setTaskState('loading');
     setTaskMsg('');
@@ -339,11 +348,11 @@ function AnalisisContent() {
             </div>
           </div>
           <div className="flex flex-wrap gap-x-4 gap-y-1 text-xs text-slate-400">
-            <span>Sumber: <span className="text-slate-200 font-semibold">ERA5 (ECMWF)</span></span>
+            <span>Sumber: <span className="text-slate-700 dark:text-slate-200 font-semibold">ERA5 (ECMWF)</span></span>
             <span>&middot;</span>
-            <span>Atlas: <span className="text-slate-200 font-semibold">{isWind ? 'GWA 3.0 + NASA POWER' : 'GSA (Solargis) + NASA POWER'}</span></span>
+            <span>Atlas: <span className="text-slate-700 dark:text-slate-200 font-semibold">{isWind ? 'GWA 3.0 + NASA POWER' : 'GSA (Solargis) + NASA POWER'}</span></span>
             <span>&middot;</span>
-            <span>Periode: <span className="text-slate-200 font-semibold">{station.period}</span></span>
+            <span>Periode: <span className="text-slate-700 dark:text-slate-200 font-semibold">{station.period}</span></span>
           </div>
         </div>
 
@@ -479,7 +488,7 @@ function AnalisisContent() {
                 </div>
               </div>
             </div>
-            <div className="w-full bg-[#111a22] rounded-lg overflow-hidden border border-gray-800 py-3 pr-3" style={{ flex: '1 1 0', minHeight: '320px' }}>
+            <div className="w-full bg-gray-50 dark:bg-[#111a22] rounded-lg overflow-hidden border border-gray-200 dark:border-gray-800 py-3 pr-3" style={{ flex: '1 1 0', minHeight: '320px' }}>
               {measLoading ? (
                 <div className="flex items-center justify-center h-full min-h-55 text-sm text-slate-500">
                   <span className="material-symbols-outlined mr-2 text-[18px]">refresh</span>
@@ -493,12 +502,12 @@ function AnalisisContent() {
               ) : (
                 <ResponsiveContainer width="100%" height="100%">
                   <LineChart data={chartData} margin={{ top: 10, right: 15, bottom: 5, left: 10 }}>
-                    <CartesianGrid strokeDasharray="3 3" stroke="#2d3b4a" vertical={false} />
+                    <CartesianGrid strokeDasharray="3 3" stroke={gridColor} vertical={false} />
                     <XAxis dataKey="date" tick={{ fontSize: 9, fill: '#64748b' }} tickLine={false} interval={0} />
                     <YAxis tick={{ fontSize: 9, fill: '#64748b' }} tickLine={false} axisLine={false} />
                     <Tooltip
-                      contentStyle={{ backgroundColor: '#1c2630', border: '1px solid #2d3b4a', borderRadius: '8px', fontSize: 11 }}
-                      labelStyle={{ color: '#92adc9' }}
+                      contentStyle={{ backgroundColor: tooltipBg, border: `1px solid ${tooltipBorder}`, borderRadius: '8px', fontSize: 11 }}
+                      labelStyle={{ color: tooltipLabel }}
                     />
                     <Line type="monotone" dataKey="obs" name="Terukur (Obs)" stroke={isWind ? '#137fec' : '#f59e0b'} dot={{ r: 4, fill: isWind ? '#137fec' : '#f59e0b' }} strokeWidth={2.5} activeDot={{ r: 6 }} />
                     <Line type="monotone" dataKey="baseline" name={isWind ? 'GWA/ERA5' : 'GSA/ERA5'} stroke="#94a3b8" strokeDasharray="5 3" dot={{ r: 3, fill: '#94a3b8' }} strokeWidth={2} activeDot={{ r: 5 }} />
@@ -530,7 +539,7 @@ function AnalisisContent() {
               ) : (
               <ResponsiveContainer width="100%" height="100%">
                 <ScatterChart margin={{ top: 10, right: 10, bottom: 30, left: 15 }}>
-                  <CartesianGrid strokeDasharray="3 3" stroke="#2d3b4a" />
+                  <CartesianGrid strokeDasharray="3 3" stroke={gridColor} />
                   <XAxis
                     dataKey="obs" name={isWind ? 'Obs (m/s)' : 'Obs (kWh/m²)'} type="number"
                     domain={['auto', 'auto']} tick={{ fontSize: 9, fill: '#64748b' }} tickLine={false}
@@ -543,7 +552,7 @@ function AnalisisContent() {
                   />
                   <Tooltip
                     cursor={{ strokeDasharray: '3 3' }}
-                    contentStyle={{ backgroundColor: '#1c2630', border: '1px solid #2d3b4a', borderRadius: '8px', fontSize: 11 }}
+                    contentStyle={{ backgroundColor: tooltipBg, border: `1px solid ${tooltipBorder}`, borderRadius: '8px', fontSize: 11 }}
                   />
                   <Scatter data={scatterData} fill={isWind ? '#137fec' : '#f59e0b'} opacity={0.55} />
                   {/* y = x reference line: perfect agreement */}

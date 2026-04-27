@@ -1,6 +1,6 @@
 'use client';
 
-import { Suspense, useState, useMemo, useRef } from 'react';
+import { Suspense, useState, useMemo, useRef, useEffect } from 'react';
 import { useSearchParams, useRouter } from 'next/navigation';
 import Link from 'next/link';
 import {
@@ -111,6 +111,15 @@ function LaporanContent() {
   const chartScatterGhiRef = useRef<HTMLDivElement>(null);
 
   const [exporting, setExporting] = useState<'pdf' | 'csv' | 'geojson' | null>(null);
+
+  const [isDark, setIsDark] = useState(true);
+  useEffect(() => {
+    setIsDark(localStorage.getItem('re_valid_theme') !== 'light');
+  }, []);
+  const gridColor = isDark ? '#2d3b4a' : '#e2e8f0';
+  const tooltipBg = isDark ? '#1c2630' : '#ffffff';
+  const tooltipBorder = isDark ? '#2d3b4a' : '#e2e8f0';
+  const tooltipLabel = isDark ? '#92adc9' : '#374151';
 
   const mcdaFactors = [
     { label: 'Potensi EBT', pct: Math.min(100, station.score + 5) },
@@ -566,7 +575,7 @@ function LaporanContent() {
                 {backLabel}
               </Link>
               <div className="flex items-center gap-3 flex-wrap">
-                <h1 className="text-xl font-black leading-tight tracking-tight text-slate-900 dark:text-white">
+                <h1 className="text-xl font-bold leading-tight text-slate-900 dark:text-white">
                   Laporan Lengkap
                 </h1>
                 <span className={`text-[11px] font-bold px-2 py-0.5 rounded-full border ${statusBg[station.status]}`}>
@@ -689,7 +698,7 @@ function LaporanContent() {
                     className="bg-slate-50 dark:bg-[#111a22] rounded-xl p-4 border border-slate-100 dark:border-[#233648] text-center"
                   >
                     <p className="text-[10px] text-slate-400 uppercase tracking-wide mb-1">{m.label}</p>
-                    <p className={`text-2xl font-black ${m.color}`}>
+                    <p className={`text-2xl font-bold ${m.color}`}>
                       {m.value}
                       <span className="text-[13px] font-medium text-slate-400 ml-0.5">{m.unit}</span>
                     </p>
@@ -708,14 +717,14 @@ function LaporanContent() {
               <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
                 <div className="bg-slate-50 dark:bg-[#111a22] rounded-xl p-4 border border-slate-100 dark:border-[#233648] text-center">
                   <p className="text-[10px] text-slate-400 uppercase tracking-wide mb-1">GHI Observasi</p>
-                  <p className="text-2xl font-black text-amber-400">
+                  <p className="text-2xl font-bold text-amber-400">
                     {station.irradiation.toFixed(1)}
                     <span className="text-[12px] font-medium text-slate-400 ml-0.5">kWh/m²/hari</span>
                   </p>
                 </div>
                 <div className="bg-slate-50 dark:bg-[#111a22] rounded-xl p-4 border border-slate-100 dark:border-[#233648] text-center">
                   <p className="text-[10px] text-slate-400 uppercase tracking-wide mb-1">GHI Baseline (GSA)</p>
-                  <p className="text-2xl font-black text-slate-400 dark:text-slate-300">
+                  <p className="text-2xl font-bold text-slate-400 dark:text-slate-300">
                     {(station.ghiBaseline ?? station.irradiation * 0.958).toFixed(1)}
                     <span className="text-[12px] font-medium text-slate-400 ml-0.5">kWh/m²/hari</span>
                   </p>
@@ -723,7 +732,7 @@ function LaporanContent() {
                 </div>
                 <div className="bg-slate-50 dark:bg-[#111a22] rounded-xl p-4 border border-slate-100 dark:border-[#233648] text-center">
                   <p className="text-[10px] text-slate-400 uppercase tracking-wide mb-1">Clearness Index (Kt)</p>
-                  <p className={`text-2xl font-black ${
+                  <p className={`text-2xl font-bold ${
                     station.irradiation / 8.5 >= 0.40 && station.irradiation / 8.5 <= 0.65
                       ? 'text-green-400'
                       : 'text-red-400'
@@ -734,7 +743,7 @@ function LaporanContent() {
                 </div>
                 <div className="bg-slate-50 dark:bg-[#111a22] rounded-xl p-4 border border-slate-100 dark:border-[#233648] text-center">
                   <p className="text-[10px] text-slate-400 uppercase tracking-wide mb-1">Bias vs GSA</p>
-                  <p className={`text-2xl font-black ${
+                  <p className={`text-2xl font-bold ${
                     Math.abs(station.bias) <= 5 ? 'text-green-400' : 'text-amber-400'
                   }`}>
                     {station.bias > 0 ? '+' : ''}{station.bias.toFixed(1)}
@@ -773,7 +782,7 @@ function LaporanContent() {
                     <span className="material-symbols-outlined text-primary text-[14px]">air</span>
                     Kecepatan Angin (m/s)
                   </p>
-                  <div ref={chartTsRef} className="w-full bg-[#111a22] rounded-lg overflow-hidden border border-gray-800 py-3 pr-3 mb-2" style={{ height: 200 }}>
+                  <div ref={chartTsRef} className="w-full bg-gray-50 dark:bg-[#111a22] rounded-lg overflow-hidden border border-gray-200 dark:border-gray-800 py-3 pr-3 mb-2" style={{ height: 200 }}>
                     {windChartData.length === 0 ? (
                       <div className="flex flex-col items-center justify-center h-full text-sm text-slate-500 gap-2">
                         <span className="material-symbols-outlined text-[28px]">ssid_chart</span><span>Belum ada data angin</span>
@@ -781,17 +790,17 @@ function LaporanContent() {
                     ) : (
                       <ResponsiveContainer width="100%" height="100%">
                         <LineChart data={windChartData} margin={{ top: 10, right: 15, bottom: 5, left: 10 }}>
-                          <CartesianGrid strokeDasharray="3 3" stroke="#2d3b4a" vertical={false} />
+                          <CartesianGrid strokeDasharray="3 3" stroke={gridColor} vertical={false} />
                           <XAxis dataKey="date" tick={{ fontSize: 9, fill: '#64748b' }} tickLine={false} interval={0} />
                           <YAxis tick={{ fontSize: 9, fill: '#64748b' }} tickLine={false} axisLine={false} />
-                          <Tooltip contentStyle={{ backgroundColor: '#1c2630', border: '1px solid #2d3b4a', borderRadius: '8px', fontSize: 11 }} labelStyle={{ color: '#92adc9' }} />
+                          <Tooltip contentStyle={{ backgroundColor: tooltipBg, border: `1px solid ${tooltipBorder}`, borderRadius: '8px', fontSize: 11 }} labelStyle={{ color: tooltipLabel }} />
                           <Line type="monotone" dataKey="obs" name="Terukur (Obs)" stroke="#137fec" dot={{ r: 3 }} strokeWidth={2.5} />
                           <Line type="monotone" dataKey="baseline" name="Baseline Atlas" stroke="#94a3b8" strokeDasharray="5 3" dot={false} strokeWidth={2} />
                         </LineChart>
                       </ResponsiveContainer>
                     )}
                   </div>
-                  <div ref={chartScatterRef} className="w-full bg-[#111a22] rounded-lg overflow-hidden border border-gray-800 py-3 pr-3 mb-4" style={{ height: 180 }}>
+                  <div ref={chartScatterRef} className="w-full bg-gray-50 dark:bg-[#111a22] rounded-lg overflow-hidden border border-gray-200 dark:border-gray-800 py-3 pr-3 mb-4" style={{ height: 180 }}>
                     {windScatterData.length === 0 ? (
                       <div className="flex flex-col items-center justify-center h-full text-sm text-slate-500 gap-2">
                         <span className="material-symbols-outlined text-[28px]">scatter_plot</span><span>Belum ada data</span>
@@ -799,12 +808,12 @@ function LaporanContent() {
                     ) : (
                       <ResponsiveContainer width="100%" height="100%">
                         <ScatterChart margin={{ top: 8, right: 10, bottom: 24, left: 15 }}>
-                          <CartesianGrid strokeDasharray="3 3" stroke="#2d3b4a" />
+                          <CartesianGrid strokeDasharray="3 3" stroke={gridColor} />
                           <XAxis dataKey="baseline" name="Baseline" type="number" domain={['auto','auto']} tick={{ fontSize: 9, fill: '#64748b' }} tickLine={false}
                             label={{ value: 'Baseline Atlas (m/s)', position: 'insideBottom', offset: -16, fill: '#64748b', fontSize: 9 }} />
                           <YAxis dataKey="obs" name="Observasi" type="number" domain={['auto','auto']} tick={{ fontSize: 9, fill: '#64748b' }} tickLine={false} axisLine={false}
                             label={{ value: 'Obs (m/s)', angle: -90, position: 'insideLeft', offset: 10, fill: '#64748b', fontSize: 9 }} />
-                          <Tooltip contentStyle={{ backgroundColor: '#1c2630', border: '1px solid #2d3b4a', borderRadius: '8px', fontSize: 11 }} />
+                          <Tooltip contentStyle={{ backgroundColor: tooltipBg, border: `1px solid ${tooltipBorder}`, borderRadius: '8px', fontSize: 11 }} />
                           <Scatter data={windScatterData} fill="#137fec" opacity={0.5} />
                           <ReferenceLine y={windBaselineVal} stroke="#e2e8f0" strokeDasharray="5 3" strokeWidth={1.5}
                             label={{ value: `baseline (${windBaselineVal.toFixed(2)})`, position: 'insideTopLeft', fill: '#94a3b8', fontSize: 9 }} />
@@ -825,7 +834,7 @@ function LaporanContent() {
                     <span className="material-symbols-outlined text-amber-400 text-[14px]">wb_sunny</span>
                     Iradiasi Matahari / GHI (kWh/m²/hari)
                   </p>
-                  <div ref={chartTsGhiRef} className="w-full bg-[#111a22] rounded-lg overflow-hidden border border-gray-800 py-3 pr-3 mb-2" style={{ height: 200 }}>
+                  <div ref={chartTsGhiRef} className="w-full bg-gray-50 dark:bg-[#111a22] rounded-lg overflow-hidden border border-gray-200 dark:border-gray-800 py-3 pr-3 mb-2" style={{ height: 200 }}>
                     {ghiChartData.length === 0 ? (
                       <div className="flex flex-col items-center justify-center h-full text-sm text-slate-500 gap-2">
                         <span className="material-symbols-outlined text-[28px]">wb_sunny</span><span>Belum ada data GHI</span>
@@ -833,17 +842,17 @@ function LaporanContent() {
                     ) : (
                       <ResponsiveContainer width="100%" height="100%">
                         <LineChart data={ghiChartData} margin={{ top: 10, right: 15, bottom: 5, left: 10 }}>
-                          <CartesianGrid strokeDasharray="3 3" stroke="#2d3b4a" vertical={false} />
+                          <CartesianGrid strokeDasharray="3 3" stroke={gridColor} vertical={false} />
                           <XAxis dataKey="date" tick={{ fontSize: 9, fill: '#64748b' }} tickLine={false} interval={0} />
                           <YAxis tick={{ fontSize: 9, fill: '#64748b' }} tickLine={false} axisLine={false} />
-                          <Tooltip contentStyle={{ backgroundColor: '#1c2630', border: '1px solid #2d3b4a', borderRadius: '8px', fontSize: 11 }} labelStyle={{ color: '#92adc9' }} />
+                          <Tooltip contentStyle={{ backgroundColor: tooltipBg, border: `1px solid ${tooltipBorder}`, borderRadius: '8px', fontSize: 11 }} labelStyle={{ color: tooltipLabel }} />
                           <Line type="monotone" dataKey="obs" name="GHI Terukur (Obs)" stroke="#f59e0b" dot={{ r: 3 }} strokeWidth={2.5} />
                           <Line type="monotone" dataKey="baseline" name="Baseline Atlas" stroke="#94a3b8" strokeDasharray="5 3" dot={false} strokeWidth={2} />
                         </LineChart>
                       </ResponsiveContainer>
                     )}
                   </div>
-                  <div ref={chartScatterGhiRef} className="w-full bg-[#111a22] rounded-lg overflow-hidden border border-gray-800 py-3 pr-3 mb-4" style={{ height: 180 }}>
+                  <div ref={chartScatterGhiRef} className="w-full bg-gray-50 dark:bg-[#111a22] rounded-lg overflow-hidden border border-gray-200 dark:border-gray-800 py-3 pr-3 mb-4" style={{ height: 180 }}>
                     {ghiScatterData.length === 0 ? (
                       <div className="flex flex-col items-center justify-center h-full text-sm text-slate-500 gap-2">
                         <span className="material-symbols-outlined text-[28px]">scatter_plot</span><span>Belum ada data</span>
@@ -851,12 +860,12 @@ function LaporanContent() {
                     ) : (
                       <ResponsiveContainer width="100%" height="100%">
                         <ScatterChart margin={{ top: 8, right: 10, bottom: 24, left: 15 }}>
-                          <CartesianGrid strokeDasharray="3 3" stroke="#2d3b4a" />
+                          <CartesianGrid strokeDasharray="3 3" stroke={gridColor} />
                           <XAxis dataKey="baseline" name="Baseline" type="number" domain={['auto','auto']} tick={{ fontSize: 9, fill: '#64748b' }} tickLine={false}
                             label={{ value: 'Baseline Atlas (kWh/m²/hari)', position: 'insideBottom', offset: -16, fill: '#64748b', fontSize: 9 }} />
                           <YAxis dataKey="obs" name="Observasi" type="number" domain={['auto','auto']} tick={{ fontSize: 9, fill: '#64748b' }} tickLine={false} axisLine={false}
                             label={{ value: 'Obs (kWh)', angle: -90, position: 'insideLeft', offset: 10, fill: '#64748b', fontSize: 9 }} />
-                          <Tooltip contentStyle={{ backgroundColor: '#1c2630', border: '1px solid #2d3b4a', borderRadius: '8px', fontSize: 11 }} />
+                          <Tooltip contentStyle={{ backgroundColor: tooltipBg, border: `1px solid ${tooltipBorder}`, borderRadius: '8px', fontSize: 11 }} />
                           <Scatter data={ghiScatterData} fill="#f59e0b" opacity={0.5} />
                           <ReferenceLine y={ghiBaselineVal} stroke="#e2e8f0" strokeDasharray="5 3" strokeWidth={1.5}
                             label={{ value: `baseline (${ghiBaselineVal.toFixed(2)})`, position: 'insideTopLeft', fill: '#94a3b8', fontSize: 9 }} />
@@ -940,7 +949,7 @@ function LaporanContent() {
                 <div className="bg-blue-50 dark:bg-blue-900/10 border border-blue-100 dark:border-blue-800/30 rounded-xl p-4 text-center">
                   <span className="material-symbols-outlined text-blue-400 text-[24px] mb-1 block">air</span>
                   <p className="text-[10px] text-slate-400 uppercase tracking-wide">Kec. Angin Rata-rata</p>
-                  <p className="text-2xl font-black text-blue-400">
+                  <p className="text-2xl font-bold text-blue-400">
                     {station.windSpeed}
                     <span className="text-sm font-medium text-slate-400 ml-1">m/s</span>
                   </p>
@@ -949,7 +958,7 @@ function LaporanContent() {
                 <div className="bg-yellow-50 dark:bg-yellow-900/10 border border-yellow-100 dark:border-yellow-800/30 rounded-xl p-4 text-center">
                   <span className="material-symbols-outlined text-yellow-400 text-[24px] mb-1 block">wb_sunny</span>
                   <p className="text-[10px] text-slate-400 uppercase tracking-wide">Iradiasi Matahari (GHI)</p>
-                  <p className="text-2xl font-black text-yellow-400">
+                  <p className="text-2xl font-bold text-yellow-400">
                     {station.irradiation}
                     <span className="text-sm font-medium text-slate-400 ml-1">kWh/m²/hari</span>
                   </p>
@@ -958,7 +967,7 @@ function LaporanContent() {
                 <div className="bg-green-50 dark:bg-green-900/10 border border-green-100 dark:border-green-800/30 rounded-xl p-4 text-center">
                   <span className="material-symbols-outlined text-green-400 text-[24px] mb-1 block">electric_bolt</span>
                   <p className="text-[10px] text-slate-400 uppercase tracking-wide">AEP PLTB (P50)</p>
-                  <p className="text-2xl font-black text-green-400">
+                  <p className="text-2xl font-bold text-green-400">
                     {station.aep.toLocaleString('id')}
                     <span className="text-sm font-medium text-slate-400 ml-1">MWh/thn</span>
                   </p>
@@ -967,7 +976,7 @@ function LaporanContent() {
                 <div className="bg-amber-50 dark:bg-amber-900/10 border border-amber-100 dark:border-amber-800/30 rounded-xl p-4 text-center">
                   <span className="material-symbols-outlined text-amber-400 text-[24px] mb-1 block">solar_power</span>
                   <p className="text-[10px] text-slate-400 uppercase tracking-wide">Hasil Spesifik PLTS</p>
-                  <p className="text-2xl font-black text-amber-400">
+                  <p className="text-2xl font-bold text-amber-400">
                     {Math.round(station.irradiation * 365 * 0.75).toLocaleString('id')}
                     <span className="text-sm font-medium text-slate-400 ml-1">kWh/kWp·thn</span>
                   </p>
@@ -981,7 +990,7 @@ function LaporanContent() {
               <div className="flex items-center gap-2 mb-4">
                 <span className="material-symbols-outlined text-emerald-400 text-[20px]">layers</span>
                 <h4 className="text-sm font-bold text-slate-900 dark:text-white">Faktor Kesesuaian GIS-MCDA</h4>
-                <span className="ml-auto font-bold text-base text-slate-900 dark:text-white">
+                <span className="ml-auto font-bold text-sm text-slate-900 dark:text-white">
                   {station.score}/100
                 </span>
               </div>
