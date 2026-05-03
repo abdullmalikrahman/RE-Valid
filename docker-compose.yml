@@ -44,8 +44,8 @@ services:
     container_name: re_valid_mqtt
     restart: unless-stopped
     ports:
-      - "1883:1883"   # MQTT
-      - "9001:9001"   # WebSocket
+      - "11883:1883"   # MQTT (host 11883 → container 1883)
+      - "19001:9001"   # WebSocket (host 19001 → container 9001)
     volumes:
       - ./mqtt/config:/mosquitto/config
       - mqtt_data:/mosquitto/data
