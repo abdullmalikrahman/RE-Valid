@@ -80,8 +80,16 @@ function AnalisisContent() {
       }
       const { task_id } = await res.json();
 
-      // Poll until done
+      // Poll hingga selesai, dengan timeout 120 detik
+      const startedAt = Date.now();
+      const MAX_WAIT_MS = 120_000;
+
       const poll = async () => {
+        if (Date.now() - startedAt > MAX_WAIT_MS) {
+          setTaskState('error');
+          setTaskMsg('Analisis melebihi batas waktu 120 detik. Pastikan Celery worker sedang berjalan (jalankan: celery -A celery_worker.celery_app worker --pool=solo).');
+          return;
+        }
         const r = await apiFetch(`/api/v1/analyze/${task_id}`);
         const data = await r.json();
         if (data.status === 'success') {
