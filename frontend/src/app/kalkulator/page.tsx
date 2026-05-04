@@ -32,6 +32,7 @@ export default function KalkulatorPage() {
 
   // --- Pre-fill from station ---
   function loadFromStation(id: string) {
+    if (id === 'none') { setSelectedStationId('none'); return; }
     const s = stations.find((st) => st.id === id);
     if (!s) return;
     setSelectedStationId(id);
@@ -40,6 +41,8 @@ export default function KalkulatorPage() {
       const speed = s.windBaselineGwa ?? s.windBaselineNasa ?? s.windBaseline ?? s.windSpeed;
       const cf = Math.round(Math.max(15, Math.min(42, speed * 3.8)));
       setFaktorKapasitas(cf);
+      // CAPEX ref. PLTB Indonesia: ~$1.0–1.5 M/MW
+      setCapex(parseFloat((kapasitas * 1.2).toFixed(1)));
     } else {
       // Solar: PR default 75%, CAPEX disesuaikan kapasitas
       setPerformanceRatio(75);
@@ -143,13 +146,14 @@ export default function KalkulatorPage() {
   const selectedStation = stations.find((s) => s.id === selectedStationId);
   const accentClass = isWind ? 'text-primary' : 'text-amber-400';
   const accentBg = isWind ? 'bg-primary' : 'bg-amber-500';
+  const accentBgLight = isWind ? 'bg-primary/10' : 'bg-amber-500/10';
 
   function handleReset() {
     setKapasitas(50);
     setFaktorKapasitas(isWind ? 18 : 20);
     setPerformanceRatio(75);
     setUmurProyek(20);
-    setDegradasi(0.5);
+    setDegradasi(isWind ? 0.5 : 0.4);
     setCapex(isWind ? 45.5 : 45.0);
     setOpex(1.5);
     setDiskonto(8.5);
@@ -592,7 +596,7 @@ export default function KalkulatorPage() {
                       <label className="text-xs font-medium text-slate-500 dark:text-text-secondary uppercase tracking-wide">
                         {isWind ? 'Kapasitas Terpasang' : 'Kapasitas Panel (MWp)'}
                       </label>
-                      <span className={`text-[10px] font-bold ${accentClass} bg-primary/10 px-1.5 py-0.5 rounded`}>{isWind ? 'MW' : 'MWp'}</span>
+                      <span className={`text-[10px] font-bold ${accentClass} ${accentBgLight} px-1.5 py-0.5 rounded`}>{isWind ? 'MW' : 'MWp'}</span>
                     </div>
                     <div className="flex items-center gap-3">
                       <input className="flex-1" max="200" min="1" type="range" value={kapasitas} onChange={(e) => setKapasitas(Number(e.target.value))} />
@@ -645,7 +649,7 @@ export default function KalkulatorPage() {
                   <div className="flex flex-col gap-1.5">
                     <div className="flex justify-between items-center">
                       <label className="text-xs font-medium text-slate-500 dark:text-text-secondary uppercase tracking-wide">Umur Proyek</label>
-                      <span className={`text-[10px] font-bold ${accentClass} bg-primary/10 px-1.5 py-0.5 rounded`}>Tahun</span>
+                      <span className={`text-[10px] font-bold ${accentClass} ${accentBgLight} px-1.5 py-0.5 rounded`}>Tahun</span>
                     </div>
                     <div className="flex items-center gap-3">
                       <input className="flex-1" max="30" min="5" type="range" value={umurProyek} onChange={(e) => setUmurProyek(Number(e.target.value))} />
@@ -657,7 +661,7 @@ export default function KalkulatorPage() {
                   <div className="flex flex-col gap-1.5">
                     <div className="flex justify-between items-center">
                       <label className="text-xs font-medium text-slate-500 dark:text-text-secondary uppercase tracking-wide">Degradasi Tahunan</label>
-                      <span className={`text-[10px] font-bold ${accentClass} bg-primary/10 px-1.5 py-0.5 rounded`}>%</span>
+                      <span className={`text-[10px] font-bold ${accentClass} ${accentBgLight} px-1.5 py-0.5 rounded`}>%</span>
                     </div>
                     <div className="flex items-center gap-3">
                       <input className="flex-1" max="5" min="0" step="0.1" type="range" value={degradasi} onChange={(e) => setDegradasi(Number(e.target.value))} />
