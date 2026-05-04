@@ -16,8 +16,10 @@ export async function apiFetch(
     localStorage.removeItem('re_valid_token');
     localStorage.removeItem('re_valid_username');
     localStorage.removeItem('re_valid_role');
-    // Redirect ke login — gunakan window.location agar bersih dari SWR cache
     if (typeof window !== 'undefined') {
+      // Beritahu Navbar di tab yang sama agar segera update state login
+      window.dispatchEvent(new CustomEvent('re_valid_auth_change'));
+      // Redirect ke login — gunakan window.location agar bersih dari SWR cache
       window.location.href = '/login';
     }
   }

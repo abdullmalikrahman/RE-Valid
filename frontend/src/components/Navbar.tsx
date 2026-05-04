@@ -1,7 +1,7 @@
 'use client';
 
 import Link from 'next/link';
-import { usePathname } from 'next/navigation';
+import { usePathname, useRouter } from 'next/navigation';
 import { useState, useEffect } from 'react';
 
 const navItems = [
@@ -13,6 +13,7 @@ const navItems = [
 
 export default function Navbar() {
   const pathname = usePathname();
+  const router = useRouter();
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
   const [isLoggedIn, setIsLoggedIn] = useState(false);
   const [isDark, setIsDark] = useState(true);
@@ -24,13 +25,27 @@ export default function Navbar() {
     };
     check();
     window.addEventListener('storage', check);
+    // Tangkap perubahan auth dari tab yang sama (login/logout/401)
+    window.addEventListener('re_valid_auth_change', check);
 
     // Read initial theme
     const saved = localStorage.getItem('re_valid_theme');
     setIsDark(saved !== 'light');
 
-    return () => window.removeEventListener('storage', check);
+    return () => {
+      window.removeEventListener('storage', check);
+      window.removeEventListener('re_valid_auth_change', check);
+    };
   }, []);
+
+  function handleLogout() {
+    localStorage.removeItem('re_valid_token');
+    localStorage.removeItem('re_valid_username');
+    localStorage.removeItem('re_valid_role');
+    setIsLoggedIn(false);
+    setMobileMenuOpen(false);
+    router.push('/login');
+  }
 
   function toggleTheme() {
     const next = !isDark;
@@ -97,6 +112,15 @@ export default function Navbar() {
           >
             {isLoggedIn ? 'Admin' : 'Masuk'}
           </Link>
+          {isLoggedIn && (
+            <button
+              onClick={handleLogout}
+              className="text-[13px] border border-slate-300 dark:border-slate-600 text-slate-600 dark:text-slate-300 hover:text-red-500 dark:hover:text-red-400 hover:border-red-400 px-3 py-1.5 rounded-lg transition-colors font-medium"
+              aria-label="Keluar"
+            >
+              Keluar
+            </button>
+          )}
         </div>
       </div>
 
@@ -146,6 +170,14 @@ export default function Navbar() {
             >
               {isLoggedIn ? 'Admin' : 'Masuk'}
             </Link>
+            {isLoggedIn && (
+              <button
+                onClick={handleLogout}
+                className="text-[13px] border border-slate-300 dark:border-slate-600 text-slate-600 dark:text-slate-300 hover:text-red-500 dark:hover:text-red-400 hover:border-red-400 px-3 py-2 rounded-lg transition-colors font-medium"
+              >
+                Keluar
+              </button>
+            )}
           </div>
         </div>
       )}

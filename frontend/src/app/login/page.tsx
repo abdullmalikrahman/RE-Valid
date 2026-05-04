@@ -29,6 +29,7 @@ export default function LoginPage() {
 
     try {
       const res = await fetch(
+        // NOTE: tidak menggunakan apiFetch di sini agar loop redirect tidak terjadi
         '/api/v1/auth/login',
         {
           method: 'POST',
@@ -60,15 +61,46 @@ export default function LoginPage() {
     <div className="bg-background-light dark:bg-background-dark text-gray-900 dark:text-gray-100 h-screen overflow-hidden flex flex-col antialiased font-display">
       <main className="w-full h-screen grid grid-cols-1 lg:grid-cols-2">
 
-        {/* Left — hero panel (visual only, no external image) */}
-        <div className="relative hidden lg:flex flex-col justify-end h-full w-full bg-black overflow-hidden">
-          {/* eslint-disable-next-line @next/next/no-img-element */}
-          <img
-            alt="Pemandangan danau pegunungan yang tenang mencerminkan langit"
-            className="absolute inset-0 w-full h-full object-cover transition-transform duration-700 hover:scale-105"
-            src="https://lh3.googleusercontent.com/aida-public/AB6AXuBmgZWTV0QPKkaMChKCBysj-qWROZjNwB2SIwPf2x8c-thzVE0b8UEROXlpxb07HlBQelibAAY4PYN5BYQf30GPiwru9ty37DPeemNzeyWlMvdOg445ktKPKn5kkLploDSAjyW-B4ZojRXY_yNuKUI4uEwnb8Pk1loiX1xP2AI9LTWMywpLEzGrgy1N6KtiCS4qYF835M2P_lzzVR--45sOWPWj9GBKzV6_hQ9JxYHvdFnnVmEM1l25s1nd-Nbg6JiK8iFGtt7HsUQb"
+        {/* Left — hero panel (CSS gradient, no external image dependency) */}
+        <div className="relative hidden lg:flex flex-col justify-end h-full w-full overflow-hidden bg-[#071526]">
+          {/* Radial glow blobs */}
+          <div className="absolute inset-0 pointer-events-none">
+            <div className="absolute top-[-10%] left-[-10%] w-[60%] h-[60%] rounded-full bg-blue-600/20 blur-[120px]" />
+            <div className="absolute bottom-[10%] right-[-5%] w-[50%] h-[50%] rounded-full bg-emerald-600/15 blur-[100px]" />
+            <div className="absolute top-[40%] right-[20%] w-[30%] h-[30%] rounded-full bg-sky-400/10 blur-[80px]" />
+          </div>
+
+          {/* Subtle dot grid */}
+          <div
+            className="absolute inset-0 opacity-[0.08]"
+            style={{
+              backgroundImage: 'radial-gradient(circle, rgba(148,163,184,0.8) 1px, transparent 1px)',
+              backgroundSize: '32px 32px',
+            }}
           />
-          <div className="absolute inset-0 bg-linear-to-t from-black/90 via-black/40 to-transparent" />
+
+          {/* Mountain / landscape silhouette SVG */}
+          <svg
+            className="absolute bottom-0 left-0 w-full opacity-20"
+            viewBox="0 0 800 300"
+            preserveAspectRatio="xMidYMax slice"
+            xmlns="http://www.w3.org/2000/svg"
+          >
+            <path d="M0 300 L0 200 L80 130 L160 180 L260 80 L360 150 L430 60 L500 140 L580 90 L660 160 L740 100 L800 140 L800 300 Z" fill="rgba(148,163,184,0.4)" />
+            <path d="M0 300 L0 240 L100 190 L200 220 L310 140 L400 195 L480 130 L560 180 L650 145 L740 175 L800 160 L800 300 Z" fill="rgba(100,116,139,0.5)" />
+            {/* Wind turbines */}
+            <line x1="160" y1="170" x2="160" y2="260" stroke="rgba(148,163,184,0.5)" strokeWidth="2" />
+            <line x1="160" y1="170" x2="145" y2="148" stroke="rgba(148,163,184,0.5)" strokeWidth="1.5" />
+            <line x1="160" y1="170" x2="178" y2="151" stroke="rgba(148,163,184,0.5)" strokeWidth="1.5" />
+            <line x1="160" y1="170" x2="156" y2="192" stroke="rgba(148,163,184,0.5)" strokeWidth="1.5" />
+            <line x1="580" y1="80" x2="580" y2="180" stroke="rgba(148,163,184,0.5)" strokeWidth="2" />
+            <line x1="580" y1="80" x2="563" y2="56" stroke="rgba(148,163,184,0.5)" strokeWidth="1.5" />
+            <line x1="580" y1="80" x2="600" y2="60" stroke="rgba(148,163,184,0.5)" strokeWidth="1.5" />
+            <line x1="580" y1="80" x2="576" y2="104" stroke="rgba(148,163,184,0.5)" strokeWidth="1.5" />
+          </svg>
+
+          {/* Bottom gradient fade */}
+          <div className="absolute inset-0 bg-linear-to-t from-[#071526]/95 via-[#071526]/20 to-transparent" />
 
           <div className="relative z-10 p-10 w-full">
             <div className="flex items-center gap-2 mb-6">
@@ -147,7 +179,8 @@ export default function LoginPage() {
                     autoComplete="username"
                     required
                     value={username}
-                    onChange={(e) => setUsername(e.target.value)}
+                    onChange={(e) => { setUsername(e.target.value); if (error) setError(''); }}
+                    autoFocus
                     placeholder="admin"
                     className="block w-full pl-10 pr-3 py-3 bg-gray-50 dark:bg-input-bg-dark border border-gray-300 dark:border-border-dark rounded-lg text-gray-900 dark:text-gray-100 placeholder-gray-400 focus:ring-2 focus:ring-primary focus:border-transparent text-sm transition-shadow"
                   />
@@ -170,7 +203,7 @@ export default function LoginPage() {
                     autoComplete="current-password"
                     required
                     value={password}
-                    onChange={(e) => setPassword(e.target.value)}
+                    onChange={(e) => { setPassword(e.target.value); if (error) setError(''); }}
                     placeholder="••••••••"
                     className="block w-full pl-10 pr-10 py-3 bg-gray-50 dark:bg-input-bg-dark border border-gray-300 dark:border-border-dark rounded-lg text-gray-900 dark:text-gray-100 placeholder-gray-400 focus:ring-2 focus:ring-primary focus:border-transparent text-sm transition-shadow"
                   />
@@ -200,7 +233,6 @@ export default function LoginPage() {
                 ) : (
                   <>
                     Masuk
-                    <span className="material-symbols-outlined text-[18px]">arrow_forward</span>
                   </>
                 )}
               </button>
