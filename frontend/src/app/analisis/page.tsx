@@ -70,12 +70,14 @@ function AnalisisContent() {
         },
         body: JSON.stringify({ station_id: station.id, variable: energyType, n: 90 }),
       });
-      if (res.status === 401) {
-        setTaskState('error');
-        setTaskMsg('Diperlukan login admin untuk menjalankan analisis.');
-        return;
+        if (!res.ok) {
+        if (res.status === 403 || res.status === 401) {
+          setTaskState('error');
+          setTaskMsg('Diperlukan login admin untuk menjalankan analisis.');
+          return;
+        }
+        throw new Error(await res.text());
       }
-      if (!res.ok) throw new Error(await res.text());
       const { task_id } = await res.json();
 
       // Poll until done
@@ -84,7 +86,7 @@ function AnalisisContent() {
         const data = await r.json();
         if (data.status === 'success') {
           setTaskState('success');
-          setTaskMsg(`Selesai — RMSE: ${data.result.rmse}  Bias: ${data.result.bias}%  R²: ${data.result.r2}`);
+          setTaskMsg(`Selesai — RMSE: ${data.result?.rmse ?? '–'}  Bias: ${data.result?.bias ?? '–'}%  R²: ${data.result?.r2 ?? '–'}`);
           mutate();
         } else if (data.status === 'failed') {
           setTaskState('error');
@@ -146,6 +148,50 @@ function AnalisisContent() {
   const aepSolarP90 = Math.round(aepSolarRef * 0.90);
 
   const isWind = energyType === 'wind';
+
+  // ─── CSV Export ────────────────────────────────────────────────────────────
+  function exportCsv() {
+    const rows: string[] = [];
+    // Header info
+    rows.push(`# Laporan Analisis RE-Valid`);
+    rows.push(`# Stasiun,${station.name} (${station.id})`);
+    rows.push(`# Wilayah,${station.region}`);
+    rows.push(`# Koordinat,"${station.lat}, ${station.lon}"`);
+    rows.push(`# Jenis Energi,${isWind ? 'Angin (PLTB)' : 'Surya (PLTS)'}`);
+    rows.push(`# Periode,${station.period}`);
+    rows.push(`# Diekspor,${new Date().toLocaleString('id-ID')}`);
+    rows.push('');
+    // Metrics
+    rows.push('# --- Metrik Validasi ---');
+    rows.push('Metrik,Nilai,Target,Status');
+    const metricRows = isWind ? windValidationRows : solarValidationRows;
+    metricRows.forEach((r) => {
+      const status = r.pass === null ? 'N/A' : r.pass ? 'Lulus' : 'Perlu Tinjau';
+      rows.push(`"${r.metric}","${r.value}","${r.target}","${status}"`);
+    });
+    rows.push('');
+    // Measurement data
+    if (measurements.length > 0) {
+      rows.push('# --- Data Pengukuran ---');
+      rows.push(isWind
+        ? 'measured_at,wind_speed_obs,baseline_atlas,deviasi'
+        : 'measured_at,ghi_obs_kwh_m2_day,baseline_atlas,deviasi');
+      measurements.forEach((m, i) => {
+        const obs = isWind
+          ? (m.wind_speed ?? 0)
+          : parseFloat(((m.ghi ?? 0) * 24 / 1000).toFixed(4));
+        const dev = parseFloat((obs - atlasBaseline).toFixed(4));
+        rows.push(`${m.measured_at},${obs},${atlasBaseline.toFixed(4)},${dev}`);
+      });
+    }
+    const blob = new Blob([rows.join('\n')], { type: 'text/csv;charset=utf-8;' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `analisis_${station.id}_${energyType}_${new Date().toISOString().slice(0, 10)}.csv`;
+    a.click();
+    URL.revokeObjectURL(url);
+  }
 
   // ─── Measurements & chart data ────────────────────────────────────────────
   const { measurements, isLoading: measLoading } = useMeasurements(station.id, startDate, endDate);
@@ -244,6 +290,14 @@ function AnalisisContent() {
                   Lihat Laporan
                 </Link>
                 <button
+                  onClick={exportCsv}
+                  className="flex items-center gap-1.5 px-3 py-2 bg-transparent border border-gray-300 dark:border-gray-600 text-slate-700 dark:text-white rounded-lg hover:bg-gray-50 dark:hover:bg-white/5 transition-all text-xs font-medium"
+                  title="Download hasil analisis sebagai CSV"
+                >
+                  <span className="material-symbols-outlined text-[16px]">download</span>
+                  Ekspor CSV
+                </button>
+                <button
                   onClick={runAnalysis}
                   disabled={taskState === 'loading'}
                   className="flex items-center gap-1.5 px-3 py-2 bg-primary text-white rounded-lg hover:bg-blue-600 disabled:opacity-60 disabled:cursor-not-allowed transition-all text-xs font-medium shadow-md shadow-blue-500/20"
@@ -255,7 +309,7 @@ function AnalisisContent() {
                 </button>
               </div>
               {taskMsg && (
-                <p className={`text-[11px] ${taskState === 'error' ? 'text-red-400' : 'text-green-400'}`}>{taskMsg}</p>
+                <p className={`text-[11px] max-w-xs text-right wrap-break-word whitespace-normal leading-relaxed ${taskState === 'error' ? 'text-red-400' : 'text-green-400'}`}>{taskMsg}</p>
               )}
             </div>
           </div>
@@ -289,7 +343,7 @@ function AnalisisContent() {
             </div>
             <div>
               <button
-                onClick={() => { router.push('/analisis'); setStartDate('2023-01-01'); setEndDate('2023-12-31'); }}
+                onClick={() => { setStartDate('2023-01-01'); setEndDate('2023-12-31'); }}
                 className="w-full py-2 text-primary hover:text-white border border-primary/30 hover:bg-primary rounded-lg text-xs font-medium transition-all"
               >
                 Reset Filter
