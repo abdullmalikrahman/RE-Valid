@@ -147,6 +147,18 @@ function StationModal({ station, onClose, onSave }: ModalProps) {
 
   async function handleSubmit() {
     setSaveError(null);
+    if (!form.name.trim()) {
+      setSaveError('Nama stasiun tidak boleh kosong.');
+      return;
+    }
+    if (!isEdit && !form.id.trim()) {
+      setSaveError('Kode stasiun tidak boleh kosong.');
+      return;
+    }
+    if (!isEdit && !/^[A-Za-z0-9-]{3,10}$/.test(form.id.trim())) {
+      setSaveError('Kode stasiun harus 3–10 karakter (huruf, angka, atau tanda hubung).');
+      return;
+    }
     setIsSaving(true);
     try {
       const error = await onSave(form);
@@ -273,7 +285,7 @@ function StationModal({ station, onClose, onSave }: ModalProps) {
                 </button>
               </div>
               {atlasMsg && (
-                <p className={`text-[11px] px-2 py-1.5 rounded-md ${atlasMsg.includes('berhasil') ? 'bg-green-100 text-green-700 dark:bg-green-900/20 dark:text-green-400' : 'bg-red-100 text-red-700 dark:bg-red-900/20 dark:text-red-400'}`}>
+                <p className={`text-[11px] px-2 py-1.5 rounded-md ${atlasMsg.toLowerCase().includes('berhasil') ? 'bg-green-100 text-green-700 dark:bg-green-900/20 dark:text-green-400' : 'bg-red-100 text-red-700 dark:bg-red-900/20 dark:text-red-400'}`}>
                   {atlasMsg}
                 </p>
               )}
@@ -453,15 +465,26 @@ export default function AdminPage() {
     tidak: stationList.filter((s) => s.status === 'tidak_sesuai').length,
   };
 
-  const API = process.env.NEXT_PUBLIC_API_URL ?? 'http://localhost:8000';
-
   // Handlers
   async function handleSave(form: Parameters<ModalProps['onSave']>[0]): Promise<string | undefined> {
     try {
       if (editStation) {
-        // Konversi camelCase ke snake_case untuk backend
-        const { windBaseline, ghiBaseline, id: _id, ...rest } = form as typeof form & { windBaseline: number | null; ghiBaseline: number | null };
-        const payload = { ...rest, wind_baseline: windBaseline, ghi_baseline: ghiBaseline };
+        // Konversi SEMUA field camelCase ke snake_case agar backend (Pydantic) bisa membacanya
+        const payload = {
+          name: form.name,
+          lat: form.lat,
+          lon: form.lon,
+          region: form.region,
+          altitude: form.altitude,
+          status: form.status,
+          score: form.score,
+          wind_baseline: form.windBaseline,
+          ghi_baseline: form.ghiBaseline,
+          wind_baseline_gwa: form.windBaselineGwa,
+          ghi_baseline_gsa: form.ghiBaselineGsa,
+          wind_baseline_nasa: form.windBaselineNasa,
+          ghi_baseline_nasa: form.ghiBaselineNasa,
+        };
         const res = await apiFetch(`/api/v1/stations/${editStation.id}`, {
           method: 'PATCH',
           headers: { 'Content-Type': 'application/json', ...authHeaders() },
@@ -473,10 +496,21 @@ export default function AdminPage() {
         }
         setEditStation(null);
       } else {
+        // POST hanya mengirim field yang ada di StationCreate
+        const payload = {
+          id: form.id.trim().toUpperCase(),
+          name: form.name.trim(),
+          lat: form.lat,
+          lon: form.lon,
+          region: form.region.trim() || null,
+          altitude: form.altitude,
+          status: form.status,
+          score: form.score,
+        };
         const res = await apiFetch(`/api/v1/stations`, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json', ...authHeaders() },
-          body: JSON.stringify(form),
+          body: JSON.stringify(payload),
         });
         if (!res.ok) {
           const json = await res.json();
