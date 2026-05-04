@@ -44,7 +44,7 @@ function LaporanContent() {
   const station = stations.find((s) => s.id === stationId) ?? stations[0];
 
   const fromPage = searchParams.get('from') ?? 'peta';
-  const backHref = fromPage === 'analisis' ? '/analisis' : fromPage === 'kalkulator' ? '/kalkulator' : '/peta';
+  const backHref = fromPage === 'analisis' ? `/analisis?station=${stationId}` : fromPage === 'kalkulator' ? '/kalkulator' : '/peta';
   const backLabel = fromPage === 'analisis' ? 'Kembali ke Analisis Lokasi' : fromPage === 'kalkulator' ? 'Kembali ke Kalkulator' : 'Kembali ke Peta';
 
   const { measurements } = useMeasurements(stationId);
@@ -54,12 +54,8 @@ function LaporanContent() {
   const hasSolar = station.variables.toLowerCase().includes('iradiasi')
     || station.variables.toLowerCase().includes('surya')
     || station.variables.toLowerCase().includes('ghi');
-  // keep chartIsWind for legacy refs
-  const chartIsWind = hasWind;
   const windBaselineVal = station.windBaseline ?? station.windSpeed * 1.046;
   const ghiBaselineVal = station.ghiBaseline ?? station.irradiation * 0.958;
-  // keep for compatibility with existing scatter plot refs
-  const atlasBaselineValue = chartIsWind ? windBaselineVal : ghiBaselineVal;
 
   function makeMonthly(
     meas: typeof measurements,
@@ -102,9 +98,6 @@ function LaporanContent() {
   );
 
   // keep legacy aliases used by existing Recharts preview
-  const chartData = chartIsWind ? windChartData : ghiChartData;
-  const scatterData = chartIsWind ? windScatterData : ghiScatterData;
-
   const chartTsRef = useRef<HTMLDivElement>(null);
   const chartScatterRef = useRef<HTMLDivElement>(null);
   const chartTsGhiRef = useRef<HTMLDivElement>(null);
@@ -480,24 +473,24 @@ function LaporanContent() {
       ['R²', station.r2],
       ['Skor GIS-MCDA (/100)', station.score],
       [],
-      ['--- Validasi Surya ---'],
+      ['--- Validasi Surya ---', ''],
       ['GHI Observasi (kWh/m²/hari)', station.irradiation],
       ['GHI Baseline GSA/Solargis (kWh/m²/hari)', station.ghiBaselineGsa?.toFixed(2) ?? '—'],
       ['GHI Baseline NASA POWER (kWh/m²/hari)', station.ghiBaselineNasa?.toFixed(2) ?? '—'],
       ['GHI Best-Value (kWh/m²/hari)', (station.ghiBaseline ?? station.irradiation * 0.958).toFixed(2)],
       ['Clearness Index (Kt)', (station.irradiation / 8.5).toFixed(2)],
       [],
-      ['--- Baseline Angin ---'],
+      ['--- Baseline Angin ---', ''],
       ['Angin Obs Lapangan (m/s)', station.windSpeed],
       ['Angin Baseline GWA 3.0 (m/s)', station.windBaselineGwa?.toString() ?? '—'],
       ['Angin Baseline NASA POWER (m/s)', station.windBaselineNasa?.toString() ?? '—'],
       ['Angin Best-Value (m/s)', (station.windBaseline ?? station.windSpeed).toFixed(2)],
       [],
-      ['--- Potensi Energi ---'],
+      ['--- Potensi Energi ---', ''],
       ['AEP PLTB P50 (MWh/thn)', station.aep],
       ['Hasil Spesifik PLTS (kWh/kWp·thn)', Math.round(station.irradiation * 365 * 0.75)],
       [],
-      ['--- Faktor GIS-MCDA ---'],
+      ['--- Faktor GIS-MCDA ---', ''],
       ...mcdaFactors.map((f) => [f.label, `${f.pct}%`]),
       [],
       ['Diekspor pada', new Date().toLocaleString('id-ID')],
