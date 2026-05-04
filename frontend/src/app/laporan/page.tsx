@@ -1097,6 +1097,7 @@ function LaporanContent() {
 }
 
 export default function LaporanPage() {
+  useEffect(() => { document.title = 'Laporan | RE-Valid'; }, []);
   return (
     <Suspense
       fallback={

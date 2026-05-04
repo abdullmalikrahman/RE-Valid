@@ -1,12 +1,13 @@
 'use client';
 
-import { useState, useMemo } from 'react';
+import { useState, useMemo, useEffect } from 'react';
 import Link from 'next/link';
 import Navbar from '@/components/Navbar';
 import Footer from '@/components/Footer';
 import { useStations } from '@/hooks/useStations';
 
 export default function KalkulatorPage() {
+  useEffect(() => { document.title = 'Kalkulator | RE-Valid'; }, []);
   // --- Energy type toggle ---
   const { stations } = useStations();
   const [energyType, setEnergyType] = useState<'wind' | 'solar'>('wind');

@@ -6,6 +6,8 @@ import { useRouter } from 'next/navigation';
 export default function LoginPage() {
   const router = useRouter();
 
+  useEffect(() => { document.title = 'Login | RE-Valid'; }, []);
+
   // Redirect to admin panel if already logged in
   useEffect(() => {
     const token = localStorage.getItem('re_valid_token');

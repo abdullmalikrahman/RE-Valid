@@ -350,6 +350,7 @@ function AnalisisModal({ onClose, stations }: { onClose: () => void; stations: S
 
 // --- Main page ---
 export default function PetaPage() {
+  useEffect(() => { document.title = 'Peta | RE-Valid'; }, []);
   const { stations } = useStations();
   const [selectedStation, setSelectedStation] = useState<Station | null>(null);
   const [activeLayer, setActiveLayer] = useState<HeatLayer>('none');

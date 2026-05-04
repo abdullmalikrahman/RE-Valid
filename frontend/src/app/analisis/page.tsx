@@ -945,6 +945,7 @@ function AnalisisContent() {
 }
 
 export default function AnalisisPage() {
+  useEffect(() => { document.title = 'Analisis | RE-Valid'; }, []);
   return (
     <Suspense
       fallback={

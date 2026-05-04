@@ -373,6 +373,7 @@ function StationModal({ station, onClose, onSave }: ModalProps) {
 
 //  Main Page
 export default function AdminPage() {
+  useEffect(() => { document.title = 'Admin | RE-Valid'; }, []);
   const router = useRouter();
   const { stations: initialStations, mutate } = useStations();
 
