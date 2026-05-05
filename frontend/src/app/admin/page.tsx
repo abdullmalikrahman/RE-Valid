@@ -101,23 +101,75 @@ function StationModal({ station, onClose, onSave }: ModalProps) {
   const [saveError, setSaveError] = useState<string | null>(null);
   const [isFetchingAtlas, setIsFetchingAtlas] = useState(false);
   const [atlasMsg, setAtlasMsg] = useState<string | null>(null);
+  const [atlasSuccessCount, setAtlasSuccessCount] = useState<number | null>(null);
+  const [isGeocodingRegion, setIsGeocodingRegion] = useState(false);
+  const [isGeocodingAlt, setIsGeocodingAlt] = useState(false);
+  const coordDebounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  // Reverse geocoding: lat/lon → wilayah + altitude (debounced 900ms)
+  // Dua request paralel: Nominatim zoom=18 (wilayah) + OpenTopoData SRTM90m (ketinggian)
+  function triggerReverseGeocode(lat: number, lon: number) {
+    if (coordDebounceRef.current) clearTimeout(coordDebounceRef.current);
+    coordDebounceRef.current = setTimeout(async () => {
+      if (isNaN(lat) || isNaN(lon) || (lat === 0 && lon === 0)) return;
+
+      // ── Request 1: Nominatim reverse geocoding → wilayah ──────────────
+      // zoom=18 mengembalikan detail tingkat desa/kelurahan untuk Indonesia
+      setIsGeocodingRegion(true);
+      fetch(
+        'https://nominatim.openstreetmap.org/reverse?format=json&lat=' + lat + '&lon=' + lon + '&zoom=18&accept-language=id',
+        { headers: { 'User-Agent': 'RE-Valid/1.0' } }
+      )
+        .then((r) => r.json())
+        .then((data) => {
+          const addr = data.address ?? {};
+          // Struktur Nominatim untuk Indonesia (hasil test aktual):
+          //   village / hamlet / town / neighbourhood → nama desa/kelurahan
+          //   city / municipality / county            → kota madya / kabupaten
+          //   state                                   → provinsi
+          const desa     = addr.village ?? addr.hamlet ?? addr.town ?? addr.neighbourhood ?? '';
+          const kabkota  = addr.city ?? addr.municipality ?? addr.county ?? '';
+          const provinsi = addr.state ?? '';
+          const parts    = [desa, kabkota, provinsi].filter(Boolean);
+          if (parts.length > 0) {
+            setForm((prev) => ({ ...prev, region: parts.join(', ') }));
+          }
+        })
+        .catch(() => { /* Nominatim gagal — biarkan user isi manual */ })
+        .finally(() => setIsGeocodingRegion(false));
+
+      // ── Request 2: open-elevation.com SRTM → altitude ────────────────
+      // open-elevation.com menyediakan CORS header (* ) — aman dipanggil dari browser
+      // Data bersumber dari SRTM NASA, akurasi ±5–15m, gratis tanpa API key
+      setIsGeocodingAlt(true);
+      fetch('https://api.open-elevation.com/api/v1/lookup?locations=' + lat + ',' + lon)
+        .then((r) => r.json())
+        .then((data) => {
+          const elev = data?.results?.[0]?.elevation;
+          if (elev !== undefined && elev !== null && !isNaN(Number(elev))) {
+            setForm((prev) => ({ ...prev, altitude: Math.round(Number(elev)) }));
+          }
+        })
+        .catch(() => { /* OpenTopoData gagal — biarkan 0 */ })
+        .finally(() => setIsGeocodingAlt(false));
+    }, 900);
+  }
 
   useEffect(() => {
-    function onKey(e: KeyboardEvent) { if (e.key === 'Escape' && !isSaving) onClose(); }
-    document.addEventListener('keydown', onKey);
-    return () => document.removeEventListener('keydown', onKey);
-  }, [onClose, isSaving]);
+    return () => { if (coordDebounceRef.current) clearTimeout(coordDebounceRef.current); };
+  }, []);
 
-  // Ambil nilai baseline atlas dari NASA POWER via endpoint backend
-  async function handleFetchAtlas() {
-    if (!station?.id) {
+  // Ambil nilai baseline atlas dari GWA/GSA/NASA POWER via endpoint backend
+  async function handleFetchAtlas(overrideId?: string) {
+    const targetId = overrideId ?? station?.id;
+    if (!targetId) {
       setAtlasMsg('Simpan stasiun dahulu sebelum mengambil data atlas.');
       return;
     }
     setIsFetchingAtlas(true);
     setAtlasMsg(null);
     try {
-      const res = await apiFetch(`/api/v1/stations/${station.id}/fetch-atlas`, {
+      const res = await apiFetch(`/api/v1/stations/${targetId}/fetch-atlas`, {
         method: 'POST',
         headers: { ...authHeaders() },
       });
@@ -135,9 +187,16 @@ function StationModal({ station, onClose, onSave }: ModalProps) {
         windBaselineNasa: json.wind_baseline_nasa ?? prev.windBaselineNasa,
         ghiBaselineNasa: json.ghi_baseline_nasa ?? prev.ghiBaselineNasa,
       }));
+      const baselineFields = [
+        json.wind_baseline, json.ghi_baseline,
+        json.wind_baseline_gwa, json.ghi_baseline_gsa,
+        json.wind_baseline_nasa, json.ghi_baseline_nasa,
+      ];
+      const fetchedCount = baselineFields.filter((v) => v !== null && v !== undefined).length;
+      setAtlasSuccessCount(fetchedCount);
       const srcWind = json.wind_baseline_gwa ? 'GWA' : 'NASA POWER';
       const srcGhi = json.ghi_baseline_gsa ? 'GSA' : 'NASA POWER';
-      setAtlasMsg(`Berhasil: Angin=${json.wind_baseline} m/s (${srcWind}), GHI=${json.ghi_baseline} kWh/m²/hari (${srcGhi}).`);
+      setAtlasMsg(`${fetchedCount}/6 data berhasil diambil — Angin: ${json.wind_baseline ?? '-'} m/s (${srcWind}), GHI: ${json.ghi_baseline ?? '-'} kWh/m²/hari (${srcGhi}).`);
     } catch {
       setAtlasMsg('Tidak dapat terhubung ke server.');
     } finally {
@@ -161,8 +220,16 @@ function StationModal({ station, onClose, onSave }: ModalProps) {
     }
     setIsSaving(true);
     try {
+      const newId = !isEdit ? form.id.trim().toUpperCase() : '';
       const error = await onSave(form);
-      if (error) setSaveError(error);
+      if (error) { setSaveError(error); return; }
+      if (!isEdit) {
+        // Otomatis ambil data atlas setelah stasiun berhasil disimpan ke DB
+        await handleFetchAtlas(newId);
+        // Tunda penutupan 3 detik agar user sempat melihat hasil fetch
+        await new Promise((res) => setTimeout(res, 3000));
+        onClose();
+      }
     } finally {
       setIsSaving(false);
     }
@@ -180,8 +247,8 @@ function StationModal({ station, onClose, onSave }: ModalProps) {
           </button>
         </div>
         <div className="p-5 flex flex-col gap-4 overflow-y-auto flex-1">
-          {/* Row 1: Kode + Status + Nama */}
-          <div className="grid grid-cols-3 gap-3">
+          {/* Row 1: Kode + Status (edit saja, dihitung sistem saat add) + Nama */}
+          <div className={`grid gap-3 ${isEdit ? 'grid-cols-3' : 'grid-cols-2'}`}>
             <div className="flex flex-col gap-1.5">
               <label className="text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wide">Kode Stasiun</label>
               <input
@@ -192,18 +259,20 @@ function StationModal({ station, onClose, onSave }: ModalProps) {
                 onChange={(e) => setForm({ ...form, id: e.target.value })}
               />
             </div>
-            <div className="flex flex-col gap-1.5">
-              <label className="text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wide">Status</label>
-              <select
-                className="bg-gray-50 dark:bg-input-bg-dark border border-gray-300 dark:border-border-dark rounded-lg px-3 py-2 text-sm text-gray-900 dark:text-white focus:outline-none focus:border-primary"
-                value={form.status}
-                onChange={(e) => setForm({ ...form, status: e.target.value as AdminStation['status'] })}
-              >
-                <option value="prioritas">Prioritas</option>
-                <option value="kandidat">Kandidat</option>
-                <option value="tidak_sesuai">Tidak Sesuai</option>
-              </select>
-            </div>
+            {isEdit && (
+              <div className="flex flex-col gap-1.5">
+                <label className="text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wide">Status</label>
+                <select
+                  className="bg-gray-50 dark:bg-input-bg-dark border border-gray-300 dark:border-border-dark rounded-lg px-3 py-2 text-sm text-gray-900 dark:text-white focus:outline-none focus:border-primary"
+                  value={form.status}
+                  onChange={(e) => setForm({ ...form, status: e.target.value as AdminStation['status'] })}
+                >
+                  <option value="prioritas">Prioritas</option>
+                  <option value="kandidat">Kandidat</option>
+                  <option value="tidak_sesuai">Tidak Sesuai</option>
+                </select>
+              </div>
+            )}
             <div className="flex flex-col gap-1.5">
               <label className="text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wide">Nama Stasiun</label>
               <input
@@ -218,10 +287,13 @@ function StationModal({ station, onClose, onSave }: ModalProps) {
           {/* Row 2: Wilayah + Koordinat */}
           <div className="grid grid-cols-4 gap-3">
             <div className="flex flex-col gap-1.5 col-span-1">
-              <label className="text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wide">Wilayah</label>
+              <label className="text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wide flex items-center gap-1">
+                Wilayah
+                {isGeocodingRegion && <span className="material-symbols-outlined text-[12px] text-blue-400 animate-spin">refresh</span>}
+              </label>
               <input
                 className="bg-gray-50 dark:bg-input-bg-dark border border-gray-300 dark:border-border-dark rounded-lg px-3 py-2 text-sm text-gray-900 dark:text-white focus:outline-none focus:border-primary"
-                placeholder="Bandung Selatan, Jawa Barat"
+                placeholder="Otomatis dari koordinat..."
                 value={form.region}
                 onChange={(e) => setForm({ ...form, region: e.target.value })}
               />
@@ -232,7 +304,11 @@ function StationModal({ station, onClose, onSave }: ModalProps) {
                 className="bg-gray-50 dark:bg-input-bg-dark border border-gray-300 dark:border-border-dark rounded-lg px-3 py-2 text-sm text-gray-900 dark:text-white focus:outline-none focus:border-primary font-mono"
                 step="0.0001" type="number"
                 value={form.lat}
-                onChange={(e) => setForm({ ...form, lat: Number(e.target.value) })}
+                onChange={(e) => {
+                  const lat = Number(e.target.value);
+                  setForm((prev) => ({ ...prev, lat }));
+                  triggerReverseGeocode(lat, form.lon);
+                }}
               />
             </div>
             <div className="flex flex-col gap-1.5">
@@ -241,11 +317,18 @@ function StationModal({ station, onClose, onSave }: ModalProps) {
                 className="bg-gray-50 dark:bg-input-bg-dark border border-gray-300 dark:border-border-dark rounded-lg px-3 py-2 text-sm text-gray-900 dark:text-white focus:outline-none focus:border-primary font-mono"
                 step="0.0001" type="number"
                 value={form.lon}
-                onChange={(e) => setForm({ ...form, lon: Number(e.target.value) })}
+                onChange={(e) => {
+                  const lon = Number(e.target.value);
+                  setForm((prev) => ({ ...prev, lon }));
+                  triggerReverseGeocode(form.lat, lon);
+                }}
               />
             </div>
             <div className="flex flex-col gap-1.5">
-              <label className="text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wide">Altitude (m)</label>
+              <label className="text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wide flex items-center gap-1">
+                Altitude (m)
+                {isGeocodingAlt && <span className="material-symbols-outlined text-[12px] text-blue-400 animate-spin">refresh</span>}
+              </label>
               <input
                 className="bg-gray-50 dark:bg-input-bg-dark border border-gray-300 dark:border-border-dark rounded-lg px-3 py-2 text-sm text-gray-900 dark:text-white focus:outline-none focus:border-primary"
                 type="number"
@@ -255,16 +338,78 @@ function StationModal({ station, onClose, onSave }: ModalProps) {
             </div>
           </div>
 
-          {/* Row 3: Skor */}
-          <div className="flex flex-col gap-1.5">
-            <label className="text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wide">Skor GIS-MCDA (0–100)</label>
-            <div className="flex items-center gap-3">
-              <input className="flex-1" max="100" min="0" type="range" value={form.score} onChange={(e) => setForm({ ...form, score: Number(e.target.value) })} />
-              <span className="w-10 text-right text-sm font-bold text-gray-900 dark:text-white">{form.score}</span>
+          {/* Row 3: Skor (read-only — dihitung otomatis oleh analisis MCP) */}
+          {isEdit && (
+            <div className="flex items-center gap-2 px-3 py-2 rounded-lg bg-gray-50 dark:bg-gray-800/50 border border-gray-200 dark:border-border-dark">
+              <span className="material-symbols-outlined text-[15px] text-gray-400">analytics</span>
+              <span className="text-xs text-gray-500 dark:text-gray-400 uppercase tracking-wide">Skor GIS-MCDA:</span>
+              <span className="text-sm font-bold text-gray-900 dark:text-white">{station?.score ?? 0}</span>
+              <span className="text-sm text-gray-400">/100</span>
+              <span className="ml-auto text-[11px] text-gray-400 italic">Dihitung otomatis oleh analisis MCP</span>
             </div>
-          </div>
+          )}
 
-          {/* ── Baseline Atlas (hanya di mode edit) ───────────────────── */}
+          {/* ── Baseline Atlas ─────────────────────────────────────────── */}
+          {!isEdit && atlasSuccessCount === null && (
+            <div className="flex items-center gap-2 px-3 py-2.5 rounded-lg bg-blue-50 dark:bg-blue-900/10 border border-blue-200 dark:border-blue-800">
+              <span className="material-symbols-outlined text-[14px] text-blue-500">cloud_download</span>
+              <span className="text-[11px] text-blue-600 dark:text-blue-400">Data baseline atlas (GWA · GSA · NASA POWER) akan diambil <strong>otomatis</strong> setelah lokasi disimpan.</span>
+            </div>
+          )}
+          {!isEdit && atlasSuccessCount !== null && (
+            <div className="flex flex-col gap-3 border border-green-200 dark:border-green-800 rounded-xl p-4 bg-green-50/50 dark:bg-green-900/10">
+              <div className="flex items-center gap-2">
+                <span className="material-symbols-outlined text-[15px] text-green-600">check_circle</span>
+                <div>
+                  <p className="text-xs font-semibold text-green-700 dark:text-green-400 uppercase tracking-wide">Baseline Referensi Atlas</p>
+                  <p className="text-[11px] text-green-600 dark:text-green-500 mt-0.5">Sumber: GWA (angin, GeoTIFF) · GSA (surya, API) · NASA POWER ERA5 (pembanding)</p>
+                </div>
+                <span className="ml-auto text-[11px] text-gray-400 italic shrink-0">{atlasSuccessCount}/6 berhasil · menutup otomatis...</span>
+              </div>
+              <div className="rounded-lg border border-green-200 dark:border-green-800 overflow-hidden text-[11px]">
+                <table className="w-full">
+                  <thead>
+                    <tr className="bg-green-100 dark:bg-green-900/30">
+                      <th className="text-left px-3 py-1.5 text-green-700 dark:text-green-400 font-semibold">Sumber</th>
+                      <th className="text-right px-3 py-1.5 text-green-700 dark:text-green-400 font-semibold">Angin (m/s)</th>
+                      <th className="text-right px-3 py-1.5 text-green-700 dark:text-green-400 font-semibold">GHI (kWh/m²/hr)</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-green-100 dark:divide-green-900/30">
+                    <tr className="bg-white dark:bg-transparent">
+                      <td className="px-3 py-1.5 font-medium text-gray-700 dark:text-gray-300">GWA</td>
+                      <td className="px-3 py-1.5 text-right font-mono text-gray-800 dark:text-gray-200">{form.windBaselineGwa ?? <span className="text-gray-400">—</span>}</td>
+                      <td className="px-3 py-1.5 text-right font-mono text-gray-400">—</td>
+                    </tr>
+                    <tr className="bg-white dark:bg-transparent">
+                      <td className="px-3 py-1.5 font-medium text-gray-700 dark:text-gray-300">GSA</td>
+                      <td className="px-3 py-1.5 text-right font-mono text-gray-400">—</td>
+                      <td className="px-3 py-1.5 text-right font-mono text-gray-800 dark:text-gray-200">{form.ghiBaselineGsa ?? <span className="text-gray-400">—</span>}</td>
+                    </tr>
+                    <tr className="bg-green-50/50 dark:bg-green-900/10">
+                      <td className="px-3 py-1.5 font-medium text-gray-700 dark:text-gray-300">NASA POWER</td>
+                      <td className="px-3 py-1.5 text-right font-mono text-gray-800 dark:text-gray-200">{form.windBaselineNasa ?? <span className="text-gray-400">—</span>}</td>
+                      <td className="px-3 py-1.5 text-right font-mono text-gray-800 dark:text-gray-200">{form.ghiBaselineNasa ?? <span className="text-gray-400">—</span>}</td>
+                    </tr>
+                  </tbody>
+                </table>
+              </div>
+              <div className="grid grid-cols-2 gap-3">
+                <div className="flex flex-col gap-1">
+                  <label className="text-[11px] text-gray-500 dark:text-gray-400">Angin 100m · m/s (best: GWA &gt; NASA)</label>
+                  <div className="bg-white dark:bg-input-bg-dark border border-gray-200 dark:border-border-dark rounded-lg px-3 py-2 text-sm font-mono text-gray-900 dark:text-white">
+                    {form.windBaseline ?? <span className="text-gray-400">—</span>}
+                  </div>
+                </div>
+                <div className="flex flex-col gap-1">
+                  <label className="text-[11px] text-gray-500 dark:text-gray-400">GHI · kWh/m²/hari (best: GSA &gt; NASA)</label>
+                  <div className="bg-white dark:bg-input-bg-dark border border-gray-200 dark:border-border-dark rounded-lg px-3 py-2 text-sm font-mono text-gray-900 dark:text-white">
+                    {form.ghiBaseline ?? <span className="text-gray-400">—</span>}
+                  </div>
+                </div>
+              </div>
+            </div>
+          )}
           {isEdit && (
             <div className="flex flex-col gap-3 border border-blue-200 dark:border-blue-800 rounded-xl p-4 bg-blue-50/50 dark:bg-blue-900/10">
               <div className="flex items-center justify-between">
@@ -274,7 +419,7 @@ function StationModal({ station, onClose, onSave }: ModalProps) {
                 </div>
                 <button
                   type="button"
-                  onClick={handleFetchAtlas}
+                  onClick={() => handleFetchAtlas()}
                   disabled={isFetchingAtlas || isSaving}
                   className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-blue-600 hover:bg-blue-700 disabled:opacity-60 disabled:cursor-not-allowed text-white text-xs font-bold transition-colors"
                 >
@@ -371,9 +516,15 @@ function StationModal({ station, onClose, onSave }: ModalProps) {
             className="flex-1 h-9 rounded-lg bg-primary hover:bg-blue-600 disabled:opacity-70 disabled:cursor-not-allowed text-white text-sm font-bold transition-colors flex items-center justify-center gap-2"
           >
             {isSaving ? (
-              <><span className="material-symbols-outlined text-[16px] animate-spin">refresh</span>Menyimpan...</>
+              isFetchingAtlas ? (
+                <><span className="material-symbols-outlined text-[16px] animate-spin">refresh</span>Mengambil Data Atlas...</>
+              ) : atlasSuccessCount !== null ? (
+                <><span className="material-symbols-outlined text-[16px]">check_circle</span>{atlasSuccessCount}/6 Data Berhasil Diambil</>
+              ) : (
+                <><span className="material-symbols-outlined text-[16px] animate-spin">refresh</span>Menyimpan...</>
+              )
             ) : (
-              isEdit ? 'Simpan Perubahan' : 'Tambah Stasiun'
+              isEdit ? 'Simpan Perubahan' : 'Tambah & Ambil Data Atlas'
             )}
           </button>
           </div>
@@ -496,7 +647,9 @@ export default function AdminPage() {
         }
         setEditStation(null);
       } else {
-        // POST hanya mengirim field yang ada di StationCreate
+        // POST hanya mengirim field yang ada di StationCreate.
+        // status dan score TIDAK dikirim — backend default: kandidat, 0.
+        // Keduanya akan dihitung otomatis oleh analisis MCP setelah ada data measurement.
         const payload = {
           id: form.id.trim().toUpperCase(),
           name: form.name.trim(),
@@ -504,8 +657,6 @@ export default function AdminPage() {
           lon: form.lon,
           region: form.region.trim() || null,
           altitude: form.altitude,
-          status: form.status,
-          score: form.score,
         };
         const res = await apiFetch(`/api/v1/stations`, {
           method: 'POST',
@@ -516,7 +667,7 @@ export default function AdminPage() {
           const json = await res.json();
           return json.detail ?? 'Gagal menambah stasiun';
         }
-        setShowAddModal(false);
+        // Tidak auto-close di sini — modal akan menutup sendiri setelah fetch-atlas selesai
       }
       await mutate();
       return undefined;

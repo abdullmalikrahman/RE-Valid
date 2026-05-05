@@ -214,6 +214,17 @@ def validate_station_mcp(self, station_id: str, variable: str = "wind", n: int =
         aep   = _compute_aep(variable, atlas_value)
         score = _compute_score(r2, bias, rmse, variable, atlas_value)
 
+        # Derivasi status dari score secara otomatis:
+        #   score ≥ 70  → prioritas
+        #   score 50–69 → kandidat
+        #   score < 50  → tidak_sesuai
+        if score >= 70:
+            derived_status = "prioritas"
+        elif score >= 50:
+            derived_status = "kandidat"
+        else:
+            derived_status = "tidak_sesuai"
+
         # Persist to stations table
         cur.execute(
             """
@@ -223,19 +234,20 @@ def validate_station_mcp(self, station_id: str, variable: str = "wind", n: int =
                    r2          = %s,
                    aep         = %s,
                    score       = %s,
+                   status      = %s,
                    mcp_status  = 'selesai',
                    last_update = NOW()
             WHERE  id = %s
             """,
-            (rmse, bias, r2, aep, score, station_id),
+            (rmse, bias, r2, aep, score, derived_status, station_id),
         )
         conn.commit()
         cur.close()
         conn.close()
 
         logger.info(
-            "validate_station_mcp DONE: station=%s var=%s rmse=%.3f bias=%.2f r2=%.3f aep=%d score=%d",
-            station_id, variable, rmse, bias, r2, aep, score,
+            "validate_station_mcp DONE: station=%s var=%s rmse=%.3f bias=%.2f r2=%.3f aep=%d score=%d status=%s",
+            station_id, variable, rmse, bias, r2, aep, score, derived_status,
         )
         return {
             "station_id": station_id,
@@ -246,6 +258,7 @@ def validate_station_mcp(self, station_id: str, variable: str = "wind", n: int =
             "r2": r2,
             "aep": aep,
             "score": score,
+            "status": derived_status,
             "mcp_status": "selesai",
         }
 
