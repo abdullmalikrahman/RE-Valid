@@ -101,7 +101,7 @@ function AnalisisContent() {
           // Tampilkan pesan khusus jika baseline belum di-set
           const errMsg: string = data.result?.message ?? data.error ?? 'Task gagal';
           if (errMsg.includes('baseline') || errMsg.includes('baseline_not_set')) {
-            setTaskMsg('Baseline atlas belum diisi. Admin perlu mengisi nilai wind_baseline / ghi_baseline di halaman Manajemen Stasiun terlebih dahulu (gunakan tombol "Ambil dari Atlas" atau input manual).');
+            setTaskMsg('Baseline atlas belum diisi. Admin perlu mengisi nilai wind_baseline / ghi_baseline di halaman Pengelolaan Lokasi (/admin) terlebih dahulu (gunakan tombol "Ambil dari Atlas" atau input manual).');
           } else {
             setTaskMsg(errMsg);
           }

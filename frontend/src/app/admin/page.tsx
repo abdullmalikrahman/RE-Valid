@@ -76,9 +76,10 @@ type ModalProps = {
   station: AdminStation | null; // null = add mode
   onClose: () => void;
   onSave: (data: Omit<AdminStation, 'score' | 'windSpeed' | 'irradiation' | 'lastUpdate' | 'mcpStatus'> & { score: number }) => Promise<string | undefined>;
+  onRefresh: () => void; // Dipanggil setelah fetch-atlas agar SWR tabel terupdate
 };
 
-function StationModal({ station, onClose, onSave }: ModalProps) {
+function StationModal({ station, onClose, onSave, onRefresh }: ModalProps) {
   const [form, setForm] = useState({
     id: station?.id ?? '',
     name: station?.name ?? '',
@@ -226,6 +227,8 @@ function StationModal({ station, onClose, onSave }: ModalProps) {
       if (!isEdit) {
         // Otomatis ambil data atlas setelah stasiun berhasil disimpan ke DB
         await handleFetchAtlas(newId);
+        // Refresh SWR di parent agar tabel admin langsung memperlihatkan baseline terbaru
+        onRefresh();
         // Tunda penutupan 3 detik agar user sempat melihat hasil fetch
         await new Promise((res) => setTimeout(res, 3000));
         onClose();
@@ -1166,6 +1169,7 @@ export default function AdminPage() {
           station={editStation}
           onClose={() => { setShowAddModal(false); setEditStation(null); }}
           onSave={handleSave}
+          onRefresh={mutate}
         />
       )}
     </div>
