@@ -57,11 +57,6 @@ export default function LeafletMap({
 
       // @ts-expect-error leaflet internal
       delete L.Icon.Default.prototype._getIconUrl;
-      L.Icon.Default.mergeOptions({
-        iconRetinaUrl: 'https://unpkg.com/leaflet@1.9.4/dist/images/marker-icon-2x.png',
-        iconUrl: 'https://unpkg.com/leaflet@1.9.4/dist/images/marker-icon.png',
-        shadowUrl: 'https://unpkg.com/leaflet@1.9.4/dist/images/marker-shadow.png',
-      });
 
       const map = L.map(mapRef.current, {
         center: [-7.0, 107.8], zoom: 9, zoomControl: false, attributionControl: true,
@@ -164,54 +159,153 @@ export default function LeafletMap({
     mapInstanceRef.current.flyTo([selectedStation.lat, selectedStation.lon], Math.max(z, 10), { duration: 0.8 });
   }, [mapReady, selectedStation]);
 
-  // ── Wind / Solar heatmap (gradient circles) ─────────────────────────────
+  // ── Wind / Solar heatmap (canvas imageOverlay — smooth bilinear gradient) ──
   useEffect(() => {
     if (!mapReady || !mapInstanceRef.current) return;
     if (heatLayerRef.current) { heatLayerRef.current.remove(); heatLayerRef.current = null; }
     if (activeLayer === 'none') return;
 
-    import('leaflet').then((L) => {
-      const points = activeLayer === 'wind' ? windPoints : solarPoints;
-      // Gradient stops: intensity → color
-      const stopsWind = [
-        { stop: 0.0, color: '#2563eb' },
-        { stop: 0.3, color: '#22c55e' },
-        { stop: 0.6, color: '#eab308' },
-        { stop: 0.85, color: '#f97316' },
-        { stop: 1.0, color: '#ef4444' },
-      ];
-      const stopsSolar = [
-        { stop: 0.0, color: '#fde68a' },
-        { stop: 0.4, color: '#f59e0b' },
-        { stop: 0.7, color: '#f97316' },
-        { stop: 1.0, color: '#dc2626' },
-      ];
-      const stops = activeLayer === 'wind' ? stopsWind : stopsSolar;
+    const points = activeLayer === 'wind' ? windPoints : solarPoints;
+    if (points.length === 0) return;
 
-      // Pick the color of the stop the intensity has reached (floor)
-      function pickColor(intensity: number) {
-        let color = stops[0].color;
-        for (let i = 0; i < stops.length; i++) {
-          if (intensity >= stops[i].stop) color = stops[i].color;
+    import('leaflet').then((L) => {
+      // ── Grid constants matching backend/app/api/v1/endpoints/atlas.py ───
+      const LAT_MIN = -8.1, LAT_MAX = -5.9;
+      const LON_MIN = 106.4, LON_MAX = 109.5;
+      const STEP = 0.15;
+      const nLat = Math.floor((LAT_MAX - LAT_MIN) / STEP) + 1; // 15 rows
+      const nLon = Math.floor((LON_MAX - LON_MIN) / STEP) + 1; // 21 cols
+
+      // ── Build flat 2D grid from IDW points ───────────────────────────────
+      const grid = new Float32Array(nLat * nLon).fill(-1);
+      for (const [lat, lon, v] of points) {
+        const r = Math.round((lat - LAT_MIN) / STEP);
+        const c = Math.round((lon - LON_MIN) / STEP);
+        if (r >= 0 && r < nLat && c >= 0 && c < nLon) {
+          grid[r * nLon + c] = v;
         }
-        return color;
       }
 
-      const grp = L.layerGroup();
-      points.forEach(([lat, lon, intensity]) => {
-        L.circle([lat, lon], {
-          radius: 18000,
-          color: 'transparent',
-          fillColor: pickColor(intensity),
-          fillOpacity: 0.10 + intensity * 0.18, // max ~0.28 per circle
-          interactive: false,
-        }).addTo(grp);
-      });
-      grp.addTo(mapInstanceRef.current);
-      heatLayerRef.current = grp;
+      // ── Color stop lerp (t ∈ [0,1] → [r,g,b]) ───────────────────────────
+      type Stop = [number, number, number, number]; // [t, r, g, b]
+      const stops: Stop[] = activeLayer === 'wind'
+        ? [[0, 37, 99, 235], [0.25, 34, 197, 94], [0.5, 234, 179, 8], [0.75, 249, 115, 22], [1, 239, 68, 68]]
+        : [[0, 253, 230, 138], [0.35, 245, 158, 11], [0.65, 249, 115, 22], [1, 185, 28, 28]];
+
+      function lerpColor(t: number): [number, number, number] {
+        const ct = Math.max(0, Math.min(1, t));
+        for (let i = 1; i < stops.length; i++) {
+          if (ct <= stops[i][0]) {
+            const [t0, r0, g0, b0] = stops[i - 1];
+            const [t1, r1, g1, b1] = stops[i];
+            const f = (ct - t0) / (t1 - t0);
+            return [
+              Math.round(r0 + (r1 - r0) * f),
+              Math.round(g0 + (g1 - g0) * f),
+              Math.round(b0 + (b1 - b0) * f),
+            ];
+          }
+        }
+        const last = stops[stops.length - 1];
+        return [last[1], last[2], last[3]];
+      }
+
+      // ── Render canvas with bilinear interpolation ────────────────────────
+      // Canvas pixel (0,0) = NW corner (LAT_MAX, LON_MIN); Leaflet imageOverlay handles projection
+      const W = 420, H = 300;
+      const cvs = document.createElement('canvas');
+      cvs.width = W;
+      cvs.height = H;
+      const ctx = cvs.getContext('2d')!;
+      const imgData = ctx.createImageData(W, H);
+
+      for (let py = 0; py < H; py++) {
+        // py=0 → LAT_MAX (north), py=H-1 → LAT_MIN (south)
+        const gr = ((H - 1 - py) / (H - 1)) * (nLat - 1);
+        for (let px = 0; px < W; px++) {
+          // px=0 → LON_MIN (west), px=W-1 → LON_MAX (east)
+          const gc = (px / (W - 1)) * (nLon - 1);
+
+          const c0 = Math.max(0, Math.floor(gc));
+          const c1 = Math.min(nLon - 1, c0 + 1);
+          const r0 = Math.max(0, Math.floor(gr));
+          const r1 = Math.min(nLat - 1, r0 + 1);
+          const tc = gc - c0;
+          const tr = gr - r0;
+
+          const v00 = grid[r0 * nLon + c0];
+          const v10 = grid[r1 * nLon + c0];
+          const v01 = grid[r0 * nLon + c1];
+          const v11 = grid[r1 * nLon + c1];
+
+          const valid = [v00, v10, v01, v11].filter((v) => v >= 0);
+          if (valid.length === 0) continue;
+
+          const intensity =
+            valid.length === 4
+              ? v00 * (1 - tr) * (1 - tc) +
+                v10 * tr * (1 - tc) +
+                v01 * (1 - tr) * tc +
+                v11 * tr * tc
+              : valid.reduce((a, b) => a + b, 0) / valid.length;
+
+          const [r, g, b] = lerpColor(intensity);
+          const idx = (py * W + px) * 4;
+          imgData.data[idx]     = r;
+          imgData.data[idx + 1] = g;
+          imgData.data[idx + 2] = b;
+          imgData.data[idx + 3] = 220; // ~86% opaque per pixel; final opacity via overlay
+        }
+      }
+      ctx.putImageData(imgData, 0, 0);
+
+      // ── Clip to Banten + Jawa Barat boundary (fetch GeoJSON) ─────────────
+      const lonToX = (lon: number) => ((lon - LON_MIN) / (LON_MAX - LON_MIN)) * (W - 1);
+      const latToY = (lat: number) => ((LAT_MAX - lat) / (LAT_MAX - LAT_MIN)) * (H - 1);
+
+      const applyClipAndAddOverlay = (ring: [number, number][]) => {
+        ctx.save();
+        ctx.globalCompositeOperation = 'destination-in';
+        ctx.beginPath();
+        ring.forEach(([lon, lat], i) => {
+          const x = lonToX(lon);
+          const y = latToY(lat);
+          if (i === 0) ctx.moveTo(x, y); else ctx.lineTo(x, y);
+        });
+        ctx.closePath();
+        ctx.fillStyle = 'rgba(0,0,0,1)';
+        ctx.fill();
+        ctx.restore();
+
+        const overlay = L.imageOverlay(
+          cvs.toDataURL('image/png'),
+          [[LAT_MIN, LON_MIN], [LAT_MAX, LON_MAX]],
+          { opacity: 0.72, interactive: false },
+        );
+        overlay.addTo(mapInstanceRef.current);
+        heatLayerRef.current = overlay;
+      };
+
+      // Fetch boundary from public asset; fall back to bbox on error
+      fetch('/geodata/jabar-banten.json')
+        .then((r) => r.json())
+        .then((geom: { type: string; coordinates: [number, number][][] }) => {
+          const ring = geom.coordinates[0] as [number, number][];
+          applyClipAndAddOverlay(ring);
+        })
+        .catch(() => {
+          // Fallback: no clip, show full bbox
+          const overlay = L.imageOverlay(
+            cvs.toDataURL('image/png'),
+            [[LAT_MIN, LON_MIN], [LAT_MAX, LON_MAX]],
+            { opacity: 0.72, interactive: false },
+          );
+          overlay.addTo(mapInstanceRef.current);
+          heatLayerRef.current = overlay;
+        });
     });
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [mapReady, activeLayer]);
+  }, [mapReady, activeLayer, windPoints, solarPoints]);
 
   // ── Prioritas GIS-MCDA ─────────────────────────────────────────────────────
   useEffect(() => {
@@ -240,10 +334,22 @@ export default function LeafletMap({
           0%,100% { transform: scale(1); opacity: 0.4; }
           50% { transform: scale(1.8); opacity: 0; }
         }
-        .leaflet-tooltip-custom { background: transparent !important; border: none !important; box-shadow: none !important; }
+        .leaflet-tooltip-custom { background: transparent !important; border: none !important; box-shadow: none !important; padding: 0 !important; }
         .leaflet-attribution-flag { display: none !important; }
+        .lf-tt-inner {
+          background: rgba(17,26,34,0.92);
+          border: 1px solid rgba(50,77,103,0.8);
+          border-radius: 6px;
+          padding: 5px 8px;
+          font-size: 11px;
+          color: #c9d6e0;
+          line-height: 1.5;
+          white-space: nowrap;
+          box-shadow: 0 2px 8px rgba(0,0,0,0.4);
+        }
+        .lf-tt-name { font-weight: 600; color: #e2eaf0; }
       `}</style>
-      <div ref={mapRef} className="absolute inset-0 w-full h-full bg-[#e8e0d8] dark:bg-[#101922]" style={{ zIndex: 0 }} />
+      <div ref={mapRef} className="absolute inset-0 w-full h-full bg-[#e8e0d8] dark:bg-background-dark" style={{ zIndex: 0 }} />
     </>
   );
 }
