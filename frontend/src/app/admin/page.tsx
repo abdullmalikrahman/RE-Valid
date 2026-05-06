@@ -724,7 +724,7 @@ export default function AdminPage() {
     try {
       const formData = new FormData();
       formData.append('file', csvFile);
-      const res = await fetch(
+      const res = await apiFetch(
         `/api/v1/measurements/upload?station_id=${encodeURIComponent(csvStation)}`,
         { method: 'POST', body: formData, headers: authHeaders() },
       );
@@ -967,7 +967,7 @@ export default function AdminPage() {
                           <div className="flex items-center gap-2">
                             <div className="w-16 h-1.5 bg-gray-200 dark:bg-gray-700 rounded-full overflow-hidden">
                               <div
-                                className={`h-full rounded-full ${station.score >= 80 ? 'bg-green-500' : station.score >= 60 ? 'bg-yellow-500' : 'bg-gray-400'}`}
+                                className={`h-full rounded-full ${station.score >= 70 ? 'bg-green-500' : station.score >= 50 ? 'bg-yellow-500' : 'bg-gray-400'}`}
                                 style={{ width: `${station.score}%` }}
                               />
                             </div>
