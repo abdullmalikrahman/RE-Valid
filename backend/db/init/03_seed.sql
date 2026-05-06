@@ -15,7 +15,7 @@ INSERT INTO stations (
         'Pos Pegunungan Wayang',
         -7.2184, 107.6452,
         'Bandung Selatan, Jawa Barat', 1820,
-        'prioritas', 68,
+        'kandidat', 68,
         'Jan 2023 – Des 2023', 'Angin, Iradiasi', 'selesai',
         6.8, 5.1, 16353,
         1.09, 19.80, 0.800
@@ -35,7 +35,7 @@ INSERT INTO stations (
         'Pos Pesisir Pangandaran',
         -7.7041, 108.6508,
         'Pangandaran, Jawa Barat', 12,
-        'kandidat', 86,
+        'prioritas', 86,
         'Mar 2023 – Des 2023', 'Angin, Iradiasi', 'berjalan',
         5.4, 4.6, 19997,
         0.86, 4.78, 0.952
@@ -55,7 +55,7 @@ INSERT INTO stations (
         'Stasiun Garut Selatan',
         -7.4833, 107.8717,
         'Garut, Jawa Barat', 730,
-        'kandidat', 83,
+        'prioritas', 83,
         'Feb 2023 – Des 2023', 'Angin, Iradiasi', 'selesai',
         5.9, 4.9, 21546,
         0.91, 7.82, 0.922
@@ -65,7 +65,7 @@ INSERT INTO stations (
         'Pos Tasikmalaya Timur',
         -7.3544, 108.2248,
         'Tasikmalaya, Jawa Barat', 368,
-        'kandidat', 88,
+        'prioritas', 88,
         'Jan 2023 – Sep 2023', 'Angin', 'berjalan',
         5.1, 4.5, 21546,
         0.84, -2.75, 0.972
