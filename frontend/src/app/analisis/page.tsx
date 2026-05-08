@@ -161,8 +161,12 @@ function AnalisisContent() {
   const ktLabel = ktIndex >= 0.55 ? 'Cerah' : ktIndex >= 0.40 ? 'Campuran' : 'Berawan';
   const ktColor = ktIndex >= 0.55 ? 'text-amber-400' : ktIndex >= 0.40 ? 'text-blue-400' : 'text-slate-400';
   const ktBg = ktIndex >= 0.55 ? 'bg-amber-500/10 text-amber-400' : ktIndex >= 0.40 ? 'bg-blue-500/10 text-blue-400' : 'bg-slate-500/10 text-slate-400';
-  // AEP PLTS: GHI × 365 × PR (0.75) = MWh/MWp/year
-  const aepSolarRef = Math.round(station.irradiation * 365 * 0.75);
+  // AEP PLTS: gunakan solarAep dari DB (atlas-based, 10 MWp, PR=0.78); fallback ke kalkulasi obs
+  // Bagi 10 untuk mendapatkan referensi per 1 MWp (unit industri standar)
+  const aepSolar10mwp = (station.solarAep != null && station.solarAep > 0)
+    ? station.solarAep
+    : Math.round((station.ghiBaseline ?? station.ghiBaselineNasa ?? station.irradiation) * 365 * 10 * 0.78);
+  const aepSolarRef = Math.round(aepSolar10mwp / 10);   // MWh per 1 MWp
   const aepSolarP90 = Math.round(aepSolarRef * 0.90);
 
   const isWind = energyType === 'wind';
@@ -538,7 +542,7 @@ function AnalisisContent() {
                   <h3 className="text-2xl font-bold text-slate-900 dark:text-white">{aepSolarRef.toLocaleString('id')}</h3>
                   <span className="text-sm text-slate-500 dark:text-slate-400">MWh/MWp</span>
                 </div>
-                <p className="text-[10px] text-slate-400 mt-1">PR = 0.75 · setara CF {((aepSolarRef / 8760) * 100).toFixed(1)}%</p>
+                <p className="text-[10px] text-slate-400 mt-1">PR = 0.78 · setara CF {((aepSolarRef / 8760) * 100).toFixed(1)}%</p>
               </div>
             </>
           )}
@@ -1011,7 +1015,7 @@ function AnalisisContent() {
                 <strong className="text-slate-800 dark:text-slate-200">Catatan:</strong>{' '}
                 {isWind
                   ? 'Hasil ini adalah analisis pre-feasibility / screening awal. Bukan Wind Resource Assessment (WRA) bankable grade.'
-                  : 'Hasil ini adalah analisis pre-feasibility / screening awal. Bukan Solar Resource Assessment (SRA) bankable grade. AEP dihitung untuk sistem referensi 1 MWp (PR = 0.75).'}
+                  : 'Hasil ini adalah analisis pre-feasibility / screening awal. Bukan Solar Resource Assessment (SRA) bankable grade. AEP dihitung untuk sistem referensi 1 MWp (PR = 0.78).'}
               </span>
             </div>
           </div>

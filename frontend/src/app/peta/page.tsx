@@ -193,35 +193,38 @@ function StationPanel({
           </h3>
           <div className="bg-slate-50 dark:bg-[#111a22] rounded-lg border border-slate-200 dark:border-[#233648] divide-y divide-slate-100 dark:divide-[#1e2d3d]">
             <div className="flex justify-between items-center px-3 py-2">
-              <span className="text-slate-500 dark:text-text-secondary">Kec. Angin Rata-rata</span>
-              <span className="font-bold text-slate-900 dark:text-white">{station.windSpeed} m/s</span>
+              <span className="text-slate-500 dark:text-text-secondary text-[12px]">Kec. Angin Rata-rata</span>
+              <span className="font-bold text-slate-900 dark:text-white text-[12px]">{station.windSpeed} m/s</span>
             </div>
             <div className="flex justify-between items-center px-3 py-2">
-              <span className="text-slate-500 dark:text-text-secondary">Iradiasi Matahari</span>
-              <span className="font-bold text-slate-900 dark:text-white">{station.irradiation} kWh/m²/hari</span>
+              <span className="text-slate-500 dark:text-text-secondary text-[12px]">Iradiasi Matahari</span>
+              <span className="font-bold text-slate-900 dark:text-white text-[12px]">{station.irradiation} kWh/m²/hr</span>
             </div>
-            {station.windAep != null && station.windAep > 0 && (
+            {(station.windAep != null && station.windAep > 0) && (
               <div className="flex justify-between items-center px-3 py-2">
-                <span className="text-slate-500 dark:text-text-secondary flex items-center gap-1">
+                <span className="text-slate-500 dark:text-text-secondary text-[12px] flex items-center gap-1">
                   <span className="material-symbols-outlined text-[13px] text-blue-400">air</span>
                   AEP Angin (P50)
                 </span>
-                <span className="font-bold text-primary">{station.windAep.toLocaleString('id')} MWh/thn</span>
+                <span className="font-bold text-primary text-[12px]">{Math.round(station.windAep * 0.877).toLocaleString('id')} MWh/thn</span>
+              </div>
+            )}
+            {!(station.windAep != null && station.windAep > 0) && station.aep > 0 && (
+              <div className="flex justify-between items-center px-3 py-2">
+                <span className="text-slate-500 dark:text-text-secondary text-[12px] flex items-center gap-1">
+                  <span className="material-symbols-outlined text-[13px] text-blue-400">air</span>
+                  AEP Angin (P50)
+                </span>
+                <span className="font-bold text-primary text-[12px]">{Math.round(station.aep * 0.877).toLocaleString('id')} MWh/thn</span>
               </div>
             )}
             {station.solarAep != null && station.solarAep > 0 && (
               <div className="flex justify-between items-center px-3 py-2">
-                <span className="text-slate-500 dark:text-text-secondary flex items-center gap-1">
+                <span className="text-slate-500 dark:text-text-secondary text-[12px] flex items-center gap-1">
                   <span className="material-symbols-outlined text-[13px] text-amber-400">wb_sunny</span>
                   AEP Surya (P50)
                 </span>
-                <span className="font-bold text-amber-400">{station.solarAep.toLocaleString('id')} MWh/thn</span>
-              </div>
-            )}
-            {(station.windAep == null || station.windAep === 0) && station.aep > 0 && (
-              <div className="flex justify-between items-center px-3 py-2">
-                <span className="text-slate-500 dark:text-text-secondary">AEP Estimasi (P50)</span>
-                <span className="font-bold text-primary">{station.aep.toLocaleString('id')} MWh/thn</span>
+                <span className="font-bold text-amber-400 text-[12px]">{Math.round(station.solarAep / 10).toLocaleString('id')} MWh/MWp</span>
               </div>
             )}
           </div>

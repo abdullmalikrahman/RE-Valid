@@ -211,8 +211,9 @@ function LaporanContent() {
       sectionTitle('Potensi Energi');
       row('Kecepatan Angin Rata-rata (GWA)', `${station.windSpeed} m/s`);
       row('Iradiasi Matahari GHI (GSA)', `${station.irradiation} kWh/m²/hari`);
-      row('AEP PLTB P50', `${station.aep.toLocaleString('id')} MWh/thn`);
-      row('Hasil Spesifik PLTS (PR=75%)', `${Math.round(station.irradiation * 365 * 0.75).toLocaleString('id')} kWh/kWp·thn`);
+      row('AEP PLTB P50 (Bersih)', `${Math.round(station.aep * 0.877).toLocaleString('id')} MWh/thn`);
+      const ghiForLaporan = station.ghiBaseline ?? station.ghiBaselineNasa ?? station.irradiation;
+      row('Hasil Spesifik PLTS (PR=78%)', `${Math.round(ghiForLaporan * 365 * 0.78).toLocaleString('id')} kWh/kWp·thn`);
       y += 3;
 
       // GIS-MCDA

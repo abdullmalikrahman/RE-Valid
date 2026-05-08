@@ -47,8 +47,9 @@ def _compute_aep(variable: str, atlas_value: float) -> int:
         # MWh/thn = m/s × 520 W/(m/s) × 8760 jam / 1e6 × 1e3 (ke MWh)
         return round(atlas_value * 520 * 8760 / 1000)
     else:
-        # MWh/thn = kWh/m²/hari × 365 × 10 MWp × 0.78 PR
-        return round(atlas_value * 365 * 10 * 0.78 * 1000)
+        # MWh/thn = kWh/m²/hari × 365 hari × 10 MWp × 0.78 PR
+        # = kWh/m²/day × 365 × P_MWp × PR  (no extra ×1000: kWh/kWp·yr × MWp/MWp = MWh/thn)
+        return round(atlas_value * 365 * 10 * 0.78)
 
 
 def _compute_score(r2: float, bias_pct: float, rmse: float, variable: str, atlas_value: float) -> int:
