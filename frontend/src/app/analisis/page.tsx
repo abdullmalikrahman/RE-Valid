@@ -131,10 +131,17 @@ function AnalisisContent() {
   const aepGross = station.aep;
   const aepNetP50 = Math.round(station.aep * 0.877);
   const aepNetP90 = Math.round(station.aep * 0.767);
-  const r2Quality = station.r2 >= 0.85 ? 'Tinggi' : station.r2 >= 0.70 ? 'Sedang' : 'Rendah';
-  const r2Color = station.r2 >= 0.85 ? 'text-green-500' : station.r2 >= 0.70 ? 'text-amber-400' : 'text-red-400';
-  const r2Bg = station.r2 >= 0.85 ? 'bg-green-500/10 text-green-500' : station.r2 >= 0.70 ? 'bg-amber-500/10 text-amber-400' : 'bg-red-500/10 text-red-400';
   const biasDisplay = (station.bias > 0 ? '+' : '') + station.bias.toFixed(1) + '%';
+  // Wind-specific R² (from windR2 column, fallback to generic r2)
+  const windR2Val = station.windR2 ?? station.r2;
+  const windR2Quality = windR2Val >= 0.85 ? 'Tinggi' : windR2Val >= 0.70 ? 'Sedang' : 'Rendah';
+  const windR2Color = windR2Val >= 0.85 ? 'text-green-500' : windR2Val >= 0.70 ? 'text-amber-400' : 'text-red-400';
+  const windR2Bg = windR2Val >= 0.85 ? 'bg-green-500/10 text-green-500' : windR2Val >= 0.70 ? 'bg-amber-500/10 text-amber-400' : 'bg-red-500/10 text-red-400';
+  // Solar-specific R² (from solarR2 column, fallback to generic r2)
+  const solarR2Val = station.solarR2 ?? station.r2;
+  const solarR2Quality = solarR2Val >= 0.85 ? 'Tinggi' : solarR2Val >= 0.70 ? 'Sedang' : 'Rendah';
+  const solarR2Color = solarR2Val >= 0.85 ? 'text-green-500' : solarR2Val >= 0.70 ? 'text-amber-400' : 'text-red-400';
+  const solarR2Bg = solarR2Val >= 0.85 ? 'bg-green-500/10 text-green-500' : solarR2Val >= 0.70 ? 'bg-amber-500/10 text-amber-400' : 'bg-red-500/10 text-red-400';
 
   // ─── Solar derived ─────────────────────────────────────────────────────────
   // GHI baseline dari atlas (NASA POWER/PVGIS) jika tersedia; fallback ke aproksimasi
@@ -258,14 +265,18 @@ function AnalisisContent() {
   const windValidationRows: { metric: string; value: string; target: string; pass: boolean | null }[] = [
     { metric: 'RMSE (m/s)', value: station.rmse.toFixed(2), target: '< 2.0', pass: station.rmse < 2.0 },
     { metric: 'MAE (m/s)', value: mae !== null ? mae.toFixed(2) : '–', target: '< 1.5', pass: mae !== null ? mae < 1.5 : null },
+    { metric: 'Korelasi Atlas (R²)', value: windR2Val.toFixed(2), target: '> 0.70', pass: windR2Val > 0.70 },
     { metric: 'Bias vs GWA (%)', value: windDiffGwa !== null ? (windDiffGwa >= 0 ? '+' : '') + windDiffGwa + '%' : '–', target: '± 5%', pass: windDiffGwa !== null ? Math.abs(windDiffGwa) <= 5 : null },
-    { metric: 'Bias vs NASA POWER (%)', value: windDiffNasa !== null ? (windDiffNasa >= 0 ? '+' : '') + windDiffNasa + '%' : '–', target: '± 5%', pass: windDiffNasa !== null ? Math.abs(windDiffNasa) <= 5 : null },
+    { metric: 'Bias vs ERA5/ECMWF (%)', value: windDiffNasa !== null ? (windDiffNasa >= 0 ? '+' : '') + windDiffNasa + '%' : '–', target: '± 5%', pass: windDiffNasa !== null ? Math.abs(windDiffNasa) <= 5 : null },
     { metric: 'Ketersediaan Data', value: availDisplay, target: '> 90%', pass: availPct !== null ? availPct > 90 : null },
   ];
+  const solarRmseVal = station.solarRmse ?? null;
   const solarValidationRows: { metric: string; value: string; target: string; pass: boolean | null }[] = [
-    { metric: 'Korelasi Atlas (R²)', value: station.r2.toFixed(2), target: '> 0.70', pass: station.r2 > 0.70 },
+    { metric: 'RMSE (kWh/m²/hari)', value: solarRmseVal !== null ? solarRmseVal.toFixed(2) : '–', target: '< 1.5', pass: solarRmseVal !== null ? solarRmseVal < 1.5 : null },
+    { metric: 'MAE (kWh/m²/hari)', value: mae !== null ? mae.toFixed(2) : '–', target: '< 1.0', pass: mae !== null ? mae < 1.0 : null },
+    { metric: 'Korelasi Atlas (R²)', value: solarR2Val.toFixed(2), target: '> 0.70', pass: solarR2Val > 0.70 },
     { metric: 'Bias vs GSA (%)', value: ghiDiffGsa !== null ? (ghiDiffGsa >= 0 ? '+' : '') + ghiDiffGsa + '%' : '–', target: '± 5%', pass: ghiDiffGsa !== null ? Math.abs(ghiDiffGsa) <= 5 : null },
-    { metric: 'Bias vs NASA POWER (%)', value: ghiDiffNasa !== null ? (ghiDiffNasa >= 0 ? '+' : '') + ghiDiffNasa + '%' : '–', target: '± 5%', pass: ghiDiffNasa !== null ? Math.abs(ghiDiffNasa) <= 5 : null },
+    { metric: 'Bias vs ERA5/ECMWF (%)', value: ghiDiffNasa !== null ? (ghiDiffNasa >= 0 ? '+' : '') + ghiDiffNasa + '%' : '–', target: '± 5%', pass: ghiDiffNasa !== null ? Math.abs(ghiDiffNasa) <= 5 : null },
     { metric: 'Clearness Index (Kt)', value: ktIndex.toFixed(2), target: '0.40–0.65', pass: ktIndex >= 0.40 && ktIndex <= 0.65 },
     { metric: 'Ketersediaan Data', value: availDisplay, target: '> 90%', pass: availPct !== null ? availPct > 90 : null },
   ];
@@ -284,8 +295,8 @@ function AnalisisContent() {
               </h1>
               <p className="text-slate-600 dark:text-text-secondary text-sm font-normal leading-normal">
                 {isWind
-                  ? 'Validasi kecepatan angin observasi vs ERA5/GWA, korelasi atlas, dan proyeksi MCP jangka panjang.'
-                  : 'Validasi iradiasi surya observasi vs ERA5/GSA, Clearness Index (Kt), dan estimasi AEP PLTS.'}
+                  ? 'Validasi kecepatan angin observasi vs GWA 3.0/ERA5, korelasi atlas, dan proyeksi MCP jangka panjang.'
+                  : 'Validasi iradiasi surya observasi vs GSA/ERA5, Clearness Index (Kt), dan estimasi AEP PLTS.'}
               </p>
             </div>
             <div className="flex flex-col items-end gap-2">
@@ -389,7 +400,7 @@ function AnalisisContent() {
           </div>
           <div className="flex items-center gap-1.5 text-[11px] text-slate-400">
             <span className="material-symbols-outlined text-[14px]">info</span>
-            {isWind ? 'Baseline: ERA5 + GWA 3.0 · Metode: MCP' : 'Baseline: ERA5 + GSA · Metode: Validasi Langsung + Kt'}
+            {isWind ? 'Baseline: GWA 3.0 + ERA5 · Metode: MCP' : 'Baseline: GSA + ERA5 · Metode: Validasi Langsung + Kt'}
           </div>
         </div>
 
@@ -410,9 +421,9 @@ function AnalisisContent() {
             </div>
           </div>
           <div className="flex flex-wrap gap-x-4 gap-y-1 text-xs text-slate-400">
-            <span>Sumber: <span className="text-slate-700 dark:text-slate-200 font-semibold">ERA5 (ECMWF)</span></span>
+            <span>Sumber: <span className="text-slate-700 dark:text-slate-200 font-semibold">{isWind ? 'GWA 3.0 (Primer)' : 'GSA Solargis (Primer)'}</span></span>
             <span>&middot;</span>
-            <span>Atlas: <span className="text-slate-700 dark:text-slate-200 font-semibold">{isWind ? 'GWA 3.0 + NASA POWER' : 'GSA (Solargis) + NASA POWER'}</span></span>
+            <span>Atlas: <span className="text-slate-700 dark:text-slate-200 font-semibold">{isWind ? 'GWA 3.0 + ERA5 (ECMWF)' : 'GSA (Solargis) + ERA5 (ECMWF)'}</span></span>
             <span>&middot;</span>
             <span>Periode: <span className="text-slate-700 dark:text-slate-200 font-semibold">{station.period}</span></span>
           </div>
@@ -434,7 +445,7 @@ function AnalisisContent() {
                     {station.windSpeed >= 5 ? 'Kuat' : 'Moderat'}
                   </span>
                 </div>
-                <p className="text-[10px] text-slate-400 mt-1">vs baseline GWA 3.0 · ERA5</p>
+                <p className="text-[10px] text-slate-400 mt-1">vs baseline GWA 3.0 · ERA5 (ECMWF)</p>
               </div>
               <div className="bg-white dark:bg-card-dark rounded-xl p-4 border border-gray-200 dark:border-border-dark">
                 <div className="flex justify-between items-start mb-1.5">
@@ -442,8 +453,8 @@ function AnalisisContent() {
                   <span className="material-symbols-outlined text-primary text-[20px]">ssid_chart</span>
                 </div>
                 <div className="flex items-baseline gap-2">
-                  <h3 className={`text-2xl font-bold ${r2Color}`}>{station.r2.toFixed(2)}</h3>
-                  <span className={`ml-auto text-xs font-bold px-2 py-0.5 rounded ${r2Bg}`}>{r2Quality}</span>
+                  <h3 className={`text-2xl font-bold ${windR2Color}`}>{windR2Val.toFixed(2)}</h3>
+                  <span className={`ml-auto text-xs font-bold px-2 py-0.5 rounded ${windR2Bg}`}>{windR2Quality}</span>
                 </div>
                 <p className="text-[10px] text-slate-400 mt-1">Korelasi Pearson obs vs atlas</p>
               </div>
@@ -492,8 +503,8 @@ function AnalisisContent() {
                   <span className="material-symbols-outlined text-amber-400 text-[20px]">ssid_chart</span>
                 </div>
                 <div className="flex items-baseline gap-2">
-                  <h3 className={`text-2xl font-bold ${r2Color}`}>{station.r2.toFixed(2)}</h3>
-                  <span className={`ml-auto text-xs font-bold px-2 py-0.5 rounded ${r2Bg}`}>{r2Quality}</span>
+                  <h3 className={`text-2xl font-bold ${solarR2Color}`}>{solarR2Val.toFixed(2)}</h3>
+                  <span className={`ml-auto text-xs font-bold px-2 py-0.5 rounded ${solarR2Bg}`}>{solarR2Quality}</span>
                 </div>
                 <p className="text-[10px] text-slate-400 mt-1">Korelasi obs GHI vs GSA baseline</p>
               </div>
@@ -535,8 +546,8 @@ function AnalisisContent() {
                 <h3 className="text-sm font-bold text-slate-900 dark:text-white">Visualisasi Perbandingan Data</h3>
                 <p className="text-xs text-slate-500 dark:text-text-secondary">
                   {isWind
-                    ? `Deret Waktu: Kec. Angin Obs vs GWA/ERA5 — ${station.name}`
-                    : `Deret Waktu: GHI Obs vs GSA/ERA5 — ${station.name}`}
+                    ? `Deret Waktu: Kec. Angin Obs vs GWA 3.0 — ${station.name}`
+                    : `Deret Waktu: GHI Obs vs GSA/Solargis — ${station.name}`}
                 </p>
               </div>
               <div className="flex items-center gap-3 text-xs font-medium">
@@ -546,7 +557,7 @@ function AnalisisContent() {
                 </div>
                 <div className="flex items-center gap-1.5">
                   <span className="w-2.5 h-2.5 rounded-full bg-slate-400" />
-                  <span className="text-slate-600 dark:text-slate-300">{isWind ? 'GWA/ERA5' : 'GSA/ERA5'}</span>
+                  <span className="text-slate-600 dark:text-slate-300">{isWind ? 'GWA 3.0' : 'GSA (Solargis)'}</span>
                 </div>
               </div>
             </div>
@@ -572,7 +583,7 @@ function AnalisisContent() {
                       labelStyle={{ color: tooltipLabel }}
                     />
                     <Line type="monotone" dataKey="obs" name="Terukur (Obs)" stroke={isWind ? '#137fec' : '#f59e0b'} dot={{ r: 4, fill: isWind ? '#137fec' : '#f59e0b' }} strokeWidth={2.5} activeDot={{ r: 6 }} />
-                    <Line type="monotone" dataKey="baseline" name={isWind ? 'GWA/ERA5' : 'GSA/ERA5'} stroke="#94a3b8" strokeDasharray="5 3" dot={{ r: 3, fill: '#94a3b8' }} strokeWidth={2} activeDot={{ r: 5 }} />
+                    <Line type="monotone" dataKey="baseline" name={isWind ? 'GWA 3.0' : 'GSA (Solargis)'} stroke="#94a3b8" strokeDasharray="5 3" dot={{ r: 3, fill: '#94a3b8' }} strokeWidth={2} activeDot={{ r: 5 }} />
                   </LineChart>
                 </ResponsiveContainer>
               )}
@@ -584,7 +595,7 @@ function AnalisisContent() {
             <div className="mb-3">
               <h3 className="text-sm font-bold text-slate-900 dark:text-white">Analisis Korelasi</h3>
               <p className="text-xs text-slate-500 dark:text-text-secondary">
-                Deviasi obs dari referensi atlas {isWind ? 'GWA/ERA5' : 'GSA/ERA5'} (Y = obs − atlas)
+                Deviasi obs dari referensi atlas {isWind ? 'GWA 3.0' : 'GSA/Solargis'} (Y = obs − atlas)
               </p>
             </div>
             <div className="w-full bg-gray-50 dark:bg-input-bg-dark rounded-lg border border-gray-200 dark:border-gray-800 mb-3" style={{ flex: '1 1 0', minHeight: '320px' }}>
@@ -634,13 +645,13 @@ function AnalisisContent() {
                 <span>Baseline atlas:</span>
                 <span className="font-mono">
                 {isWind
-                  ? `${windLongTerm} m/s (${station.windBaselineGwa != null ? 'GWA 3.0' : 'NASA POWER'})`
-                  : `${ghiBaseline} kWh/m²/hr (${station.ghiBaselineGsa != null ? 'GSA Solargis' : 'NASA POWER'})`}
+                  ? `${windLongTerm} m/s (${station.windBaselineGwa != null ? 'GWA 3.0' : 'ERA5 (ECMWF)'})`
+                  : `${ghiBaseline} kWh/m²/hr (${station.ghiBaselineGsa != null ? 'GSA Solargis' : 'ERA5 (ECMWF)'})`}
               </span>
               </div>
-              <div className={`flex justify-between items-center font-bold ${r2Color}`}>
+              <div className={`flex justify-between items-center font-bold ${isWind ? windR2Color : solarR2Color}`}>
                 <span>R² =</span>
-                <span className="text-lg">{station.r2.toFixed(2)}</span>
+                <span className="text-lg">{isWind ? windR2Val.toFixed(2) : solarR2Val.toFixed(2)}</span>
               </div>
             </div>
           </div>
@@ -718,7 +729,7 @@ function AnalisisContent() {
                         {parseFloat(windDiff) >= 0 ? '↑' : '↓'} {Math.abs(parseFloat(windDiff))}%
                       </span>
                     </div>
-                    <p className="text-[10px] text-slate-400 mt-0.5">ERA5/NASA POWER (iklim)</p>
+                    <p className="text-[10px] text-slate-400 mt-0.5">ERA5 (ECMWF, 2014–2025)</p>
                   </div>
                 </div>
                 <div>
@@ -773,7 +784,7 @@ function AnalisisContent() {
                         {ghiDiff >= 0 ? '+' : ''}{ghiDiff}%
                       </span>
                     </div>
-                    <p className="text-[10px] text-slate-400 mt-0.5">kWh/m²/hari (NASA POWER/GSA)</p>
+                    <p className="text-[10px] text-slate-400 mt-0.5">kWh/m²/hari (GSA/ERA5)</p>
                   </div>
                 </div>
                 <div className="bg-gray-50 dark:bg-[#111a22] p-3 rounded-lg flex items-center justify-between">
@@ -867,8 +878,8 @@ function AnalisisContent() {
                       <td className="px-4 py-3">
                         <div className="flex items-center gap-2">
                           <span className="w-2 h-2 rounded-full bg-slate-400 shrink-0" />
-                          <span className="font-semibold text-slate-900 dark:text-white">NASA POWER ERA5</span>
-                          <span className="text-[10px] text-slate-400">Klimatologi 1991–2020</span>
+                          <span className="font-semibold text-slate-900 dark:text-white">ERA5 (ECMWF)</span>
+                          <span className="text-[10px] text-slate-400">Open-Meteo · 2014–2025</span>
                         </div>
                       </td>
                       <td className="px-4 py-3 text-right font-mono text-slate-700 dark:text-slate-300">
@@ -920,8 +931,8 @@ function AnalisisContent() {
                       <td className="px-4 py-3">
                         <div className="flex items-center gap-2">
                           <span className="w-2 h-2 rounded-full bg-slate-400 shrink-0" />
-                          <span className="font-semibold text-slate-900 dark:text-white">NASA POWER ERA5</span>
-                          <span className="text-[10px] text-slate-400">Klimatologi 1991–2020</span>
+                          <span className="font-semibold text-slate-900 dark:text-white">ERA5 (ECMWF)</span>
+                          <span className="text-[10px] text-slate-400">Open-Meteo · 2014–2025</span>
                         </div>
                       </td>
                       <td className="px-4 py-3 text-right font-mono text-slate-700 dark:text-slate-300">
@@ -973,7 +984,7 @@ function AnalisisContent() {
               <span className="material-symbols-outlined text-[17px] text-slate-400 mt-0.5 shrink-0">satellite_alt</span>
               <span>
                 <strong className="text-slate-800 dark:text-slate-200">Sumber referensi:</strong>{' '}
-                ERA5 (ECMWF), periode klimatologi 1991–2020.{' '}
+                ERA5 (ECMWF), rata-rata 12 tahun 2014–2025 (IEC 61400-12).{' '}
                 {isWind ? 'Atlas angin: GWA 3.0 (resolusi 250m).' : 'Atlas surya: GSA (resolusi 1km), sumber SOLARGIS.'}
               </span>
             </div>

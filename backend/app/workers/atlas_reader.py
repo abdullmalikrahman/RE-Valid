@@ -106,3 +106,61 @@ async def fetch_gsa_ghi(lat: float, lon: float) -> float | None:
     except Exception as exc:
         logger.warning("Gagal mengambil data GSA dari Solargis API: %s", exc)
         return None
+
+
+# ─── ERA5 : ambil angin 100m dan GHI dari Open-Meteo ERA5 Archive ────────────
+
+async def fetch_era5_baseline(lat: float, lon: float) -> dict:
+    """Ambil rata-rata iklim tahunan dari Open-Meteo ERA5 Archive (ECMWF ERA5).
+
+    Menggunakan data 12 tahun (2014–2025) sesuai standar minimum IEC 61400-12 untuk
+    long-term average yang representatif dan tahan terhadap anomali iklim tahunan.
+
+    Returns:
+        dict dengan key:
+          'wind': float|None  — rata-rata tahunan kecepatan angin 100m (m/s)
+          'ghi':  float|None  — rata-rata harian GHI tahunan (kWh/m²/hari)
+    """
+    url = "https://archive-api.open-meteo.com/v1/era5"
+    params = {
+        "latitude": lat,
+        "longitude": lon,
+        "start_date": "2014-01-01",
+        "end_date": "2025-12-31",
+        "hourly": "wind_speed_100m,shortwave_radiation",
+        "wind_speed_unit": "ms",
+        "timezone": "UTC",
+    }
+
+    try:
+        async with httpx.AsyncClient(timeout=60.0) as client:
+            r = await client.get(url, params=params)
+            r.raise_for_status()
+            hourly = r.json()["hourly"]
+
+        wind_vals = [v for v in hourly.get("wind_speed_100m", []) if v is not None]
+        rad_vals  = [v for v in hourly.get("shortwave_radiation", []) if v is not None]
+
+        wind_mean: float | None = None
+        ghi_daily: float | None = None
+
+        if wind_vals:
+            wind_mean = round(sum(wind_vals) / len(wind_vals), 2)
+            if not (0.1 <= wind_mean <= 30.0):
+                wind_mean = None
+
+        if rad_vals:
+            # shortwave_radiation = W/m² per jam → kWh/m²/hari
+            # Energi per jam = W/m² × 1h = Wh/m²
+            # Rata-rata harian = total Wh / (jumlah hari × 1000)
+            n_days = len(rad_vals) / 24.0
+            ghi_daily = round(sum(rad_vals) / (n_days * 1000.0), 2)
+            if not (1.0 <= ghi_daily <= 10.0):
+                ghi_daily = None
+
+        return {"wind": wind_mean, "ghi": ghi_daily}
+
+    except Exception as exc:
+        logger.warning("Gagal mengambil data ERA5 dari Open-Meteo: %s", exc)
+        return {"wind": None, "ghi": None}
+

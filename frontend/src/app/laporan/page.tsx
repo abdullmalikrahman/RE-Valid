@@ -194,7 +194,7 @@ function LaporanContent() {
       sectionTitle('Validasi Surya — GHI (GSA vs Observasi)');
       row('GHI Observasi', `${station.irradiation.toFixed(1)} kWh/m²/hari`);
       row('GHI Baseline GSA (Solargis)', station.ghiBaselineGsa != null ? `${station.ghiBaselineGsa.toFixed(2)} kWh/m²/hari` : '—');
-      row('GHI Baseline NASA POWER', station.ghiBaselineNasa != null ? `${station.ghiBaselineNasa.toFixed(2)} kWh/m²/hari` : '—');
+      row('GHI Baseline ERA5 (ECMWF)', station.ghiBaselineNasa != null ? `${station.ghiBaselineNasa.toFixed(2)} kWh/m²/hari` : '—');
       row('GHI Best-Value', `${(station.ghiBaseline ?? station.irradiation * 0.958).toFixed(2)} kWh/m²/hari`);
       row('Clearness Index (Kt)', (station.irradiation / 8.5).toFixed(2));
       y += 3;
@@ -203,7 +203,7 @@ function LaporanContent() {
       sectionTitle('Perbandingan Sumber Baseline Angin');
       row('Obs Lapangan', `${station.windSpeed} m/s`);
       row('GWA 3.0 (GeoTIFF 250m)', station.windBaselineGwa != null ? `${station.windBaselineGwa} m/s` : '— (belum tersedia)');
-      row('NASA POWER ERA5', station.windBaselineNasa != null ? `${station.windBaselineNasa} m/s` : '— (belum tersedia)');
+      row('ERA5 (ECMWF)', station.windBaselineNasa != null ? `${station.windBaselineNasa} m/s` : '— (belum tersedia)');
       row('Best-Value (dipakai MCP)', `${(station.windBaseline ?? station.windSpeed).toFixed(2)} m/s`);
       y += 3;
 
@@ -476,14 +476,14 @@ function LaporanContent() {
       ['--- Validasi Surya ---', ''],
       ['GHI Observasi (kWh/m²/hari)', station.irradiation],
       ['GHI Baseline GSA/Solargis (kWh/m²/hari)', station.ghiBaselineGsa?.toFixed(2) ?? '—'],
-      ['GHI Baseline NASA POWER (kWh/m²/hari)', station.ghiBaselineNasa?.toFixed(2) ?? '—'],
+      ['GHI Baseline ERA5 ECMWF (kWh/m²/hari)', station.ghiBaselineNasa?.toFixed(2) ?? '—'],
       ['GHI Best-Value (kWh/m²/hari)', (station.ghiBaseline ?? station.irradiation * 0.958).toFixed(2)],
       ['Clearness Index (Kt)', (station.irradiation / 8.5).toFixed(2)],
       [],
       ['--- Baseline Angin ---', ''],
       ['Angin Obs Lapangan (m/s)', station.windSpeed],
       ['Angin Baseline GWA 3.0 (m/s)', station.windBaselineGwa?.toString() ?? '—'],
-      ['Angin Baseline NASA POWER (m/s)', station.windBaselineNasa?.toString() ?? '—'],
+      ['Angin Baseline ERA5 ECMWF (m/s)', station.windBaselineNasa?.toString() ?? '—'],
       ['Angin Best-Value (m/s)', (station.windBaseline ?? station.windSpeed).toFixed(2)],
       [],
       ['--- Potensi Energi ---', ''],
@@ -721,7 +721,7 @@ function LaporanContent() {
                     {(station.ghiBaseline ?? station.irradiation * 0.958).toFixed(1)}
                     <span className="text-[12px] font-medium text-slate-400 ml-0.5">kWh/m²/hari</span>
                   </p>
-                  <p className="text-[10px] text-slate-400 mt-0.5">{station.ghiBaselineGsa != null ? 'GSA Solargis' : station.ghiBaselineNasa != null ? 'NASA POWER' : 'Estimasi'}</p>
+                  <p className="text-[10px] text-slate-400 mt-0.5">{station.ghiBaselineGsa != null ? 'GSA Solargis' : station.ghiBaselineNasa != null ? 'ERA5 (ECMWF)' : 'Estimasi'}</p>
                 </div>
                 <div className="bg-slate-50 dark:bg-[#111a22] rounded-xl p-4 border border-slate-100 dark:border-[#233648] text-center">
                   <p className="text-[10px] text-slate-400 uppercase tracking-wide mb-1">Clearness Index (Kt)</p>
@@ -894,7 +894,7 @@ function LaporanContent() {
                     {[
                       { label: 'Observasi Lapangan', value: `${station.windSpeed} m/s`, color: 'text-slate-900 dark:text-white', badge: null },
                       { label: 'GWA 3.0', value: station.windBaselineGwa != null ? `${station.windBaselineGwa} m/s` : '—', color: 'text-primary font-bold', badge: station.windBaselineGwa != null ? 'Aktif' : null },
-                      { label: 'NASA POWER ERA5', value: station.windBaselineNasa != null ? `${station.windBaselineNasa} m/s` : '—', color: 'text-slate-600 dark:text-slate-400', badge: station.windBaselineGwa == null && station.windBaselineNasa != null ? 'Fallback' : null },
+                      { label: 'ERA5 (ECMWF)', value: station.windBaselineNasa != null ? `${station.windBaselineNasa} m/s` : '—', color: 'text-slate-600 dark:text-slate-400', badge: station.windBaselineGwa == null && station.windBaselineNasa != null ? 'Fallback' : null },
                     ].map((r) => (
                       <div key={r.label} className="flex items-center justify-between bg-slate-50 dark:bg-[#111a22] rounded-lg px-3 py-2 text-xs">
                         <span className="text-slate-500 dark:text-slate-400">{r.label}</span>
@@ -915,7 +915,7 @@ function LaporanContent() {
                     {[
                       { label: 'Observasi Lapangan', value: `${station.irradiation.toFixed(2)} kWh/m²/hr`, color: 'text-slate-900 dark:text-white', badge: null },
                       { label: 'GSA Solargis', value: station.ghiBaselineGsa != null ? `${station.ghiBaselineGsa} kWh/m²/hr` : '—', color: 'text-amber-500 font-bold', badge: station.ghiBaselineGsa != null ? 'Aktif' : null },
-                      { label: 'NASA POWER ERA5', value: station.ghiBaselineNasa != null ? `${station.ghiBaselineNasa} kWh/m²/hr` : '—', color: 'text-slate-600 dark:text-slate-400', badge: station.ghiBaselineGsa == null && station.ghiBaselineNasa != null ? 'Fallback' : null },
+                      { label: 'ERA5 (ECMWF)', value: station.ghiBaselineNasa != null ? `${station.ghiBaselineNasa} kWh/m²/hr` : '—', color: 'text-slate-600 dark:text-slate-400', badge: station.ghiBaselineGsa == null && station.ghiBaselineNasa != null ? 'Fallback' : null },
                     ].map((r) => (
                       <div key={r.label} className="flex items-center justify-between bg-slate-50 dark:bg-[#111a22] rounded-lg px-3 py-2 text-xs">
                         <span className="text-slate-500 dark:text-slate-400">{r.label}</span>

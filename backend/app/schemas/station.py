@@ -54,7 +54,15 @@ class StationResponse(BaseModel):
     wind_baseline_nasa: float | None
     ghi_baseline_nasa: float | None
     aep: int | None
+    wind_aep: int | None
+    solar_aep: int | None
     rmse: float | None
     bias: float | None
     r2: float | None
+    wind_rmse: float | None
+    wind_bias: float | None
+    wind_r2: float | None
+    solar_rmse: float | None
+    solar_bias: float | None
+    solar_r2: float | None
     last_update: datetime

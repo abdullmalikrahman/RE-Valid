@@ -492,7 +492,7 @@ export default function KalkulatorPage() {
             </button>
           </div>
           <p className="text-[11px] text-slate-400">
-            {isWind ? 'CF pre-fill dari baseline atlas (GWA 3.0 / NASA POWER ERA5) · CAPEX ref. ~$1.0–1.5 M/MW' : 'AEP dihitung dari GHI baseline (GSA / NASA POWER ERA5) · CAPEX ref. ~$0.8–1.2 M/MWp'}
+            {isWind ? 'CF pre-fill dari baseline atlas (GWA 3.0 / ERA5 ECMWF) · CAPEX ref. ~$1.0–1.5 M/MW' : 'AEP dihitung dari GHI baseline (GSA / ERA5 ECMWF) · CAPEX ref. ~$0.8–1.2 M/MWp'}
           </p>
         </div>
 
@@ -542,8 +542,8 @@ export default function KalkulatorPage() {
                       </span>
                       <span className="text-slate-400 text-[10px]">
                         {isWind
-                          ? (selectedStation.windBaselineGwa != null ? 'GWA 3.0' : selectedStation.windBaselineNasa != null ? 'NASA POWER' : 'Terukur')
-                          : (selectedStation.ghiBaselineGsa != null ? 'GSA (Solargis)' : selectedStation.ghiBaselineNasa != null ? 'NASA POWER' : 'Terukur')}
+                          ? (selectedStation.windBaselineGwa != null ? 'GWA 3.0' : selectedStation.windBaselineNasa != null ? 'ERA5 (ECMWF)' : 'Terukur')
+                          : (selectedStation.ghiBaselineGsa != null ? 'GSA (Solargis)' : selectedStation.ghiBaselineNasa != null ? 'ERA5 (ECMWF)' : 'Terukur')}
                       </span>
                     </div>
                     <div className="bg-gray-50 dark:bg-[#111a22] rounded px-2.5 py-2 flex flex-col gap-0.5">
@@ -636,10 +636,10 @@ export default function KalkulatorPage() {
                         {selectedStation ? (
                           <p className="text-amber-500 mt-1">
                             GHI = {selectedStation.ghiBaselineGsa ?? selectedStation.ghiBaselineNasa ?? selectedStation.ghiBaseline ?? selectedStation.irradiation} kWh/m²/hari
-                            {' '}({selectedStation.ghiBaselineGsa != null ? 'GSA Solargis' : selectedStation.ghiBaselineNasa != null ? 'NASA POWER' : selectedStation.ghiBaseline != null ? 'Baseline Atlas' : 'Terukur'})
+                            {' '}({selectedStation.ghiBaselineGsa != null ? 'GSA Solargis' : selectedStation.ghiBaselineNasa != null ? 'ERA5 (ECMWF)' : selectedStation.ghiBaseline != null ? 'Baseline Atlas' : 'Terukur'})
                           </p>
                         ) : (
-                          <p className="text-slate-400 mt-1">Pilih stasiun untuk GHI aktual (prioritas: GSA → NASA POWER → Terukur)</p>
+                          <p className="text-slate-400 mt-1">Pilih stasiun untuk GHI aktual (prioritas: GSA → ERA5 → Terukur)</p>
                         )}
                       </div>
                     </>

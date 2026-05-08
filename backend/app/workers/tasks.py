@@ -89,23 +89,31 @@ def _bias_pct(obs: list[float], baseline: list[float]) -> float:
 def _r2(obs: list[float], baseline: list[float]) -> float:
     """Skill score berbasis bias relatif untuk baseline konstan (atlas climatology).
 
-    Bila baseline adalah konstanta atlas (NASA POWER ERA5), tidak ada variasi
+    Bila baseline adalah konstanta atlas (ERA5/GWA/GSA), tidak ada variasi
     temporal pada referensi sehingga korelasi Pearson tidak terdefinisi.
     Gunakan skill score: R² = 1 - |bias_relatif|, di mana:
       R² = 1.0 : rata-rata obs sama persis dengan atlas (tidak ada bias sistematis)
       R² = 0.8 : rata-rata obs menyimpang 20% dari atlas
       R² = 0.0 : bias ≥ 100% (obs jauh dari atlas)
     Bila baseline bervariasi (misal ERA5 time-series), gunakan R² Pearson standar.
+
+    CATATAN: Jangan gunakan `ss_tot == 0` untuk deteksi baseline konstan karena
+    floating point arithmetic menyebabkan sum([2.67]*90)/90 != 2.67 (presisi ~1e-16),
+    sehingga ss_tot menjadi ~1e-29 (bukan 0) dan pembagian menghasilkan R² = -inf → 0.
+    Gunakan range (max-min) sebagai indikator konstanta yang robust.
     """
-    mean_b = sum(baseline) / len(baseline)
-    ss_tot = sum((b - mean_b) ** 2 for b in baseline)
-    if ss_tot == 0:
+    # Deteksi baseline konstan secara robust (tahan floating point error)
+    if max(baseline) - min(baseline) < 1e-9:
         # Baseline konstan — hitung skill score berbasis bias relatif
+        mean_b = sum(baseline) / len(baseline)
         if mean_b == 0:
             return 0.0
         mean_obs = sum(obs) / len(obs)
         norm_bias = abs(mean_obs - mean_b) / mean_b
         return max(0.0, 1.0 - norm_bias)
+    # Baseline bervariasi — gunakan R² Pearson standar
+    mean_b = sum(baseline) / len(baseline)
+    ss_tot = sum((b - mean_b) ** 2 for b in baseline)
     ss_res = sum((o - b) ** 2 for o, b in zip(obs, baseline))
     return 1.0 - ss_res / ss_tot
 
@@ -226,21 +234,43 @@ def validate_station_mcp(self, station_id: str, variable: str = "wind", n: int =
             derived_status = "tidak_sesuai"
 
         # Persist to stations table
-        cur.execute(
-            """
-            UPDATE stations
-            SET    rmse        = %s,
-                   bias        = %s,
-                   r2          = %s,
-                   aep         = %s,
-                   score       = %s,
-                   status      = %s,
-                   mcp_status  = 'selesai',
-                   last_update = NOW()
-            WHERE  id = %s
-            """,
-            (rmse, bias, r2, aep, score, derived_status, station_id),
-        )
+        # Angin (wind) = analisis utama: tulis wind_*, score, status, aep, rmse/bias/r2
+        # Surya (solar) = analisis pelengkap: tulis solar_* SAJA, tidak timpa score/status/aep
+        if variable == "wind":
+            cur.execute(
+                """
+                UPDATE stations
+                SET    wind_rmse   = %s,
+                       wind_bias   = %s,
+                       wind_r2     = %s,
+                       wind_aep    = %s,
+                       rmse        = %s,
+                       bias        = %s,
+                       r2          = %s,
+                       aep         = %s,
+                       score       = %s,
+                       status      = %s,
+                       mcp_status  = 'selesai',
+                       last_update = NOW()
+                WHERE  id = %s
+                """,
+                (rmse, bias, r2, aep, rmse, bias, r2, aep, score, derived_status, station_id),
+            )
+        else:
+            # Solar: hanya tulis kolom solar_* dan mcp_status, tidak timpa score/status/aep
+            cur.execute(
+                """
+                UPDATE stations
+                SET    solar_rmse  = %s,
+                       solar_bias  = %s,
+                       solar_r2    = %s,
+                       solar_aep   = %s,
+                       mcp_status  = 'selesai',
+                       last_update = NOW()
+                WHERE  id = %s
+                """,
+                (rmse, bias, r2, aep, station_id),
+            )
         conn.commit()
         cur.close()
         conn.close()

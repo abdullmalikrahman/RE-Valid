@@ -26,8 +26,17 @@ export interface Station {
   ghiBaselineGsa?: number | null;   // Global Solar Atlas / Solargis API (kWh/m²/day)
   windBaselineNasa?: number | null; // NASA POWER ERA5 WS100M (m/s)
   ghiBaselineNasa?: number | null;  // NASA POWER ERA5 GHI (kWh/m²/day)
-  aep: number; // MWh/year estimated
+  aep: number; // MWh/year estimated (wind, primary)
+  windAep?: number | null; // MWh/year from wind validation
+  solarAep?: number | null; // MWh/year from solar validation
   photo?: string;
+  // Per-variable validation metrics
+  windRmse?: number | null;
+  windBias?: number | null;
+  windR2?: number | null;
+  solarRmse?: number | null;
+  solarBias?: number | null;
+  solarR2?: number | null;
 }
 
 // ─── Relative time formatter (works with ISO timestamp strings) ──────────────
@@ -114,7 +123,7 @@ export const stations: Station[] = [
     score: 44,
     lastUpdate: '2026-04-16T10:00:00Z',
     period: '—',
-    variables: 'Surya',
+    variables: 'Angin, Iradiasi',
     mcpStatus: 'pending',
     rmse: 0,
     bias: 0,
@@ -154,7 +163,7 @@ export const stations: Station[] = [
     score: 88,
     lastUpdate: '2026-04-20T08:30:00Z',
     period: 'Jan 2023 – Sep 2023',
-    variables: 'Angin',
+    variables: 'Angin, Iradiasi',
     mcpStatus: 'berjalan',
     rmse: 0.84,
     bias: -2.75,

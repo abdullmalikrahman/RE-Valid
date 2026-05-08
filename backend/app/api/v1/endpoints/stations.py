@@ -81,11 +81,11 @@ async def remove_station(
 # Endpoint: ambil nilai baseline dari tiga sumber atlas
 #   1. GWA  (Global Wind Atlas)   — GeoTIFF 100m, resolusi 250m
 #   2. GSA  (Global Solar Atlas)  — Solargis REST API
-#   3. NASA POWER ERA5            — REST API (fallback & pembanding)
+#   3. ERA5 (ECMWF)               — Open-Meteo ERA5 Archive API (fallback & pembanding)
 #
 # Prioritas:
-#   wind_baseline = GWA  jika file GeoTIFF tersedia, else NASA POWER
-#   ghi_baseline  = GSA  (selalu tersedia via API), else NASA POWER
+#   wind_baseline = GWA  jika file GeoTIFF tersedia, else ERA5
+#   ghi_baseline  = GSA  (selalu tersedia via API), else ERA5
 # ---------------------------------------------------------------------------
 
 @router.post("/{station_id}/fetch-atlas", response_model=StationResponse)
@@ -98,10 +98,10 @@ async def fetch_atlas_baseline(
     Ambil nilai baseline atlas dari tiga sumber dan simpan ke DB:
       · GWA  → wind_baseline_gwa   (dari GeoTIFF lokal jika tersedia)
       · GSA  → ghi_baseline_gsa    (dari Solargis REST API)
-      · NASA → wind_baseline_nasa + ghi_baseline_nasa  (dari NASA POWER ERA5)
+      · ERA5 → wind_baseline_nasa + ghi_baseline_nasa  (dari Open-Meteo ERA5 Archive, ECMWF)
     Nilai wind_baseline dan ghi_baseline diisi dengan sumber terbaik yang tersedia.
     """
-    from app.workers.atlas_reader import fetch_gsa_ghi, read_gwa_wind
+    from app.workers.atlas_reader import fetch_era5_baseline, fetch_gsa_ghi, read_gwa_wind
 
     station = await get_station_by_id(db, station_id)
     if not station:
@@ -115,44 +115,23 @@ async def fetch_atlas_baseline(
     # ── 2. GSA : Solargis REST API ─────────────────────────────────────────────
     gsa_ghi: float | None = await fetch_gsa_ghi(lat, lon)
 
-    # ── 3. NASA POWER ERA5 : REST API ─────────────────────────────────────────
-    nasa_wind: float | None = None
-    nasa_ghi: float | None = None
-
-    nasa_url = "https://power.larc.nasa.gov/api/temporal/climatology/point"
-    nasa_params = {
-        "parameters": "ALLSKY_SFC_SW_DWN,WS100M",
-        "community": "RE",
-        "longitude": lon,
-        "latitude": lat,
-        "format": "JSON",
-    }
-    try:
-        async with httpx.AsyncClient(timeout=30.0) as client:
-            r = await client.get(nasa_url, params=nasa_params)
-            r.raise_for_status()
-            params_data = r.json()["properties"]["parameter"]
-            raw_ghi  = params_data.get("ALLSKY_SFC_SW_DWN", {}).get("ANN")
-            raw_wind = params_data.get("WS100M", {}).get("ANN")
-            if raw_wind is not None and float(raw_wind) > 0:
-                nasa_wind = round(float(raw_wind), 2)
-            if raw_ghi is not None and float(raw_ghi) > 0:
-                nasa_ghi = round(float(raw_ghi), 2)
-    except Exception as exc:
-        # NASA POWER gagal — lanjutkan dengan GWA/GSA saja jika tersedia
-        import logging
-        logging.getLogger(__name__).warning("NASA POWER gagal: %s", exc)
+    # ── 3. ERA5 (ECMWF) via Open-Meteo ERA5 Archive API ───────────────────────
+    # Data: wind_speed_100m dan shortwave_radiation, rata-rata 12 tahun (2014–2025)
+    # Disimpan di kolom wind_baseline_nasa / ghi_baseline_nasa (nama kolom lama, isi ERA5)
+    era5 = await fetch_era5_baseline(lat, lon)
+    era5_wind: float | None = era5.get("wind")
+    era5_ghi:  float | None = era5.get("ghi")
 
     # ── Tentukan nilai terbaik ─────────────────────────────────────────────────
-    best_wind = gwa_wind if gwa_wind is not None else nasa_wind
-    best_ghi  = gsa_ghi  if gsa_ghi  is not None else nasa_ghi
+    best_wind = gwa_wind if gwa_wind is not None else era5_wind
+    best_ghi  = gsa_ghi  if gsa_ghi  is not None else era5_ghi
 
     if best_wind is None and best_ghi is None:
         raise HTTPException(
             status_code=502,
             detail=(
                 "Semua sumber atlas gagal (GWA file tidak ada, GSA API tidak responsif, "
-                "NASA POWER tidak responsif). Coba input baseline secara manual."
+                "ERA5/Open-Meteo tidak responsif). Coba input baseline secara manual."
             ),
         )
 
@@ -161,8 +140,8 @@ async def fetch_atlas_baseline(
         ghi_baseline=best_ghi,
         wind_baseline_gwa=gwa_wind,
         ghi_baseline_gsa=gsa_ghi,
-        wind_baseline_nasa=nasa_wind,
-        ghi_baseline_nasa=nasa_ghi,
+        wind_baseline_nasa=era5_wind,
+        ghi_baseline_nasa=era5_ghi,
     )
     updated = await update_station(db, station_id, update_data)
     return updated

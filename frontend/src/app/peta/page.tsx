@@ -123,8 +123,8 @@ function StationPanel({
               <span className="font-bold text-slate-900 dark:text-white">
                 {station.score}/100
                 {' '}&#8212;
-                <span className={station.score >= 80 ? 'text-green-500' : station.score >= 60 ? 'text-amber-400' : 'text-red-400'}>
-                  {station.score >= 80 ? 'Tinggi' : station.score >= 60 ? 'Sedang' : 'Rendah'}
+                <span className={station.score >= 70 ? 'text-green-500' : station.score >= 50 ? 'text-amber-400' : 'text-red-400'}>
+                  {station.score >= 70 ? 'Tinggi' : station.score >= 50 ? 'Sedang' : 'Rendah'}
                 </span>
               </span>
             </div>
@@ -137,25 +137,52 @@ function StationPanel({
           </div>
         </section>
 
-        {station.rmse > 0 && (
+        {(station.windRmse != null || station.solarRmse != null) && (
           <section>
             <h3 className="text-[13px] font-bold text-slate-900 dark:text-white mb-2 flex items-center gap-1.5">
               <span className="material-symbols-outlined text-violet-400 text-[17px]">query_stats</span>
               Metrik Validasi
             </h3>
-            <div className="grid grid-cols-2 gap-2">
-              {[
-                { k: 'RMSE', v: station.rmse.toFixed(2) },
-                { k: 'Bias', v: `${station.bias > 0 ? '+' : ''}${station.bias.toFixed(1)}%` },
-                { k: 'R²', v: station.r2.toFixed(2) },
-                { k: 'Skor', v: `${station.score}%` },
-              ].map((m) => (
-                <div key={m.k} className="bg-slate-50 dark:bg-[#111a22] p-3 rounded-lg border border-slate-200 dark:border-[#233648] text-center">
-                  <p className="text-[11px] text-slate-400 dark:text-text-secondary mb-0.5">{m.k}</p>
-                  <p className="text-[17px] font-bold text-slate-900 dark:text-white">{m.v}</p>
+            {/* Angin */}
+            {station.windRmse != null && (
+              <div className="mb-2">
+                <p className="text-[11px] font-semibold text-blue-400 uppercase tracking-wide flex items-center gap-1 mb-1.5">
+                  <span className="material-symbols-outlined text-[13px]">air</span>Angin
+                </p>
+                <div className="grid grid-cols-3 gap-2">
+                  {[
+                    { k: 'RMSE', v: station.windRmse.toFixed(2) },
+                    { k: 'Bias', v: `${station.windBias != null && station.windBias > 0 ? '+' : ''}${(station.windBias ?? 0).toFixed(1)}%` },
+                    { k: 'R²', v: (station.windR2 ?? 0).toFixed(2) },
+                  ].map((m) => (
+                    <div key={m.k} className="bg-slate-50 dark:bg-[#111a22] p-2.5 rounded-lg border border-slate-200 dark:border-[#233648] text-center">
+                      <p className="text-[10px] text-slate-400 dark:text-text-secondary mb-0.5">{m.k}</p>
+                      <p className="text-[15px] font-bold text-slate-900 dark:text-white">{m.v}</p>
+                    </div>
+                  ))}
                 </div>
-              ))}
-            </div>
+              </div>
+            )}
+            {/* Iradiasi Surya */}
+            {station.solarRmse != null && (
+              <div>
+                <p className="text-[11px] font-semibold text-amber-400 uppercase tracking-wide flex items-center gap-1 mb-1.5">
+                  <span className="material-symbols-outlined text-[13px]">wb_sunny</span>Iradiasi Surya
+                </p>
+                <div className="grid grid-cols-3 gap-2">
+                  {[
+                    { k: 'RMSE', v: station.solarRmse.toFixed(2) },
+                    { k: 'Bias', v: `${station.solarBias != null && station.solarBias > 0 ? '+' : ''}${(station.solarBias ?? 0).toFixed(1)}%` },
+                    { k: 'R²', v: (station.solarR2 ?? 0).toFixed(2) },
+                  ].map((m) => (
+                    <div key={m.k} className="bg-slate-50 dark:bg-[#111a22] p-2.5 rounded-lg border border-slate-200 dark:border-[#233648] text-center">
+                      <p className="text-[10px] text-slate-400 dark:text-text-secondary mb-0.5">{m.k}</p>
+                      <p className="text-[15px] font-bold text-slate-900 dark:text-white">{m.v}</p>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
           </section>
         )}
 
@@ -173,7 +200,25 @@ function StationPanel({
               <span className="text-slate-500 dark:text-text-secondary">Iradiasi Matahari</span>
               <span className="font-bold text-slate-900 dark:text-white">{station.irradiation} kWh/m²/hari</span>
             </div>
-            {station.aep > 0 && (
+            {station.windAep != null && station.windAep > 0 && (
+              <div className="flex justify-between items-center px-3 py-2">
+                <span className="text-slate-500 dark:text-text-secondary flex items-center gap-1">
+                  <span className="material-symbols-outlined text-[13px] text-blue-400">air</span>
+                  AEP Angin (P50)
+                </span>
+                <span className="font-bold text-primary">{station.windAep.toLocaleString('id')} MWh/thn</span>
+              </div>
+            )}
+            {station.solarAep != null && station.solarAep > 0 && (
+              <div className="flex justify-between items-center px-3 py-2">
+                <span className="text-slate-500 dark:text-text-secondary flex items-center gap-1">
+                  <span className="material-symbols-outlined text-[13px] text-amber-400">wb_sunny</span>
+                  AEP Surya (P50)
+                </span>
+                <span className="font-bold text-amber-400">{station.solarAep.toLocaleString('id')} MWh/thn</span>
+              </div>
+            )}
+            {(station.windAep == null || station.windAep === 0) && station.aep > 0 && (
               <div className="flex justify-between items-center px-3 py-2">
                 <span className="text-slate-500 dark:text-text-secondary">AEP Estimasi (P50)</span>
                 <span className="font-bold text-primary">{station.aep.toLocaleString('id')} MWh/thn</span>
@@ -201,7 +246,7 @@ function StationPanel({
               {station.windBaselineNasa != null && (
                 <div className="flex justify-between items-center px-3 py-2">
                   <span className="text-slate-500 dark:text-text-secondary flex items-center gap-1">
-                    <span className="material-symbols-outlined text-[13px] text-blue-400">air</span> NASA POWER
+                    <span className="material-symbols-outlined text-[13px] text-blue-400">air</span> ERA5 (ECMWF)
                   </span>
                   <span className="font-semibold text-slate-800 dark:text-slate-200">{station.windBaselineNasa} m/s</span>
                 </div>
@@ -217,7 +262,7 @@ function StationPanel({
               {station.ghiBaselineNasa != null && (
                 <div className="flex justify-between items-center px-3 py-2">
                   <span className="text-slate-500 dark:text-text-secondary flex items-center gap-1">
-                    <span className="material-symbols-outlined text-[13px] text-yellow-400">wb_sunny</span> NASA POWER
+                    <span className="material-symbols-outlined text-[13px] text-yellow-400">wb_sunny</span> ERA5 (ECMWF)
                   </span>
                   <span className="font-semibold text-slate-800 dark:text-slate-200">{station.ghiBaselineNasa} kWh/m²/hr</span>
                 </div>
@@ -288,7 +333,7 @@ function AnalisisModal({ onClose, stations }: { onClose: () => void; stations: S
               </p>
               <div className="grid grid-cols-2 gap-3 text-[12px]">
                 {[
-                  { icon: 'sensors', label: 'Stasiun Aktif', value: `${stations.filter(s => s.status !== 'tidak_sesuai').length} lokasi` },
+                  { icon: 'sensors', label: 'Total Lokasi', value: `${stations.length} lokasi` },
                   { icon: 'layers', label: 'Kriteria Skor', value: '6 variabel' },
                   { icon: 'area_chart', label: 'Cakupan', value: 'Jawa Barat' },
                   { icon: 'schedule', label: 'Est. Waktu', value: 'Instan' },
@@ -535,7 +580,7 @@ export default function PetaPage() {
                         Kecepatan Angin (Heatmap)
                         {heatmapLoading && activeLayer === 'wind' && <span className="material-symbols-outlined text-[13px] animate-spin text-primary">progress_activity</span>}
                       </p>
-                      <p className="text-slate-400 text-[11px]">{heatmapMeta.wind ? heatmapMeta.wind.source : 'GWA 3.0 / NASA POWER · m/s'}</p>
+                      <p className="text-slate-400 text-[11px]">{heatmapMeta.wind ? heatmapMeta.wind.source : 'GWA 3.0 / ERA5 · m/s'}</p>
                     </div>
                   </label>
                   {/* Iradiasi Surya */}
@@ -546,7 +591,7 @@ export default function PetaPage() {
                         Iradiasi Surya (Heatmap)
                         {heatmapLoading && activeLayer === 'solar' && <span className="material-symbols-outlined text-[13px] animate-spin text-primary">progress_activity</span>}
                       </p>
-                      <p className="text-slate-400 text-[11px]">{heatmapMeta.solar ? heatmapMeta.solar.source : 'GSA / NASA POWER · kWh/m²/hari'}</p>
+                      <p className="text-slate-400 text-[11px]">{heatmapMeta.solar ? heatmapMeta.solar.source : 'GSA / ERA5 · kWh/m²/hari'}</p>
                     </div>
                   </label>
                   {/* Prioritas GIS-MCDA */}

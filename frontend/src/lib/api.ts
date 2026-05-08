@@ -48,9 +48,17 @@ interface ApiStation {
   wind_baseline_nasa: number | null;
   ghi_baseline_nasa: number | null;
   aep: number | null;
+  wind_aep: number | null;
+  solar_aep: number | null;
   rmse: number | null;
   bias: number | null;
   r2: number | null;
+  wind_rmse: number | null;
+  wind_bias: number | null;
+  wind_r2: number | null;
+  solar_rmse: number | null;
+  solar_bias: number | null;
+  solar_r2: number | null;
   last_update: string;
 }
 
@@ -77,9 +85,17 @@ function mapStation(s: ApiStation): Station {
     windBaselineNasa: s.wind_baseline_nasa,
     ghiBaselineNasa: s.ghi_baseline_nasa,
     aep: s.aep ?? 0,
+    windAep: s.wind_aep ?? null,
+    solarAep: s.solar_aep ?? null,
     rmse: s.rmse ?? 0,
     bias: s.bias ?? 0,
     r2: s.r2 ?? 0,
+    windRmse: s.wind_rmse,
+    windBias: s.wind_bias,
+    windR2: s.wind_r2,
+    solarRmse: s.solar_rmse,
+    solarBias: s.solar_bias,
+    solarR2: s.solar_r2,
   };
 }
 
