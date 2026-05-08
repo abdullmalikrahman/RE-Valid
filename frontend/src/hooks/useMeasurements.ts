@@ -20,16 +20,26 @@ async function fetchMeasurements(url: string): Promise<Measurement[]> {
   return res.json();
 }
 
+function todayStr() {
+  return new Date().toISOString().slice(0, 10);
+}
+function oneYearAgoStr() {
+  const d = new Date();
+  d.setFullYear(d.getFullYear() - 1);
+  d.setDate(d.getDate() + 1);
+  return d.toISOString().slice(0, 10);
+}
+
 export function useMeasurements(
   stationId: string | null,
-  start = '2023-01-01',
-  end = '2023-12-31',
+  start = oneYearAgoStr(),
+  end = todayStr(),
 ) {
   const params = new URLSearchParams();
   if (stationId) params.set('station_id', stationId);
   params.set('start', start);
   params.set('end', end);
-  params.set('limit', '365');
+  params.set('limit', '400');
 
   const { data, error, isLoading } = useSWR<Measurement[]>(
     stationId ? `/api/v1/measurements?${params.toString()}` : null,

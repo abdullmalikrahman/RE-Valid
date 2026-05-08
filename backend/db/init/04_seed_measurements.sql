@@ -1,7 +1,7 @@
 -- ============================================================
--- RE-Valid Seed: Measurement Data (Sintetik 2023)
+-- RE-Valid Seed: Measurement Data (Sintetik 2025)
 -- 365 hari × 6 stasiun = 2190 baris
--- Kecepatan angin: base_wind dikalibrasi terhadap wind_baseline (NASA POWER ERA5)
+-- Kecepatan angin: base_wind dikalibrasi terhadap wind_baseline (ERA5 ECMWF)
 --   sehingga bias antara obs dan atlas berada dalam rentang ±5–20% yang realistis
 -- GHI (W/m²): nilai rata-rata harian; tasks.py mengonversi × 24/1000 → kWh/m²/hari
 --   sebelum dibandingkan dengan ghi_baseline (kWh/m²/hari)
@@ -90,7 +90,7 @@ FROM (
 ) AS s(row_num, sid, base_wind, base_ghi)
 
 CROSS JOIN generate_series(
-    '2023-01-01 07:00:00+07'::timestamptz,
-    '2023-12-31 07:00:00+07'::timestamptz,
+    '2025-01-01 07:00:00+07'::timestamptz,
+    '2025-12-31 07:00:00+07'::timestamptz,
     '1 day'::interval
 ) AS gs;

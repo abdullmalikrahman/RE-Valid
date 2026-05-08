@@ -16,7 +16,7 @@ INSERT INTO stations (
         -7.2184, 107.6452,
         'Bandung Selatan, Jawa Barat', 1820,
         'kandidat', 68,
-        'Jan 2023 – Des 2023', 'Angin, Iradiasi', 'selesai',
+        'Jan 2025 – Des 2025', 'Angin, Iradiasi', 'selesai',
         6.8, 5.1, 16353,
         1.09, 19.80, 0.800
     ),
@@ -26,7 +26,7 @@ INSERT INTO stations (
         -6.8712, 107.5432,
         'Cimahi, Jawa Barat', 752,
         'prioritas', 78,
-        'Jan 2023 – Des 2023', 'Angin, Iradiasi', 'selesai',
+        'Jan 2025 – Des 2025', 'Angin, Iradiasi', 'selesai',
         6.2, 4.8, 16353,
         0.93, 11.42, 0.886
     ),
@@ -36,7 +36,7 @@ INSERT INTO stations (
         -7.7041, 108.6508,
         'Pangandaran, Jawa Barat', 12,
         'prioritas', 86,
-        'Mar 2023 – Des 2023', 'Angin, Iradiasi', 'berjalan',
+        'Mar 2025 – Des 2025', 'Angin, Iradiasi', 'berjalan',
         5.4, 4.6, 19997,
         0.86, 4.78, 0.952
     ),
@@ -56,7 +56,7 @@ INSERT INTO stations (
         -7.4833, 107.8717,
         'Garut, Jawa Barat', 730,
         'prioritas', 83,
-        'Feb 2023 – Des 2023', 'Angin, Iradiasi', 'selesai',
+        'Feb 2025 – Des 2025', 'Angin, Iradiasi', 'selesai',
         5.9, 4.9, 21546,
         0.91, 7.82, 0.922
     ),
@@ -66,7 +66,7 @@ INSERT INTO stations (
         -7.3544, 108.2248,
         'Tasikmalaya, Jawa Barat', 368,
         'prioritas', 88,
-        'Jan 2023 – Sep 2023', 'Angin', 'berjalan',
+        'Jan 2025 – Sep 2025', 'Angin', 'berjalan',
         5.1, 4.5, 21546,
         0.84, -2.75, 0.972
     )

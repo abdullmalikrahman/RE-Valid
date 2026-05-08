@@ -39,8 +39,11 @@ function AnalisisContent() {
   const [energyType, setEnergyType] = useState<'wind' | 'solar'>('wind');
   const [taskState, setTaskState] = useState<'idle' | 'loading' | 'success' | 'error'>('idle');
   const [taskMsg, setTaskMsg] = useState('');
-  const [startDate, setStartDate] = useState('2023-01-01');
-  const [endDate, setEndDate] = useState('2023-12-31');
+  const [startDate, setStartDate] = useState(() => {
+    const d = new Date(); d.setFullYear(d.getFullYear() - 1); d.setDate(d.getDate() + 1);
+    return d.toISOString().slice(0, 10);
+  });
+  const [endDate, setEndDate] = useState(() => new Date().toISOString().slice(0, 10));
 
   // Reset task feedback whenever the user switches station or energy type
   useEffect(() => {
@@ -362,7 +365,11 @@ function AnalisisContent() {
             </div>
             <div>
               <button
-                onClick={() => { setStartDate('2023-01-01'); setEndDate('2023-12-31'); }}
+                onClick={() => {
+                  const d = new Date(); d.setFullYear(d.getFullYear() - 1); d.setDate(d.getDate() + 1);
+                  setStartDate(d.toISOString().slice(0, 10));
+                  setEndDate(new Date().toISOString().slice(0, 10));
+                }}
                 className="w-full py-2 text-primary hover:text-white border border-primary/30 hover:bg-primary rounded-lg text-xs font-medium transition-all"
               >
                 Reset Filter
