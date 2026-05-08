@@ -123,7 +123,7 @@ function AnalisisContent() {
   // Gunakan wind_baseline dari atlas (NASA POWER/GWA) jika tersedia; fallback ke aproksimasi
   const windBaselineVal = station.windBaseline ?? station.windSpeed * 1.046;
   const windLongTerm = windBaselineVal.toFixed(1);
-  const windDiff = (((station.windSpeed - windBaselineVal) / windBaselineVal) * 100).toFixed(1);
+  const windDiff = windBaselineVal > 0 ? (((station.windSpeed - windBaselineVal) / windBaselineVal) * 100).toFixed(1) : '0.0';
   // Per-source deviations
   const windDiffGwa = (station.windBaselineGwa != null && station.windBaselineGwa > 0)
     ? parseFloat((((station.windSpeed - station.windBaselineGwa) / station.windBaselineGwa) * 100).toFixed(1))
@@ -149,7 +149,7 @@ function AnalisisContent() {
   // ─── Solar derived ─────────────────────────────────────────────────────────
   // GHI baseline dari atlas (NASA POWER/PVGIS) jika tersedia; fallback ke aproksimasi
   const ghiBaseline = parseFloat((station.ghiBaseline ?? station.irradiation * 0.958).toFixed(2));
-  const ghiDiff = parseFloat((((station.irradiation - ghiBaseline) / ghiBaseline) * 100).toFixed(1));
+  const ghiDiff = ghiBaseline > 0 ? parseFloat((((station.irradiation - ghiBaseline) / ghiBaseline) * 100).toFixed(1)) : 0;
   const ghiDiffGsa = (station.ghiBaselineGsa != null && station.ghiBaselineGsa > 0)
     ? parseFloat((((station.irradiation - station.ghiBaselineGsa) / station.ghiBaselineGsa) * 100).toFixed(1))
     : null;
@@ -198,7 +198,7 @@ function AnalisisContent() {
       rows.push(isWind
         ? 'measured_at,wind_speed_obs,baseline_atlas,deviasi'
         : 'measured_at,ghi_obs_kwh_m2_day,baseline_atlas,deviasi');
-      measurements.forEach((m, i) => {
+      measurements.forEach((m) => {
         const obs = isWind
           ? (m.wind_speed ?? 0)
           : parseFloat(((m.ghi ?? 0) * 24 / 1000).toFixed(4));
