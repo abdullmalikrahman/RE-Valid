@@ -19,14 +19,14 @@ export default function KalkulatorPage() {
 
   // --- Technical parameters ---
   const [kapasitas, setKapasitas] = useState(50);         // MW / MWp
-  const [faktorKapasitas, setFaktorKapasitas] = useState(18); // % (wind CF)
+  const [faktorKapasitas, setFaktorKapasitas] = useState(20); // % (wind CF)
   const [performanceRatio, setPerformanceRatio] = useState(75); // % (solar PR)
   const [umurProyek, setUmurProyek] = useState(20);       // years
   const [degradasi, setDegradasi] = useState(0.5);        // % per year
 
   // --- Financial parameters ---
-  const [capex, setCapex] = useState(45.5);               // M USD
-  const [opex, setOpex] = useState(1.5);                  // % of CAPEX
+  const [capex, setCapex] = useState(60);                 // M USD  (50MW × $1.2M/MW)
+  const [opex, setOpex] = useState(2.0);                  // % of CAPEX
   const [diskonto, setDiskonto] = useState(8.5);          // %
   const [tarif, setTarif] = useState(80);                 // USD/MWh
 
@@ -38,8 +38,8 @@ export default function KalkulatorPage() {
     setSelectedStationId(id);
     if (isWind) {
       // Prioritas: GWA 3.0 → NASA POWER → baseline → terukur
-      const speed = s.windBaselineGwa ?? s.windBaselineNasa ?? s.windBaseline ?? s.windSpeed;
-      const cf = Math.round(Math.max(15, Math.min(42, speed * 3.8)));
+      const speed = s.windBaselineGwa ?? s.windBaselineNasa ?? s.windBaseline ?? s.windSpeed ?? 0;
+      const cf = speed > 0 ? Math.round(Math.max(15, Math.min(42, speed * 3.8))) : 20;
       setFaktorKapasitas(cf);
       // CAPEX ref. PLTB Indonesia: ~$1.0–1.5 M/MW
       setCapex(parseFloat((kapasitas * 1.2).toFixed(1)));
@@ -150,12 +150,12 @@ export default function KalkulatorPage() {
 
   function handleReset() {
     setKapasitas(50);
-    setFaktorKapasitas(isWind ? 18 : 20);
+    setFaktorKapasitas(20);
     setPerformanceRatio(75);
     setUmurProyek(20);
     setDegradasi(isWind ? 0.5 : 0.4);
-    setCapex(isWind ? 45.5 : 45.0);
-    setOpex(1.5);
+    setCapex(isWind ? 60 : 45.0);
+    setOpex(isWind ? 2.0 : 1.5);
     setDiskonto(8.5);
     setTarif(80);
     setSelectedStationId('none');
@@ -165,13 +165,15 @@ export default function KalkulatorPage() {
     setEnergyType(type);
     setSelectedStationId('none');
     if (type === 'wind') {
-      setFaktorKapasitas(18);
-      setCapex(45.5);
+      setFaktorKapasitas(20);
+      setCapex(60);
       setDegradasi(0.5);
+      setOpex(2.0);
     } else {
       setFaktorKapasitas(20);
       setCapex(45.0);
       setDegradasi(0.4); // PLTS degradasi panel ~0.4%/thn
+      setOpex(1.5);
     }
   }
 
@@ -516,8 +518,8 @@ export default function KalkulatorPage() {
                   {stations.map((s) => (
                     <option key={s.id} value={s.id}>
                       {s.name} ({s.id}) &mdash; {isWind
-                        ? `${s.windBaselineGwa ?? s.windBaselineNasa ?? s.windBaseline ?? s.windSpeed} m/s`
-                        : `${s.ghiBaselineGsa ?? s.ghiBaselineNasa ?? s.ghiBaseline ?? s.irradiation} kWh/m²/hari`}
+                      ? `${s.windBaselineGwa ?? s.windBaselineNasa ?? s.windBaseline ?? s.windSpeed ?? '–'} m/s`
+                      : `${s.ghiBaselineGsa ?? s.ghiBaselineNasa ?? s.ghiBaseline ?? s.irradiation ?? '–'} kWh/m²/hari`}
                     </option>
                   ))}
                 </select>
@@ -529,16 +531,16 @@ export default function KalkulatorPage() {
                   <div className={`flex items-center gap-2 text-[11px] ${isWind ? 'text-green-500 bg-green-500/10 border-green-500/20' : 'text-amber-500 bg-amber-500/10 border-amber-500/20'} border rounded px-2.5 py-1.5`}>
                     <span className="material-symbols-outlined text-[14px]">check_circle</span>
                     {isWind
-                      ? `CF dihitung dari baseline angin: ${selectedStation.windBaselineGwa ?? selectedStation.windBaselineNasa ?? selectedStation.windBaseline ?? selectedStation.windSpeed} m/s`
-                      : `GHI aktif: ${selectedStation.ghiBaselineGsa ?? selectedStation.ghiBaselineNasa ?? selectedStation.ghiBaseline ?? selectedStation.irradiation} kWh/m²/hari (GSA/NASA POWER)`}
+                      ? `CF dihitung dari baseline angin: ${selectedStation.windBaselineGwa ?? selectedStation.windBaselineNasa ?? selectedStation.windBaseline ?? selectedStation.windSpeed ?? '–'} m/s`
+                      : `GHI aktif: ${selectedStation.ghiBaselineGsa ?? selectedStation.ghiBaselineNasa ?? selectedStation.ghiBaseline ?? selectedStation.irradiation ?? '–'} kWh/m²/hari (GSA/NASA POWER)`}
                   </div>
                   <div className="grid grid-cols-2 gap-1.5 text-[11px]">
                     <div className="bg-gray-50 dark:bg-[#111a22] rounded px-2.5 py-2 flex flex-col gap-0.5">
                       <span className="text-slate-400 uppercase font-bold text-[10px]">{isWind ? 'Baseline Angin' : 'GHI Baseline'}</span>
                       <span className="font-bold text-slate-900 dark:text-white">
                         {isWind
-                          ? `${selectedStation.windBaselineGwa ?? selectedStation.windBaselineNasa ?? selectedStation.windBaseline ?? selectedStation.windSpeed} m/s`
-                          : `${selectedStation.ghiBaselineGsa ?? selectedStation.ghiBaselineNasa ?? selectedStation.ghiBaseline ?? selectedStation.irradiation} kWh/m²/d`}
+                          ? `${selectedStation.windBaselineGwa ?? selectedStation.windBaselineNasa ?? selectedStation.windBaseline ?? selectedStation.windSpeed ?? '–'} m/s`
+                          : `${selectedStation.ghiBaselineGsa ?? selectedStation.ghiBaselineNasa ?? selectedStation.ghiBaseline ?? selectedStation.irradiation ?? '–'} kWh/m²/d`}
                       </span>
                       <span className="text-slate-400 text-[10px]">
                         {isWind
