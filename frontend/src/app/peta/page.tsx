@@ -151,7 +151,7 @@ function StationPanel({
                 </p>
                 <div className="grid grid-cols-3 gap-2">
                   {[
-                    { k: 'RMSE', v: station.windRmse.toFixed(2) },
+                    { k: 'RMSE', v: station.windRmse != null ? station.windRmse.toFixed(2) : '–' },
                     { k: 'Bias', v: `${station.windBias != null && station.windBias > 0 ? '+' : ''}${(station.windBias ?? 0).toFixed(1)}%` },
                     { k: 'R²', v: (station.windR2 ?? 0).toFixed(2) },
                   ].map((m) => (
@@ -171,7 +171,7 @@ function StationPanel({
                 </p>
                 <div className="grid grid-cols-3 gap-2">
                   {[
-                    { k: 'RMSE', v: station.solarRmse.toFixed(2) },
+                    { k: 'RMSE', v: station.solarRmse != null ? station.solarRmse.toFixed(2) : '–' },
                     { k: 'Bias', v: `${station.solarBias != null && station.solarBias > 0 ? '+' : ''}${(station.solarBias ?? 0).toFixed(1)}%` },
                     { k: 'R²', v: (station.solarR2 ?? 0).toFixed(2) },
                   ].map((m) => (
@@ -198,7 +198,7 @@ function StationPanel({
             </div>
             <div className="flex justify-between items-center px-3 py-2">
               <span className="text-slate-500 dark:text-text-secondary text-[12px]">Iradiasi Matahari</span>
-              <span className="font-bold text-slate-900 dark:text-white text-[12px]">{station.irradiation} kWh/m²/hr</span>
+              <span className="font-bold text-slate-900 dark:text-white text-[12px]">{station.irradiation} kWh/m²/hari</span>
             </div>
             {(station.windAep != null && station.windAep > 0) && (
               <div className="flex justify-between items-center px-3 py-2">
@@ -259,7 +259,7 @@ function StationPanel({
                   <span className="text-slate-500 dark:text-text-secondary flex items-center gap-1">
                     <span className="material-symbols-outlined text-[13px] text-yellow-400">wb_sunny</span> GSA
                   </span>
-                  <span className="font-semibold text-slate-800 dark:text-slate-200">{station.ghiBaselineGsa} kWh/m²/hr</span>
+                  <span className="font-semibold text-slate-800 dark:text-slate-200">{station.ghiBaselineGsa} kWh/m²/hari</span>
                 </div>
               )}
               {station.ghiBaselineNasa != null && (
@@ -267,7 +267,7 @@ function StationPanel({
                   <span className="text-slate-500 dark:text-text-secondary flex items-center gap-1">
                     <span className="material-symbols-outlined text-[13px] text-yellow-400">wb_sunny</span> ERA5 (ECMWF)
                   </span>
-                  <span className="font-semibold text-slate-800 dark:text-slate-200">{station.ghiBaselineNasa} kWh/m²/hr</span>
+                  <span className="font-semibold text-slate-800 dark:text-slate-200">{station.ghiBaselineNasa} kWh/m²/hari</span>
                 </div>
               )}
             </div>

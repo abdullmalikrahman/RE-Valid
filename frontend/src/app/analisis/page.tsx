@@ -121,7 +121,7 @@ function AnalisisContent() {
 
   // ─── Wind derived ──────────────────────────────────────────────────────────
   // Gunakan wind_baseline dari atlas (NASA POWER/GWA) jika tersedia; fallback ke aproksimasi
-  const windBaselineVal = station.windBaseline ?? station.windSpeed * 1.046;
+  const windBaselineVal = station.windBaseline ?? (station.windSpeed ?? 0) * 1.046;
   const windLongTerm = windBaselineVal.toFixed(1);
   const windDiff = windBaselineVal > 0 ? (((station.windSpeed - windBaselineVal) / windBaselineVal) * 100).toFixed(1) : '0.0';
   // Per-source deviations
@@ -131,24 +131,24 @@ function AnalisisContent() {
   const windDiffNasa = (station.windBaselineNasa != null && station.windBaselineNasa > 0)
     ? parseFloat((((station.windSpeed - station.windBaselineNasa) / station.windBaselineNasa) * 100).toFixed(1))
     : null;
-  const aepGross = station.aep;
-  const aepNetP50 = Math.round(station.aep * 0.877);
-  const aepNetP90 = Math.round(station.aep * 0.767);
-  const biasDisplay = (station.bias > 0 ? '+' : '') + station.bias.toFixed(1) + '%';
+  const aepGross = station.aep ?? 0;
+  const aepNetP50 = Math.round((station.aep ?? 0) * 0.877);
+  const aepNetP90 = Math.round((station.aep ?? 0) * 0.767);
+  const biasDisplay = station.bias != null ? (station.bias > 0 ? '+' : '') + station.bias.toFixed(1) + '%' : '–';
   // Wind-specific R² (from windR2 column, fallback to generic r2)
-  const windR2Val = station.windR2 ?? station.r2;
+  const windR2Val = station.windR2 ?? station.r2 ?? 0;
   const windR2Quality = windR2Val >= 0.85 ? 'Tinggi' : windR2Val >= 0.70 ? 'Sedang' : 'Rendah';
   const windR2Color = windR2Val >= 0.85 ? 'text-green-500' : windR2Val >= 0.70 ? 'text-amber-400' : 'text-red-400';
   const windR2Bg = windR2Val >= 0.85 ? 'bg-green-500/10 text-green-500' : windR2Val >= 0.70 ? 'bg-amber-500/10 text-amber-400' : 'bg-red-500/10 text-red-400';
   // Solar-specific R² (from solarR2 column, fallback to generic r2)
-  const solarR2Val = station.solarR2 ?? station.r2;
+  const solarR2Val = station.solarR2 ?? station.r2 ?? 0;
   const solarR2Quality = solarR2Val >= 0.85 ? 'Tinggi' : solarR2Val >= 0.70 ? 'Sedang' : 'Rendah';
   const solarR2Color = solarR2Val >= 0.85 ? 'text-green-500' : solarR2Val >= 0.70 ? 'text-amber-400' : 'text-red-400';
   const solarR2Bg = solarR2Val >= 0.85 ? 'bg-green-500/10 text-green-500' : solarR2Val >= 0.70 ? 'bg-amber-500/10 text-amber-400' : 'bg-red-500/10 text-red-400';
 
   // ─── Solar derived ─────────────────────────────────────────────────────────
   // GHI baseline dari atlas (NASA POWER/PVGIS) jika tersedia; fallback ke aproksimasi
-  const ghiBaseline = parseFloat((station.ghiBaseline ?? station.irradiation * 0.958).toFixed(2));
+  const ghiBaseline = parseFloat((station.ghiBaseline ?? (station.irradiation ?? 0) * 0.958).toFixed(2));
   const ghiDiff = ghiBaseline > 0 ? parseFloat((((station.irradiation - ghiBaseline) / ghiBaseline) * 100).toFixed(1)) : 0;
   const ghiDiffGsa = (station.ghiBaselineGsa != null && station.ghiBaselineGsa > 0)
     ? parseFloat((((station.irradiation - station.ghiBaselineGsa) / station.ghiBaselineGsa) * 100).toFixed(1))
@@ -157,7 +157,7 @@ function AnalisisContent() {
     ? parseFloat((((station.irradiation - station.ghiBaselineNasa) / station.ghiBaselineNasa) * 100).toFixed(1))
     : null;
   // Clearness Index: Kt = GHI_obs / GHI_extraterrestrial (≈ 8.5 kWh/m²/hari at 7°S lat)
-  const ktIndex = parseFloat((station.irradiation / 8.5).toFixed(2));
+  const ktIndex = parseFloat(((station.irradiation ?? 0) / 8.5).toFixed(2));
   const ktLabel = ktIndex >= 0.55 ? 'Cerah' : ktIndex >= 0.40 ? 'Campuran' : 'Berawan';
   const ktColor = ktIndex >= 0.55 ? 'text-amber-400' : ktIndex >= 0.40 ? 'text-blue-400' : 'text-slate-400';
   const ktBg = ktIndex >= 0.55 ? 'bg-amber-500/10 text-amber-400' : ktIndex >= 0.40 ? 'bg-blue-500/10 text-blue-400' : 'bg-slate-500/10 text-slate-400';
@@ -270,7 +270,7 @@ function AnalisisContent() {
 
   // ─── Validation rows (computed after measurements) ──────────────────────────────
   const windValidationRows: { metric: string; value: string; target: string; pass: boolean | null }[] = [
-    { metric: 'RMSE (m/s)', value: station.rmse.toFixed(2), target: '< 2.0', pass: station.rmse < 2.0 },
+    { metric: 'RMSE (m/s)', value: station.rmse != null ? station.rmse.toFixed(2) : '–', target: '< 2.0', pass: station.rmse != null ? station.rmse < 2.0 : null },
     { metric: 'MAE (m/s)', value: mae !== null ? mae.toFixed(2) : '–', target: '< 1.5', pass: mae !== null ? mae < 1.5 : null },
     { metric: 'Korelasi Atlas (R²)', value: windR2Val.toFixed(2), target: '> 0.70', pass: windR2Val > 0.70 },
     { metric: 'Bias vs GWA (%)', value: windDiffGwa !== null ? (windDiffGwa >= 0 ? '+' : '') + windDiffGwa + '%' : '–', target: '± 5%', pass: windDiffGwa !== null ? Math.abs(windDiffGwa) <= 5 : null },
@@ -476,9 +476,9 @@ function AnalisisContent() {
                 </div>
                 <div className="flex items-baseline gap-2">
                   <h3 className="text-2xl font-bold text-slate-900 dark:text-white">{biasDisplay}</h3>
-                  <span className="text-xs text-slate-500 dark:text-slate-400 uppercase font-medium">vs GWA 3.0</span>
+                  <span className="text-xs text-slate-500 dark:text-slate-400 uppercase font-medium">vs ERA5</span>
                 </div>
-                <p className="text-[10px] text-slate-400 mt-1">Penyimpangan sistematis obs-baseline</p>
+                <p className="text-[10px] text-slate-400 mt-1">MBE harian obs vs ERA5 selama periode obs</p>
               </div>
               <div className="bg-white dark:bg-card-dark rounded-xl p-4 border border-gray-200 dark:border-border-dark relative overflow-hidden group">
                 <div className="absolute right-0 top-0 p-3 opacity-10 group-hover:opacity-20 transition-opacity">
@@ -503,7 +503,7 @@ function AnalisisContent() {
                   <span className="material-symbols-outlined text-amber-400 text-[20px]">wb_sunny</span>
                 </div>
                 <div className="flex items-baseline gap-2">
-                  <h3 className="text-2xl font-bold text-slate-900 dark:text-white">{station.irradiation.toFixed(1)}</h3>
+                  <h3 className="text-2xl font-bold text-slate-900 dark:text-white">{(station.irradiation ?? 0).toFixed(1)}</h3>
                   <span className="text-sm text-slate-500 dark:text-slate-400">kWh/m²/hari</span>
                 </div>
                 <p className="text-[10px] text-slate-400 mt-1">GHI lapangan vs baseline GSA: <span className="text-amber-400 font-semibold">{ghiBaseline}</span></p>
@@ -530,9 +530,9 @@ function AnalisisContent() {
                       ? `${station.solarBias > 0 ? '+' : ''}${station.solarBias.toFixed(1)}%`
                       : `${ghiDiff > 0 ? '+' : ''}${ghiDiff.toFixed(1)}%`}
                   </h3>
-                  <span className="text-xs text-slate-500 dark:text-slate-400 uppercase font-medium">vs GSA</span>
+                  <span className="text-xs text-slate-500 dark:text-slate-400 uppercase font-medium">vs ERA5</span>
                 </div>
-                <p className="text-[10px] text-slate-400 mt-1">Penyimpangan sistematis obs-baseline · Kt: {ktIndex.toFixed(2)} ({ktLabel})</p>
+                <p className="text-[10px] text-slate-400 mt-1">MBE harian obs vs ERA5 · Kt: {ktIndex.toFixed(2)} ({ktLabel})</p>
               </div>
               <div className="bg-white dark:bg-card-dark rounded-xl p-4 border border-gray-200 dark:border-border-dark relative overflow-hidden group">
                 <div className="absolute right-0 top-0 p-3 opacity-10 group-hover:opacity-20 transition-opacity">
@@ -661,7 +661,7 @@ function AnalisisContent() {
                 <span className="font-mono">
                 {isWind
                   ? `${windLongTerm} m/s (${station.windBaselineGwa != null ? 'GWA 3.0' : 'ERA5 (ECMWF)'})`
-                  : `${ghiBaseline} kWh/m²/hr (${station.ghiBaselineGsa != null ? 'GSA Solargis' : 'ERA5 (ECMWF)'})`}
+                  : `${ghiBaseline} kWh/m²/hari (${station.ghiBaselineGsa != null ? 'GSA Solargis' : 'ERA5 (ECMWF)'})`}
               </span>
               </div>
               <div className={`flex justify-between items-center font-bold ${isWind ? windR2Color : solarR2Color}`}>
@@ -788,7 +788,7 @@ function AnalisisContent() {
                 <div className="grid grid-cols-2 gap-3">
                   <div className="bg-gray-50 dark:bg-[#111a22] p-3 rounded-lg border border-gray-100 dark:border-gray-800">
                     <p className="text-[10px] uppercase text-slate-500 font-bold mb-1">GHI Observasi</p>
-                    <p className="text-base font-bold text-slate-900 dark:text-white">{station.irradiation.toFixed(2)}</p>
+                    <p className="text-base font-bold text-slate-900 dark:text-white">{(station.irradiation ?? 0).toFixed(2)}</p>
                     <p className="text-[10px] text-slate-400 mt-0.5">kWh/m²/hari (lapangan)</p>
                   </div>
                   <div className="bg-amber-500/5 dark:bg-amber-500/10 p-3 rounded-lg border border-amber-500/20">
@@ -928,9 +928,9 @@ function AnalisisContent() {
                         </div>
                       </td>
                       <td className="px-4 py-3 text-right font-mono text-slate-700 dark:text-slate-300">
-                        {station.ghiBaselineGsa != null ? `${station.ghiBaselineGsa} kWh/m²/hr` : <span className="text-slate-400">–</span>}
+                        {station.ghiBaselineGsa != null ? `${station.ghiBaselineGsa} kWh/m²/hari` : <span className="text-slate-400">–</span>}
                       </td>
-                      <td className="px-4 py-3 text-right font-mono text-slate-700 dark:text-slate-300">{station.irradiation.toFixed(2)} kWh/m²/hr</td>
+                      <td className="px-4 py-3 text-right font-mono text-slate-700 dark:text-slate-300">{station.irradiation != null ? station.irradiation.toFixed(2) : '–'} kWh/m²/hari</td>
                       <td className="px-4 py-3 text-right font-mono">
                         {ghiDiffGsa !== null
                           ? <span className={ghiDiffGsa >= 0 ? 'text-green-500 font-bold' : 'text-red-400 font-bold'}>{ghiDiffGsa >= 0 ? '+' : ''}{ghiDiffGsa}%</span>
@@ -951,9 +951,9 @@ function AnalisisContent() {
                         </div>
                       </td>
                       <td className="px-4 py-3 text-right font-mono text-slate-700 dark:text-slate-300">
-                        {station.ghiBaselineNasa != null ? `${station.ghiBaselineNasa} kWh/m²/hr` : <span className="text-slate-400">–</span>}
+                        {station.ghiBaselineNasa != null ? `${station.ghiBaselineNasa} kWh/m²/hari` : <span className="text-slate-400">–</span>}
                       </td>
-                      <td className="px-4 py-3 text-right font-mono text-slate-700 dark:text-slate-300">{station.irradiation.toFixed(2)} kWh/m²/hr</td>
+                      <td className="px-4 py-3 text-right font-mono text-slate-700 dark:text-slate-300">{station.irradiation != null ? station.irradiation.toFixed(2) : '–'} kWh/m²/hari</td>
                       <td className="px-4 py-3 text-right font-mono">
                         {ghiDiffNasa !== null
                           ? <span className={ghiDiffNasa >= 0 ? 'text-green-500 font-bold' : 'text-red-400 font-bold'}>{ghiDiffNasa >= 0 ? '+' : ''}{ghiDiffNasa}%</span>

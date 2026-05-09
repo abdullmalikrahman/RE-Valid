@@ -375,7 +375,7 @@ function StationModal({ station, onClose, onSave, onRefresh }: ModalProps) {
                     <tr className="bg-green-100 dark:bg-green-900/30">
                       <th className="text-left px-3 py-1.5 text-green-700 dark:text-green-400 font-semibold">Sumber</th>
                       <th className="text-right px-3 py-1.5 text-green-700 dark:text-green-400 font-semibold">Angin (m/s)</th>
-                      <th className="text-right px-3 py-1.5 text-green-700 dark:text-green-400 font-semibold">GHI (kWh/m²/hr)</th>
+                      <th className="text-right px-3 py-1.5 text-green-700 dark:text-green-400 font-semibold">GHI (kWh/m²/hari)</th>
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-green-100 dark:divide-green-900/30">
@@ -445,7 +445,7 @@ function StationModal({ station, onClose, onSave, onRefresh }: ModalProps) {
                       <tr className="bg-blue-100 dark:bg-blue-900/30">
                         <th className="text-left px-3 py-1.5 text-blue-700 dark:text-blue-400 font-semibold">Sumber</th>
                         <th className="text-right px-3 py-1.5 text-blue-700 dark:text-blue-400 font-semibold">Angin (m/s)</th>
-                        <th className="text-right px-3 py-1.5 text-blue-700 dark:text-blue-400 font-semibold">GHI (kWh/m²/hr)</th>
+                        <th className="text-right px-3 py-1.5 text-blue-700 dark:text-blue-400 font-semibold">GHI (kWh/m²/hari)</th>
                       </tr>
                     </thead>
                     <tbody className="divide-y divide-blue-100 dark:divide-blue-900/30">
@@ -960,7 +960,7 @@ export default function AdminPage() {
                         <td className="px-5 py-4 whitespace-nowrap text-sm text-gray-600 dark:text-gray-300">
                           <div className="flex items-center gap-1">
                             <span className="material-symbols-outlined text-[14px] text-amber-400">wb_sunny</span>
-                            {station.irradiation} kWh/m²/hr
+                            {station.irradiation} kWh/m²/hari
                           </div>
                         </td>
                         <td className="px-5 py-4 whitespace-nowrap">

@@ -914,9 +914,9 @@ function LaporanContent() {
                   </p>
                   <div className="flex flex-col gap-2">
                     {[
-                      { label: 'Observasi Lapangan', value: `${station.irradiation.toFixed(2)} kWh/m²/hr`, color: 'text-slate-900 dark:text-white', badge: null },
-                      { label: 'GSA Solargis', value: station.ghiBaselineGsa != null ? `${station.ghiBaselineGsa} kWh/m²/hr` : '—', color: 'text-amber-500 font-bold', badge: station.ghiBaselineGsa != null ? 'Aktif' : null },
-                      { label: 'ERA5 (ECMWF)', value: station.ghiBaselineNasa != null ? `${station.ghiBaselineNasa} kWh/m²/hr` : '—', color: 'text-slate-600 dark:text-slate-400', badge: station.ghiBaselineGsa == null && station.ghiBaselineNasa != null ? 'Fallback' : null },
+                      { label: 'Observasi Lapangan', value: `${station.irradiation.toFixed(2)} kWh/m²/hari`, color: 'text-slate-900 dark:text-white', badge: null },
+                      { label: 'GSA Solargis', value: station.ghiBaselineGsa != null ? `${station.ghiBaselineGsa} kWh/m²/hari` : '—', color: 'text-amber-500 font-bold', badge: station.ghiBaselineGsa != null ? 'Aktif' : null },
+                      { label: 'ERA5 (ECMWF)', value: station.ghiBaselineNasa != null ? `${station.ghiBaselineNasa} kWh/m²/hari` : '—', color: 'text-slate-600 dark:text-slate-400', badge: station.ghiBaselineGsa == null && station.ghiBaselineNasa != null ? 'Fallback' : null },
                     ].map((r) => (
                       <div key={r.label} className="flex items-center justify-between bg-slate-50 dark:bg-[#111a22] rounded-lg px-3 py-2 text-xs">
                         <span className="text-slate-500 dark:text-slate-400">{r.label}</span>
