@@ -521,14 +521,18 @@ function AnalisisContent() {
               </div>
               <div className="bg-white dark:bg-card-dark rounded-xl p-4 border border-gray-200 dark:border-border-dark">
                 <div className="flex justify-between items-start mb-1.5">
-                  <p className="text-xs text-slate-500 dark:text-text-secondary font-semibold">Clearness Index (Kt)</p>
-                  <span className={`material-symbols-outlined ${ktColor} text-[20px]`}>light_mode</span>
+                  <p className="text-xs text-slate-500 dark:text-text-secondary font-semibold">Bias Keseluruhan</p>
+                  <span className="material-symbols-outlined text-amber-400 text-[20px]">difference</span>
                 </div>
                 <div className="flex items-baseline gap-2">
-                  <h3 className={`text-2xl font-bold ${ktColor}`}>{ktIndex.toFixed(2)}</h3>
-                  <span className={`ml-auto text-xs font-bold px-2 py-0.5 rounded ${ktBg}`}>{ktLabel}</span>
+                  <h3 className="text-2xl font-bold text-slate-900 dark:text-white">
+                    {station.solarBias != null
+                      ? `${station.solarBias > 0 ? '+' : ''}${station.solarBias.toFixed(1)}%`
+                      : `${ghiDiff > 0 ? '+' : ''}${ghiDiff.toFixed(1)}%`}
+                  </h3>
+                  <span className="text-xs text-slate-500 dark:text-slate-400 uppercase font-medium">vs GSA</span>
                 </div>
-                <p className="text-[10px] text-slate-400 mt-1">Kt = GHI obs / GHI ekstraterestrial</p>
+                <p className="text-[10px] text-slate-400 mt-1">Penyimpangan sistematis obs-baseline · Kt: {ktIndex.toFixed(2)} ({ktLabel})</p>
               </div>
               <div className="bg-white dark:bg-card-dark rounded-xl p-4 border border-gray-200 dark:border-border-dark relative overflow-hidden group">
                 <div className="absolute right-0 top-0 p-3 opacity-10 group-hover:opacity-20 transition-opacity">
