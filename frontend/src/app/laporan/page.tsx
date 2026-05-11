@@ -54,8 +54,10 @@ function LaporanContent() {
   const hasSolar = station.variables.toLowerCase().includes('iradiasi')
     || station.variables.toLowerCase().includes('surya')
     || station.variables.toLowerCase().includes('ghi');
-  const windBaselineVal = station.windBaseline ?? station.windSpeed * 1.046;
-  const ghiBaselineVal = station.ghiBaseline ?? station.irradiation * 0.958;
+  const windBaselineVal = station.windBaseline ?? (station.windSpeed ?? 0) * 1.046;
+  const ghiBaselineVal = station.ghiBaseline ?? (station.irradiation ?? 0) * 0.958;
+  const solarBiasVal = station.solarBias ?? station.bias;
+  const ktVal = (station.irradiation ?? 0) / 8.5;
 
   function makeMonthly(
     meas: typeof measurements,
@@ -154,6 +156,7 @@ function LaporanContent() {
 
       // Section helper
       const sectionTitle = (title: string) => {
+        if (y > 270) { pdf.addPage(); y = 18; }
         pdf.setFillColor(235, 240, 250);
         pdf.rect(10, y, W - 20, 7, 'F');
         pdf.setFontSize(9);
@@ -163,6 +166,7 @@ function LaporanContent() {
         y += 10;
       };
       const row = (label: string, value: string, highlight?: boolean) => {
+        if (y > 278) { pdf.addPage(); y = 18; }
         pdf.setFontSize(9);
         pdf.setFont('helvetica', 'normal');
         pdf.setTextColor(80, 80, 80);
@@ -183,37 +187,43 @@ function LaporanContent() {
 
       // Metrik Validasi Angin
       sectionTitle('Metrik Validasi Angin (ERA5 vs Observasi)');
-      row('Kecepatan Angin Rata-rata', `${station.windSpeed} m/s`);
-      row('RMSE', `${station.rmse.toFixed(2)} m/s`);
-      row('Bias', `${station.bias > 0 ? '+' : ''}${station.bias.toFixed(1)} %`);
-      row('R²', station.r2.toFixed(2));
+      row('Kecepatan Angin Rata-rata (Obs)', `${station.windSpeed ?? '–'} m/s`);
+      row('RMSE', (station.windRmse ?? station.rmse) != null ? `${(station.windRmse ?? station.rmse)!.toFixed(2)} m/s` : '–');
+      row('Bias MBE vs ERA5', (station.windBias ?? station.bias) != null ? `${(station.windBias ?? station.bias)! > 0 ? '+' : ''}${(station.windBias ?? station.bias)!.toFixed(1)} %` : '–');
+      row('R² (Korelasi Atlas)', (station.windR2 ?? station.r2) != null ? (station.windR2 ?? station.r2)!.toFixed(2) : '–');
+      row('AEP PLTB P50 (Bersih)', station.aep != null ? `${Math.round(station.aep * 0.877).toLocaleString('id')} MWh/thn` : '–');
+      row('AEP PLTB P90 (Bersih)', station.aep != null ? `${Math.round(station.aep * 0.767).toLocaleString('id')} MWh/thn` : '–');
       row('Skor GIS-MCDA', `${station.score} / 100`);
       y += 3;
 
       // Validasi Surya
-      sectionTitle('Validasi Surya — GHI (GSA vs Observasi)');
-      row('GHI Observasi', `${station.irradiation.toFixed(1)} kWh/m²/hari`);
+      sectionTitle('Validasi Surya — GHI (ERA5/GSA vs Observasi)');
+      row('GHI Observasi', `${(station.irradiation ?? 0).toFixed(1)} kWh/m²/hari`);
       row('GHI Baseline GSA (Solargis)', station.ghiBaselineGsa != null ? `${station.ghiBaselineGsa.toFixed(2)} kWh/m²/hari` : '—');
       row('GHI Baseline ERA5 (ECMWF)', station.ghiBaselineNasa != null ? `${station.ghiBaselineNasa.toFixed(2)} kWh/m²/hari` : '—');
-      row('GHI Best-Value', `${(station.ghiBaseline ?? station.irradiation * 0.958).toFixed(2)} kWh/m²/hari`);
-      row('Clearness Index (Kt)', (station.irradiation / 8.5).toFixed(2));
+      row('GHI Best-Value', `${(station.ghiBaseline ?? (station.irradiation ?? 0) * 0.958).toFixed(2)} kWh/m²/hari`);
+      row('RMSE', station.solarRmse != null ? `${station.solarRmse.toFixed(2)} kWh/m²/hari` : '–');
+      row('Bias MBE vs ERA5', solarBiasVal != null ? `${solarBiasVal > 0 ? '+' : ''}${solarBiasVal.toFixed(1)} %` : '–');
+      row('R² (Korelasi Atlas)', (station.solarR2 ?? station.r2) != null ? (station.solarR2 ?? station.r2)!.toFixed(2) : '–');
+      row('Clearness Index (Kt)', ktVal.toFixed(2));
       y += 3;
 
       // Perbandingan Sumber Angin
       sectionTitle('Perbandingan Sumber Baseline Angin');
-      row('Obs Lapangan', `${station.windSpeed} m/s`);
+      row('Obs Lapangan', station.windSpeed != null ? `${station.windSpeed} m/s` : '—');
       row('GWA 3.0 (GeoTIFF 250m)', station.windBaselineGwa != null ? `${station.windBaselineGwa} m/s` : '— (belum tersedia)');
       row('ERA5 (ECMWF)', station.windBaselineNasa != null ? `${station.windBaselineNasa} m/s` : '— (belum tersedia)');
-      row('Best-Value (dipakai MCP)', `${(station.windBaseline ?? station.windSpeed).toFixed(2)} m/s`);
+      row('Best-Value (dipakai MCP)', `${(station.windBaseline ?? station.windSpeed ?? 0).toFixed(2)} m/s`);
       y += 3;
 
       // Potensi Energi
       sectionTitle('Potensi Energi');
-      row('Kecepatan Angin Rata-rata (GWA)', `${station.windSpeed} m/s`);
-      row('Iradiasi Matahari GHI (GSA)', `${station.irradiation} kWh/m²/hari`);
-      row('AEP PLTB P50 (Bersih)', `${Math.round(station.aep * 0.877).toLocaleString('id')} MWh/thn`);
-      const ghiForLaporan = station.ghiBaseline ?? station.ghiBaselineNasa ?? station.irradiation;
-      row('Hasil Spesifik PLTS (PR=78%)', `${Math.round(ghiForLaporan * 365 * 0.78).toLocaleString('id')} kWh/kWp·thn`);
+      row('Kecepatan Angin Rata-rata (GWA/ERA5)', `${windBaselineVal.toFixed(2)} m/s`);
+      row('Iradiasi Matahari GHI (GSA/ERA5)', `${ghiBaselineVal.toFixed(2)} kWh/m²/hari`);
+      row('AEP PLTB P50 Net (\u00d70.877)', station.aep != null ? `${Math.round(station.aep * 0.877).toLocaleString('id')} MWh/thn` : '–');
+      row('AEP PLTB P90 Net (\u00d70.767)', station.aep != null ? `${Math.round(station.aep * 0.767).toLocaleString('id')} MWh/thn` : '–');
+      row('AEP PLTS 10 MWp (PR=78%)', station.solarAep != null ? `${Math.round(station.solarAep).toLocaleString('id')} MWh/thn` : `${Math.round(ghiBaselineVal * 365 * 10 * 0.78).toLocaleString('id')} MWh/thn`);
+      row('Hasil Spesifik PLTS /MWp (kWh/kWp·thn)', `${Math.round(ghiBaselineVal * 365 * 0.78).toLocaleString('id')} kWh/kWp·thn`);
       y += 3;
 
       // GIS-MCDA
@@ -415,8 +425,8 @@ function LaporanContent() {
       const hasSolar = station.variables.toLowerCase().includes('iradiasi')
         || station.variables.toLowerCase().includes('surya')
         || station.variables.toLowerCase().includes('ghi');
-      const windBaseline = station.windBaseline ?? station.windSpeed * 1.046;
-      const solarBaseline = station.ghiBaseline ?? station.irradiation * 0.958;
+      const windBaseline = station.windBaseline ?? (station.windSpeed ?? 0) * 1.046;
+      const solarBaseline = station.ghiBaseline ?? (station.irradiation ?? 0) * 0.958;
 
       if (!hasWind && !hasSolar) {
         pdf.setFontSize(9); pdf.setFont('helvetica', 'italic'); pdf.setTextColor(150, 150, 150);
@@ -427,7 +437,7 @@ function LaporanContent() {
           const wSca = buildScatter(measurements, (m) => parseFloat((m.wind_speed ?? 0).toString()), windBaseline);
           addChartSection(
             'Kecepatan Angin — Baseline Atlas vs Observasi',
-            `GWA/ERA5 Baseline: ${windBaseline.toFixed(2)} m/s  ·  RMSE: ${station.rmse.toFixed(2)} m/s  ·  Bias: ${station.bias > 0 ? '+' : ''}${station.bias.toFixed(1)}%  ·  R²: ${station.r2.toFixed(2)}`,
+            `GWA/ERA5 Baseline: ${windBaseline.toFixed(2)} m/s  ·  RMSE: ${(station.windRmse ?? station.rmse) != null ? (station.windRmse ?? station.rmse)!.toFixed(2) : '–'} m/s  ·  Bias: ${(station.windBias ?? station.bias) != null ? `${(station.windBias ?? station.bias)! > 0 ? '+' : ''}${(station.windBias ?? station.bias)!.toFixed(1)}` : '–'}%  ·  R²: ${(station.windR2 ?? station.r2) != null ? (station.windR2 ?? station.r2)!.toFixed(2) : '–'}`,
             drawLineChart(wMon, '#137fec', 'Terukur (Obs)', 'm/s'),
             drawScatterChart(wSca, '#137fec', 'm/s', windBaseline),
           );
@@ -437,7 +447,7 @@ function LaporanContent() {
           const sSca = buildScatter(measurements, (m) => parseFloat(((m.ghi ?? 0) * 24 / 1000).toFixed(2)), solarBaseline);
           addChartSection(
             'Iradiasi Matahari (GHI) — Baseline Atlas vs Observasi',
-            `GSA/NASA Baseline: ${solarBaseline.toFixed(2)} kWh/m²/hari  ·  Clearness Index Kt: ${(station.irradiation / 8.5).toFixed(2)}`,
+            `GSA/ERA5 Baseline: ${solarBaseline.toFixed(2)} kWh/m²/hari  ·  RMSE: ${station.solarRmse != null ? station.solarRmse.toFixed(2) : '–'} kWh/m²/hari  ·  Kt: ${ktVal.toFixed(2)}`,
             drawLineChart(sMon, '#f59e0b', 'GHI Terukur (Obs)', 'kWh/m²/hari'),
             drawScatterChart(sSca, '#f59e0b', 'kWh/m²/hari', solarBaseline),
           );
@@ -453,59 +463,154 @@ function LaporanContent() {
     }
   }
 
-  function handleExportCSV() {
+  async function handleExportCSV() {
     setExporting('csv');
-    const rows = [
-      ['Field', 'Value'],
-      ['Station ID', station.id],
-      ['Nama', station.name],
-      ['Wilayah', station.region],
-      ['Latitude', station.lat],
-      ['Longitude', station.lon],
-      ['Ketinggian (m)', station.altitude],
-      ['Status', station.status],
-      ['Periode', station.period],
-      ['Variabel', station.variables],
-      [],
-      ['--- Metrik Validasi Angin ---', ''],
-      ['Kecepatan Angin Rata-rata (m/s)', station.windSpeed],
-      ['RMSE (m/s)', station.rmse],
-      ['Bias (%)', station.bias],
-      ['R²', station.r2],
-      ['Skor GIS-MCDA (/100)', station.score],
-      [],
-      ['--- Validasi Surya ---', ''],
-      ['GHI Observasi (kWh/m²/hari)', station.irradiation],
-      ['GHI Baseline GSA/Solargis (kWh/m²/hari)', station.ghiBaselineGsa?.toFixed(2) ?? '—'],
-      ['GHI Baseline ERA5 ECMWF (kWh/m²/hari)', station.ghiBaselineNasa?.toFixed(2) ?? '—'],
-      ['GHI Best-Value (kWh/m²/hari)', (station.ghiBaseline ?? station.irradiation * 0.958).toFixed(2)],
-      ['Clearness Index (Kt)', (station.irradiation / 8.5).toFixed(2)],
-      [],
-      ['--- Baseline Angin ---', ''],
-      ['Angin Obs Lapangan (m/s)', station.windSpeed],
-      ['Angin Baseline GWA 3.0 (m/s)', station.windBaselineGwa?.toString() ?? '—'],
-      ['Angin Baseline ERA5 ECMWF (m/s)', station.windBaselineNasa?.toString() ?? '—'],
-      ['Angin Best-Value (m/s)', (station.windBaseline ?? station.windSpeed).toFixed(2)],
-      [],
-      ['--- Potensi Energi ---', ''],
-      ['AEP PLTB P50 (MWh/thn)', station.aep],
-      ['Hasil Spesifik PLTS (kWh/kWp·thn)', Math.round(station.irradiation * 365 * 0.75)],
-      [],
-      ['--- Faktor GIS-MCDA ---', ''],
-      ...mcdaFactors.map((f) => [f.label, `${f.pct}%`]),
-      [],
-      ['Diekspor pada', new Date().toLocaleString('id-ID')],
-      ['Sumber', 'RE-Valid DSS — ERA5/GWA/GSA'],
-    ];
-    const csv = rows.map((r) => r.map((v) => `"${String(v ?? '').replace(/"/g, '""')}"`).join(',')).join('\n');
-    const blob = new Blob(['\uFEFF' + csv], { type: 'text/csv;charset=utf-8;' });
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement('a');
-    a.href = url;
-    a.download = `RE-Valid_Data_${station.id}_${new Date().toISOString().slice(0, 10)}.csv`;
-    a.click();
-    URL.revokeObjectURL(url);
-    setExporting(null);
+    try {
+      const { Workbook } = await import('exceljs');
+      const wb = new Workbook();
+      wb.creator = 'RE-Valid DSS';
+      const ws = wb.addWorksheet('Laporan Stasiun');
+      ws.columns = [
+        { key: 'field', width: 44 },
+        { key: 'value', width: 28 },
+      ];
+
+      const C_BLUE  = 'FF137FEC';
+      const C_NAVY  = 'FF0F2D57';
+      const C_WHITE = 'FFFFFFFF';
+      const C_ALT   = 'FFF0F5FF';
+      const C_HDR   = 'FFE8EFF9';
+      const C_GRAY  = 'FF6B7280';
+      const C_TEXT  = 'FF111827';
+
+      const merge2 = (rn: number) => ws.mergeCells(`A${rn}:B${rn}`);
+
+      const addTitle = (text: string) => {
+        const xr = ws.addRow([text]);
+        merge2(xr.number);
+        const c = xr.getCell(1);
+        c.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: C_BLUE } };
+        c.font = { bold: true, size: 14, color: { argb: C_WHITE }, name: 'Calibri' };
+        c.alignment = { horizontal: 'left', vertical: 'middle', indent: 1 };
+        xr.height = 24;
+      };
+
+      const addMeta = (text: string) => {
+        const xr = ws.addRow([text]);
+        merge2(xr.number);
+        const c = xr.getCell(1);
+        c.font = { italic: true, size: 9, color: { argb: C_GRAY }, name: 'Calibri' };
+        c.alignment = { horizontal: 'left', vertical: 'middle', indent: 1 };
+        xr.height = 14;
+      };
+
+      const addSection = (text: string) => {
+        ws.addRow([]);
+        const xr = ws.addRow([text]);
+        merge2(xr.number);
+        const c = xr.getCell(1);
+        c.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: C_NAVY } };
+        c.font = { bold: true, size: 9, color: { argb: C_WHITE }, name: 'Calibri' };
+        c.alignment = { horizontal: 'left', vertical: 'middle', indent: 1 };
+        xr.height = 16;
+      };
+
+      const addRow2 = (label: string, value: string | number | null | undefined, idx: number) => {
+        const xr = ws.addRow([label, value ?? '\u2014']);
+        const isAlt = idx % 2 === 1;
+        const c1 = xr.getCell(1);
+        const c2 = xr.getCell(2);
+        c1.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: isAlt ? C_ALT : C_HDR } };
+        c1.font = { bold: true, size: 9, color: { argb: C_TEXT }, name: 'Calibri' };
+        c1.alignment = { horizontal: 'left', vertical: 'middle', indent: 1 };
+        c1.border = { bottom: { style: 'hair', color: { argb: 'FFE5E7EB' } } };
+        c2.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: isAlt ? C_ALT : C_WHITE } };
+        c2.font = { size: 9, color: { argb: C_TEXT }, name: 'Calibri' };
+        c2.alignment = { horizontal: 'left', vertical: 'middle', indent: 1 };
+        c2.border = { bottom: { style: 'hair', color: { argb: 'FFE5E7EB' } } };
+        xr.height = 14;
+      };
+
+      addTitle(`RE-Valid \u2014 Laporan Stasiun: ${station.name}`);
+      addMeta(`${station.id}  |  ${station.region}  |  Periode: ${station.period}`);
+      addMeta(`Diekspor: ${new Date().toLocaleString('id-ID')}  |  Sumber: ERA5 (ECMWF) / GWA 3.0 / GSA (Solargis)`);
+
+      addSection('IDENTITAS STASIUN');
+      [
+        ['Station ID', station.id],
+        ['Nama', station.name],
+        ['Wilayah', station.region],
+        ['Latitude', station.lat.toFixed(4)],
+        ['Longitude', station.lon.toFixed(4)],
+        ['Ketinggian (m dpl)', String(station.altitude)],
+        ['Status', station.status],
+        ['Periode', station.period],
+        ['Variabel', station.variables],
+      ].forEach((pair, i) => addRow2(pair[0], pair[1], i));
+
+      addSection('METRIK VALIDASI ANGIN (ERA5 vs Observasi)');
+      const wBias = station.windBias ?? station.bias;
+      const wR2 = station.windR2 ?? station.r2;
+      [
+        ['Kecepatan Angin Rata-rata (Obs)', station.windSpeed != null ? `${station.windSpeed} m/s` : '\u2013'],
+        ['RMSE Angin (m/s)', (station.windRmse ?? station.rmse) != null ? `${(station.windRmse ?? station.rmse)!.toFixed(2)} m/s` : '\u2013'],
+        ['Bias MBE vs ERA5 (%)', wBias != null ? `${wBias > 0 ? '+' : ''}${wBias.toFixed(1)} %` : '\u2013'],
+        ['R\u00b2 Korelasi Atlas', wR2 != null ? wR2.toFixed(2) : '\u2013'],
+        ['AEP PLTB P50 Net (MWh/thn)', station.aep != null ? Math.round(station.aep * 0.877).toLocaleString('id') : '\u2013'],
+        ['AEP PLTB P90 Net (MWh/thn)', station.aep != null ? Math.round(station.aep * 0.767).toLocaleString('id') : '\u2013'],
+        ['Skor GIS-MCDA (/100)', `${station.score} / 100`],
+      ].forEach((pair, i) => addRow2(pair[0], pair[1], i));
+
+      addSection('VALIDASI SURYA \u2014 GHI (ERA5/GSA vs Observasi)');
+      const sR2 = station.solarR2 ?? station.r2;
+      [
+        ['GHI Observasi (kWh/m\u00b2/hari)', station.irradiation != null ? `${station.irradiation.toFixed(1)} kWh/m\u00b2/hari` : '\u2013'],
+        ['GHI Baseline GSA/Solargis', station.ghiBaselineGsa != null ? `${station.ghiBaselineGsa.toFixed(2)} kWh/m\u00b2/hari` : '\u2014'],
+        ['GHI Baseline ERA5 ECMWF', station.ghiBaselineNasa != null ? `${station.ghiBaselineNasa.toFixed(2)} kWh/m\u00b2/hari` : '\u2014'],
+        ['GHI Best-Value (dipakai)', `${ghiBaselineVal.toFixed(2)} kWh/m\u00b2/hari`],
+        ['RMSE Surya (kWh/m\u00b2/hari)', station.solarRmse != null ? `${station.solarRmse.toFixed(2)} kWh/m\u00b2/hari` : '\u2013'],
+        ['Bias MBE Surya vs ERA5 (%)', solarBiasVal != null ? `${solarBiasVal > 0 ? '+' : ''}${solarBiasVal.toFixed(1)} %` : '\u2013'],
+        ['R\u00b2 Korelasi Atlas', sR2 != null ? sR2.toFixed(2) : '\u2013'],
+        ['Clearness Index (Kt)', ktVal.toFixed(2)],
+      ].forEach((pair, i) => addRow2(pair[0], pair[1], i));
+
+      addSection('PERBANDINGAN BASELINE ANGIN');
+      [
+        ['Observasi Lapangan', station.windSpeed != null ? `${station.windSpeed} m/s` : '\u2014'],
+        ['GWA 3.0 (GeoTIFF 250m)', station.windBaselineGwa != null ? `${station.windBaselineGwa} m/s` : '\u2014'],
+        ['ERA5 ECMWF', station.windBaselineNasa != null ? `${station.windBaselineNasa} m/s` : '\u2014'],
+        ['Best-Value (dipakai MCP)', `${windBaselineVal.toFixed(2)} m/s`],
+      ].forEach((pair, i) => addRow2(pair[0], pair[1], i));
+
+      addSection('POTENSI ENERGI');
+      [
+        ['Kecepatan Angin Rata-rata (GWA/ERA5)', `${windBaselineVal.toFixed(2)} m/s`],
+        ['Iradiasi GHI Rata-rata (GSA/ERA5)', `${ghiBaselineVal.toFixed(2)} kWh/m\u00b2/hari`],
+        ['AEP PLTB P50 Net (MWh/thn)', station.aep != null ? Math.round(station.aep * 0.877).toLocaleString('id') : '\u2013'],
+        ['AEP PLTB P90 Net (MWh/thn)', station.aep != null ? Math.round(station.aep * 0.767).toLocaleString('id') : '\u2013'],
+        ['AEP PLTS 10 MWp PR=78% (MWh/thn)', (station.solarAep != null ? Math.round(station.solarAep) : Math.round(ghiBaselineVal * 365 * 10 * 0.78)).toLocaleString('id')],
+        ['Hasil Spesifik PLTS /MWp PR=78%', `${Math.round(ghiBaselineVal * 365 * 0.78).toLocaleString('id')} kWh/kWp\u00b7thn`],
+      ].forEach((pair, i) => addRow2(pair[0], pair[1], i));
+
+      addSection('FAKTOR KESESUAIAN GIS-MCDA');
+      mcdaFactors.forEach(({ label, pct }, i) => addRow2(label, `${pct}%`, i));
+
+      ws.addRow([]);
+      const fxr = ws.addRow(['Sumber: RE-Valid DSS \u2014 ERA5 (ECMWF) / GWA 3.0 / GSA (Solargis). Simulasi screening awal, bukan studi kelayakan.']);
+      merge2(fxr.number);
+      fxr.getCell(1).font = { italic: true, size: 8, color: { argb: C_GRAY }, name: 'Calibri' };
+
+      const buf = await wb.xlsx.writeBuffer();
+      const blob = new Blob([buf], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = `RE-Valid_Laporan_${station.id}_${new Date().toISOString().slice(0, 10)}.xlsx`;
+      a.click();
+      URL.revokeObjectURL(url);
+    } finally {
+      setExporting(null);
+    }
   }
 
   function handleExportGeoJSON() {
@@ -527,14 +632,19 @@ function LaporanContent() {
             wind_baseline_gwa_ms: station.windBaselineGwa ?? null,
             wind_baseline_nasa_ms: station.windBaselineNasa ?? null,
             wind_baseline_best_ms: station.windBaseline ?? null,
+            wind_rmse: station.windRmse ?? station.rmse,
+            wind_bias_pct: station.windBias ?? station.bias,
+            wind_r2: station.windR2 ?? station.r2,
             ghi_kwh_m2_day: station.irradiation,
             ghi_baseline_gsa_kwh: station.ghiBaselineGsa ?? null,
             ghi_baseline_nasa_kwh: station.ghiBaselineNasa ?? null,
             ghi_baseline_best_kwh: station.ghiBaseline ?? null,
-            aep_mwh_yr: station.aep,
-            rmse: station.rmse,
-            bias_pct: station.bias,
-            r2: station.r2,
+            solar_rmse: station.solarRmse ?? null,
+            solar_bias_pct: station.solarBias ?? null,
+            solar_r2: station.solarR2 ?? null,
+            aep_pltb_p50_net_mwh_yr: station.aep != null ? Math.round(station.aep * 0.877) : null,
+            aep_pltb_p90_net_mwh_yr: station.aep != null ? Math.round(station.aep * 0.767) : null,
+            solar_aep_mwh_yr: station.solarAep ?? null,
             period: station.period,
             exported_at: new Date().toISOString(),
             source: 'RE-Valid DSS',
@@ -666,25 +776,20 @@ function LaporanContent() {
           <div className="grid grid-cols-1 lg:grid-cols-2 gap-5">
             <div className="bg-white dark:bg-card-dark border border-gray-200 dark:border-border-dark rounded-xl p-5 shadow-sm">
               <div className="flex items-center gap-2 mb-4">
-                <span className="material-symbols-outlined text-violet-400 text-[20px]">query_stats</span>
-                <h4 className="text-sm font-bold text-slate-900 dark:text-white">Metrik Validasi</h4>
-                <span className="ml-auto text-[11px] text-slate-400">Angin — ERA5 vs Observasi Lapangan</span>
+                <span className="material-symbols-outlined text-primary text-[20px]">air</span>
+                <h4 className="text-sm font-bold text-slate-900 dark:text-white">Validasi Angin</h4>
+                <span className="ml-auto text-[11px] text-slate-400">ERA5 vs Observasi Lapangan</span>
               </div>
               <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
                 {[
-                  { label: 'RMSE', value: station.rmse.toFixed(2), unit: 'm/s', color: 'text-blue-400' },
+                  { label: 'Kec. Angin (Obs)', value: station.windSpeed != null ? station.windSpeed.toFixed(2) : '–', unit: station.windSpeed != null ? 'm/s' : '', color: 'text-blue-400' },
+                  { label: 'RMSE', value: (station.windRmse ?? station.rmse) != null ? (station.windRmse ?? station.rmse)!.toFixed(2) : '–', unit: (station.windRmse ?? station.rmse) != null ? 'm/s' : '', color: 'text-slate-200' },
+                  { label: 'Korelasi Atlas (R²)', value: (station.windR2 ?? station.r2) != null ? (station.windR2 ?? station.r2)!.toFixed(2) : '–', unit: '', color: (station.windR2 ?? station.r2) != null && (station.windR2 ?? station.r2)! >= 0.85 ? 'text-green-400' : (station.windR2 ?? station.r2) != null && (station.windR2 ?? station.r2)! >= 0.70 ? 'text-amber-400' : 'text-red-400' },
                   {
-                    label: 'Bias',
-                    value: `${station.bias > 0 ? '+' : ''}${station.bias.toFixed(1)}`,
-                    unit: '%',
-                    color: station.bias > 0 ? 'text-amber-400' : 'text-green-400',
-                  },
-                  { label: 'R²', value: station.r2.toFixed(2), unit: '', color: 'text-primary' },
-                  {
-                    label: 'Skor',
-                    value: `${station.score}`,
-                    unit: '/100',
-                    color: station.score >= 80 ? 'text-green-400' : 'text-amber-400',
+                    label: 'Bias MBE (ERA5)',
+                    value: (station.windBias ?? station.bias) != null ? `${(station.windBias ?? station.bias)! > 0 ? '+' : ''}${(station.windBias ?? station.bias)!.toFixed(1)}` : '–',
+                    unit: (station.windBias ?? station.bias) != null ? '%' : '',
+                    color: (station.windBias ?? station.bias) != null && Math.abs((station.windBias ?? station.bias)!) <= 5 ? 'text-green-400' : 'text-amber-400',
                   },
                 ].map((m) => (
                   <div
@@ -706,53 +811,45 @@ function LaporanContent() {
               <div className="flex items-center gap-2 mb-4">
                 <span className="material-symbols-outlined text-amber-400 text-[20px]">wb_sunny</span>
                 <h4 className="text-sm font-bold text-slate-900 dark:text-white">Validasi Surya (GHI)</h4>
-                <span className="ml-auto text-[11px] text-slate-400">GSA vs Observasi Lapangan</span>
+                <span className="ml-auto text-[11px] text-slate-400">ERA5 vs Observasi Lapangan</span>
               </div>
               <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
-                <div className="bg-slate-50 dark:bg-[#111a22] rounded-xl p-4 border border-slate-100 dark:border-[#233648] text-center">
-                  <p className="text-[10px] text-slate-400 uppercase tracking-wide mb-1">GHI Observasi</p>
-                  <p className="text-2xl font-bold text-amber-400">
-                    {station.irradiation.toFixed(1)}
-                    <span className="text-[12px] font-medium text-slate-400 ml-0.5">kWh/m²/hari</span>
-                  </p>
-                </div>
-                <div className="bg-slate-50 dark:bg-[#111a22] rounded-xl p-4 border border-slate-100 dark:border-[#233648] text-center">
-                  <p className="text-[10px] text-slate-400 uppercase tracking-wide mb-1">GHI Baseline (GSA)</p>
-                  <p className="text-2xl font-bold text-slate-400 dark:text-slate-300">
-                    {(station.ghiBaseline ?? station.irradiation * 0.958).toFixed(1)}
-                    <span className="text-[12px] font-medium text-slate-400 ml-0.5">kWh/m²/hari</span>
-                  </p>
-                  <p className="text-[10px] text-slate-400 mt-0.5">{station.ghiBaselineGsa != null ? 'GSA Solargis' : station.ghiBaselineNasa != null ? 'ERA5 (ECMWF)' : 'Estimasi'}</p>
-                </div>
-                <div className="bg-slate-50 dark:bg-[#111a22] rounded-xl p-4 border border-slate-100 dark:border-[#233648] text-center">
-                  <p className="text-[10px] text-slate-400 uppercase tracking-wide mb-1">Clearness Index (Kt)</p>
-                  <p className={`text-2xl font-bold ${
-                    station.irradiation / 8.5 >= 0.40 && station.irradiation / 8.5 <= 0.65
-                      ? 'text-green-400'
-                      : 'text-red-400'
-                  }`}>
-                    {(station.irradiation / 8.5).toFixed(2)}
-                  </p>
-                  <p className="text-[10px] text-slate-400 mt-0.5">Rentang: 0.40–0.65</p>
-                </div>
-                <div className="bg-slate-50 dark:bg-[#111a22] rounded-xl p-4 border border-slate-100 dark:border-[#233648] text-center">
-                  <p className="text-[10px] text-slate-400 uppercase tracking-wide mb-1">Bias vs GSA</p>
-                  <p className={`text-2xl font-bold ${
-                    Math.abs(station.bias) <= 5 ? 'text-green-400' : 'text-amber-400'
-                  }`}>
-                    {station.bias > 0 ? '+' : ''}{station.bias.toFixed(1)}
-                    <span className="text-[13px] font-medium text-slate-400 ml-0.5">%</span>
-                  </p>
-                </div>
+                {[
+                  { label: 'GHI Observasi', value: (station.irradiation ?? 0).toFixed(1), unit: 'kWh/m²/hari', color: 'text-amber-400' },
+                  { label: 'RMSE', value: (station.solarRmse) != null ? station.solarRmse!.toFixed(2) : '–', unit: station.solarRmse != null ? 'kWh/m²' : '', color: 'text-slate-200' },
+                  { label: 'Korelasi Atlas (R²)', value: (station.solarR2 ?? station.r2) != null ? (station.solarR2 ?? station.r2)!.toFixed(2) : '–', unit: '', color: (station.solarR2 ?? station.r2) != null && (station.solarR2 ?? station.r2)! >= 0.85 ? 'text-green-400' : (station.solarR2 ?? station.r2) != null && (station.solarR2 ?? station.r2)! >= 0.70 ? 'text-amber-400' : 'text-red-400' },
+                  {
+                    label: 'Bias MBE (ERA5)',
+                    value: solarBiasVal != null ? `${solarBiasVal > 0 ? '+' : ''}${solarBiasVal.toFixed(1)}` : '–',
+                    unit: solarBiasVal != null ? '%' : '',
+                    color: solarBiasVal != null && Math.abs(solarBiasVal) <= 10 ? 'text-amber-400' : 'text-red-400',
+                  },
+                ].map((m) => (
+                  <div
+                    key={m.label}
+                    className="bg-slate-50 dark:bg-[#111a22] rounded-xl p-4 border border-slate-100 dark:border-[#233648] text-center"
+                  >
+                    <p className="text-[10px] text-slate-400 uppercase tracking-wide mb-1">{m.label}</p>
+                    <p className={`text-2xl font-bold ${m.color}`}>
+                      {m.value}
+                      <span className="text-[13px] font-medium text-slate-400 ml-0.5">{m.unit}</span>
+                    </p>
+                  </div>
+                ))}
               </div>
-              <div className="mt-3 flex flex-wrap gap-2">
-                <span className="text-[10px] font-mono px-2 py-0.5 rounded border bg-amber-500/10 border-amber-500/30 text-amber-400">SOLARGIS / GSA</span>
-                <span className={`text-[10px] font-mono px-2 py-0.5 rounded border ${
-                  station.irradiation / 8.5 >= 0.40 && station.irradiation / 8.5 <= 0.65
+              <div className="mt-3 flex flex-wrap gap-2 text-[10px] text-slate-500">
+                <span className="font-mono px-2 py-0.5 rounded border bg-amber-500/10 border-amber-500/30 text-amber-400">
+                  GHI Obs: {(station.irradiation ?? 0).toFixed(2)} kWh/m²/hari
+                </span>
+                <span className="font-mono px-2 py-0.5 rounded border bg-slate-500/10 border-slate-500/30 text-slate-400">
+                  Baseline ({station.ghiBaselineGsa != null ? 'GSA' : station.ghiBaselineNasa != null ? 'ERA5' : 'Est.'}): {ghiBaselineVal.toFixed(2)} kWh/m²/hari
+                </span>
+                <span className={`font-mono px-2 py-0.5 rounded border ${
+                  ktVal >= 0.40 && ktVal <= 0.65
                     ? 'bg-green-500/10 border-green-500/30 text-green-400'
                     : 'bg-red-500/10 border-red-500/30 text-red-400'
                 }`}>
-                  {'Kt = '}{(station.irradiation / 8.5).toFixed(2)}{station.irradiation / 8.5 >= 0.40 && station.irradiation / 8.5 <= 0.65 ? ' ✓ Valid' : ' ⚠ Di luar rentang'}
+                  Kt = {ktVal.toFixed(2)}{ktVal >= 0.40 && ktVal <= 0.65 ? ' ✓ Valid' : ' ⚠ Di luar rentang'}
                 </span>
               </div>
             </div>
@@ -893,7 +990,7 @@ function LaporanContent() {
                   </p>
                   <div className="flex flex-col gap-2">
                     {[
-                      { label: 'Observasi Lapangan', value: `${station.windSpeed} m/s`, color: 'text-slate-900 dark:text-white', badge: null },
+                      { label: 'Observasi Lapangan', value: station.windSpeed != null ? `${station.windSpeed} m/s` : '—', color: 'text-slate-900 dark:text-white', badge: null },
                       { label: 'GWA 3.0', value: station.windBaselineGwa != null ? `${station.windBaselineGwa} m/s` : '—', color: 'text-primary font-bold', badge: station.windBaselineGwa != null ? 'Aktif' : null },
                       { label: 'ERA5 (ECMWF)', value: station.windBaselineNasa != null ? `${station.windBaselineNasa} m/s` : '—', color: 'text-slate-600 dark:text-slate-400', badge: station.windBaselineGwa == null && station.windBaselineNasa != null ? 'Fallback' : null },
                     ].map((r) => (
@@ -914,7 +1011,7 @@ function LaporanContent() {
                   </p>
                   <div className="flex flex-col gap-2">
                     {[
-                      { label: 'Observasi Lapangan', value: `${station.irradiation.toFixed(2)} kWh/m²/hari`, color: 'text-slate-900 dark:text-white', badge: null },
+                      { label: 'Observasi Lapangan', value: station.irradiation != null ? `${station.irradiation.toFixed(2)} kWh/m²/hari` : '—', color: 'text-slate-900 dark:text-white', badge: null },
                       { label: 'GSA Solargis', value: station.ghiBaselineGsa != null ? `${station.ghiBaselineGsa} kWh/m²/hari` : '—', color: 'text-amber-500 font-bold', badge: station.ghiBaselineGsa != null ? 'Aktif' : null },
                       { label: 'ERA5 (ECMWF)', value: station.ghiBaselineNasa != null ? `${station.ghiBaselineNasa} kWh/m²/hari` : '—', color: 'text-slate-600 dark:text-slate-400', badge: station.ghiBaselineGsa == null && station.ghiBaselineNasa != null ? 'Fallback' : null },
                     ].map((r) => (
@@ -944,50 +1041,57 @@ function LaporanContent() {
                   <span className="material-symbols-outlined text-blue-400 text-[24px] mb-1 block">air</span>
                   <p className="text-[10px] text-slate-400 uppercase tracking-wide">Kec. Angin Rata-rata</p>
                   <p className="text-2xl font-bold text-blue-400">
-                    {station.windSpeed}
+                    {windBaselineVal.toFixed(2)}
                     <span className="text-sm font-medium text-slate-400 ml-1">m/s</span>
                   </p>
-                  <p className="text-[10px] text-slate-400 mt-1.5">Sumber: GWA 3.0</p>
+                  <p className="text-[10px] text-slate-400 mt-1.5">
+                    Sumber: {station.windBaselineGwa != null ? 'GWA 3.0' : station.windBaselineNasa != null ? 'ERA5 (ECMWF)' : 'Terukur'}
+                  </p>
                 </div>
                 <div className="bg-yellow-50 dark:bg-yellow-900/10 border border-yellow-100 dark:border-yellow-800/30 rounded-xl p-4 text-center">
                   <span className="material-symbols-outlined text-yellow-400 text-[24px] mb-1 block">wb_sunny</span>
                   <p className="text-[10px] text-slate-400 uppercase tracking-wide">Iradiasi Matahari (GHI)</p>
                   <p className="text-2xl font-bold text-yellow-400">
-                    {station.irradiation}
+                    {ghiBaselineVal.toFixed(2)}
                     <span className="text-sm font-medium text-slate-400 ml-1">kWh/m²/hari</span>
                   </p>
-                  <p className="text-[10px] text-slate-400 mt-1.5">Sumber: GSA / SOLARGIS</p>
+                  <p className="text-[10px] text-slate-400 mt-1.5">
+                    Sumber: {station.ghiBaselineGsa != null ? 'GSA Solargis' : station.ghiBaselineNasa != null ? 'ERA5 (ECMWF)' : 'Terukur'}
+                  </p>
                 </div>
                 <div className="bg-green-50 dark:bg-green-900/10 border border-green-100 dark:border-green-800/30 rounded-xl p-4 text-center">
                   <span className="material-symbols-outlined text-green-400 text-[24px] mb-1 block">electric_bolt</span>
-                  <p className="text-[10px] text-slate-400 uppercase tracking-wide">AEP PLTB (P50)</p>
+                  <p className="text-[10px] text-slate-400 uppercase tracking-wide">AEP PLTB</p>
                   <p className="text-2xl font-bold text-green-400">
-                    {station.aep.toLocaleString('id')}
+                    {Math.round((station.aep ?? 0) * 0.877).toLocaleString('id')}
                     <span className="text-sm font-medium text-slate-400 ml-1">MWh/thn</span>
                   </p>
-                  <p className="text-[10px] text-slate-400 mt-1.5">Estimasi ERA5 / MCP</p>
+                  <p className="text-[10px] text-slate-400 mt-1.5">
+                    P50 Net · P90: {Math.round((station.aep ?? 0) * 0.767).toLocaleString('id')} MWh/thn
+                  </p>
                 </div>
                 <div className="bg-amber-50 dark:bg-amber-900/10 border border-amber-100 dark:border-amber-800/30 rounded-xl p-4 text-center">
                   <span className="material-symbols-outlined text-amber-400 text-[24px] mb-1 block">solar_power</span>
                   <p className="text-[10px] text-slate-400 uppercase tracking-wide">Hasil Spesifik PLTS</p>
                   <p className="text-2xl font-bold text-amber-400">
-                    {Math.round(station.irradiation * 365 * 0.75).toLocaleString('id')}
+                    {Math.round(ghiBaselineVal * 365 * 0.78).toLocaleString('id')}
                     <span className="text-sm font-medium text-slate-400 ml-1">kWh/kWp·thn</span>
                   </p>
-                  <p className="text-[10px] text-slate-400 mt-1.5">PR = 75% (asumsi)</p>
+                  <p className="text-[10px] text-slate-400 mt-1.5">PR = 78% (IEC tropik)</p>
                 </div>
               </div>
             </div>{/* end Potensi Energi card */}
 
             {/* GIS-MCDA */}
             <div className="bg-white dark:bg-card-dark border border-gray-200 dark:border-border-dark rounded-xl p-5 shadow-sm">
-              <div className="flex items-center gap-2 mb-4">
+              <div className="flex items-center gap-2 mb-3">
                 <span className="material-symbols-outlined text-emerald-400 text-[20px]">layers</span>
                 <h4 className="text-sm font-bold text-slate-900 dark:text-white">Faktor Kesesuaian GIS-MCDA</h4>
                 <span className="ml-auto font-bold text-sm text-slate-900 dark:text-white">
                   {station.score}/100
                 </span>
               </div>
+              <p className="text-[10px] text-slate-400 mb-3">Estimasi distribusi berbasis skor lokasi &amp; ketinggian. Analisis MCDA penuh tersedia di halaman Peta.</p>
               <div className="space-y-3">
                 {mcdaFactors.map((f) => (
                   <div key={f.label}>
@@ -1039,8 +1143,8 @@ function LaporanContent() {
                   icon: 'table_view',
                   iconColor: 'text-green-600',
                   bgColor: 'bg-green-50 dark:bg-green-900/20',
-                  title: 'Data Analisis (CSV)',
-                  desc: 'Dataset parameter validasi dan estimasi potensi energi. Format terstruktur untuk analisis lanjutan di spreadsheet atau Python.',
+                  title: 'Data Analisis (Excel)',
+                  desc: 'Dataset parameter validasi dan estimasi potensi energi. Format Excel (.xlsx) terstruktur dengan styling rapi untuk analisis lanjutan di spreadsheet.',
                   btnClass: 'bg-white dark:bg-transparent border border-gray-300 dark:border-gray-600 text-slate-700 dark:text-white hover:bg-gray-50 dark:hover:bg-gray-800',
                   hoverBorder: 'hover:border-green-500/50',
                   onClick: handleExportCSV,

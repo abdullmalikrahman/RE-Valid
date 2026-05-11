@@ -44,6 +44,7 @@ function AnalisisContent() {
     return d.toISOString().slice(0, 10);
   });
   const [endDate, setEndDate] = useState(() => new Date().toISOString().slice(0, 10));
+  const [exportingXlsx, setExportingXlsx] = useState(false);
 
   // Reset task feedback whenever the user switches station or energy type
   useEffect(() => {
@@ -127,7 +128,7 @@ function AnalisisContent() {
   // Per-source deviations
   const windDiffGwa = (station.windBaselineGwa != null && station.windBaselineGwa > 0)
     ? parseFloat((((station.windSpeed - station.windBaselineGwa) / station.windBaselineGwa) * 100).toFixed(1))
-    : null;
+    : null
   const windDiffNasa = (station.windBaselineNasa != null && station.windBaselineNasa > 0)
     ? parseFloat((((station.windSpeed - station.windBaselineNasa) / station.windBaselineNasa) * 100).toFixed(1))
     : null;
@@ -171,48 +172,158 @@ function AnalisisContent() {
 
   const isWind = energyType === 'wind';
 
-  // ─── CSV Export ────────────────────────────────────────────────────────────
-  function exportCsv() {
-    const rows: string[] = [];
-    // Header info
-    rows.push(`# Laporan Analisis RE-Valid`);
-    rows.push(`# Stasiun,${station.name} (${station.id})`);
-    rows.push(`# Wilayah,${station.region}`);
-    rows.push(`# Koordinat,"${station.lat}, ${station.lon}"`);
-    rows.push(`# Jenis Energi,${isWind ? 'Angin (PLTB)' : 'Surya (PLTS)'}`);
-    rows.push(`# Periode,${station.period}`);
-    rows.push(`# Diekspor,${new Date().toLocaleString('id-ID')}`);
-    rows.push('');
-    // Metrics
-    rows.push('# --- Metrik Validasi ---');
-    rows.push('Metrik,Nilai,Target,Status');
-    const metricRows = isWind ? windValidationRows : solarValidationRows;
-    metricRows.forEach((r) => {
-      const status = r.pass === null ? 'N/A' : r.pass ? 'Lulus' : 'Perlu Tinjau';
-      rows.push(`"${r.metric}","${r.value}","${r.target}","${status}"`);
-    });
-    rows.push('');
-    // Measurement data
-    if (measurements.length > 0) {
-      rows.push('# --- Data Pengukuran ---');
-      rows.push(isWind
-        ? 'measured_at,wind_speed_obs,baseline_atlas,deviasi'
-        : 'measured_at,ghi_obs_kwh_m2_day,baseline_atlas,deviasi');
-      measurements.forEach((m) => {
-        const obs = isWind
-          ? (m.wind_speed ?? 0)
-          : parseFloat(((m.ghi ?? 0) * 24 / 1000).toFixed(4));
-        const dev = parseFloat((obs - atlasBaseline).toFixed(4));
-        rows.push(`${m.measured_at},${obs},${atlasBaseline.toFixed(4)},${dev}`);
+  // ─── XLSX Export ───────────────────────────────────────────────────────────
+  async function exportXlsx() {
+    setExportingXlsx(true);
+    try {
+      const { Workbook } = await import('exceljs');
+      const wb = new Workbook();
+      wb.creator = 'RE-Valid DSS';
+      const ws = wb.addWorksheet('Laporan Analisis');
+      ws.columns = [
+        { key: 'a', width: 38 },
+        { key: 'b', width: 22 },
+        { key: 'c', width: 18 },
+        { key: 'd', width: 14 },
+      ];
+
+      const C_BLUE  = 'FF137FEC';
+      const C_NAVY  = 'FF0F2D57';
+      const C_WHITE = 'FFFFFFFF';
+      const C_ALT   = 'FFF0F5FF';
+      const C_HDR   = 'FFE8EFF9';
+      const C_GREEN = 'FF16A34A';
+      const C_RED   = 'FFB91C1C';
+      const C_GRAY  = 'FF6B7280';
+      const C_TEXT  = 'FF111827';
+
+      const addTitle = (text: string) => {
+        const xr = ws.addRow([text]);
+        ws.mergeCells(`A${xr.number}:D${xr.number}`);
+        const c = xr.getCell(1);
+        c.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: C_BLUE } };
+        c.font = { bold: true, size: 14, color: { argb: C_WHITE }, name: 'Calibri' };
+        c.alignment = { horizontal: 'left', vertical: 'middle', indent: 1 };
+        xr.height = 24;
+      };
+
+      const addMeta = (text: string) => {
+        const xr = ws.addRow([text]);
+        ws.mergeCells(`A${xr.number}:D${xr.number}`);
+        const c = xr.getCell(1);
+        c.font = { italic: true, size: 9, color: { argb: C_GRAY }, name: 'Calibri' };
+        c.alignment = { horizontal: 'left', vertical: 'middle', indent: 1 };
+        xr.height = 14;
+      };
+
+      const addSection = (text: string) => {
+        ws.addRow([]);
+        const xr = ws.addRow([text]);
+        ws.mergeCells(`A${xr.number}:D${xr.number}`);
+        const c = xr.getCell(1);
+        c.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: C_NAVY } };
+        c.font = { bold: true, size: 9, color: { argb: C_WHITE }, name: 'Calibri' };
+        c.alignment = { horizontal: 'left', vertical: 'middle', indent: 1 };
+        xr.height = 16;
+      };
+
+      const addColHeaders = (labels: string[]) => {
+        const xr = ws.addRow(labels);
+        xr.eachCell({ includeEmpty: true }, (c, i) => {
+          if (i > 4) return;
+          c.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: C_BLUE } };
+          c.font = { bold: true, size: 9, color: { argb: C_WHITE }, name: 'Calibri' };
+          c.alignment = { horizontal: 'center', vertical: 'middle' };
+        });
+        xr.height = 15;
+      };
+
+      const addInfoRow = (label: string, value: string, idx: number) => {
+        const xr = ws.addRow([label, value]);
+        const isAlt = idx % 2 === 1;
+        const c1 = xr.getCell(1);
+        const c2 = xr.getCell(2);
+        c1.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: isAlt ? C_ALT : C_HDR } };
+        c1.font = { bold: true, size: 9, color: { argb: C_TEXT }, name: 'Calibri' };
+        c1.alignment = { horizontal: 'left', vertical: 'middle', indent: 1 };
+        c2.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: isAlt ? C_ALT : 'FFFFFFFF' } };
+        c2.font = { size: 9, color: { argb: C_TEXT }, name: 'Calibri' };
+        c2.alignment = { horizontal: 'left', vertical: 'middle' };
+        xr.height = 14;
+      };
+
+      const addDataRow = (vals: (string | number | null | undefined)[], idx: number, statusColIdx?: number) => {
+        const xr = ws.addRow(vals);
+        const isAlt = idx % 2 === 1;
+        xr.eachCell({ includeEmpty: true }, (c, i) => {
+          if (i > 4) return;
+          c.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: isAlt ? C_ALT : 'FFFFFFFF' } };
+          c.font = { size: 9, color: { argb: C_TEXT }, name: 'Calibri' };
+          c.alignment = { horizontal: i === 1 ? 'left' : 'center', vertical: 'middle', indent: i === 1 ? 1 : 0 };
+          c.border = { bottom: { style: 'hair', color: { argb: 'FFE5E7EB' } } };
+        });
+        if (statusColIdx !== undefined) {
+          const sv = String(vals[statusColIdx] ?? '');
+          const sc = xr.getCell(statusColIdx + 1);
+          if (sv === 'Lulus') sc.font = { size: 9, bold: true, color: { argb: C_GREEN }, name: 'Calibri' };
+          else if (sv === 'Perlu Tinjau') sc.font = { size: 9, bold: true, color: { argb: C_RED }, name: 'Calibri' };
+        }
+        xr.height = 14;
+      };
+
+      addTitle('RE-Valid \u2014 Laporan Analisis EBT');
+      addMeta(`Stasiun: ${station.name} (${station.id})  |  ${station.region}  |  ${isWind ? 'Angin (PLTB)' : 'Surya (PLTS)'}`);
+      addMeta(`Diekspor: ${new Date().toLocaleString('id-ID')}  |  Sumber: ERA5 / GWA 3.0 / GSA (Solargis)`);
+
+      addSection('INFO STASIUN');
+      [
+        ['Station ID', station.id],
+        ['Nama', station.name],
+        ['Wilayah', station.region],
+        ['Koordinat', `${station.lat.toFixed(4)}, ${station.lon.toFixed(4)}`],
+        ['Periode', station.period],
+        ['Jenis Energi', isWind ? 'Angin (PLTB)' : 'Surya (PLTS)'],
+      ].forEach((pair, i) => addInfoRow(pair[0], pair[1], i));
+
+      addSection('METRIK VALIDASI');
+      addColHeaders(['Metrik', 'Nilai', 'Target', 'Status']);
+      const mRows = isWind ? windValidationRows : solarValidationRows;
+      mRows.forEach((r, i) => {
+        const status = r.pass === null ? 'N/A' : r.pass ? 'Lulus' : 'Perlu Tinjau';
+        addDataRow([r.metric, r.value, r.target, status], i, 3);
       });
+
+      if (measurements.length > 0) {
+        const obsLabel = isWind ? 'Kec. Angin Obs (m/s)' : 'GHI Obs (kWh/m\u00b2/hari)';
+        const baseLabel = isWind ? 'Baseline Atlas (m/s)' : 'Baseline Atlas (kWh/m\u00b2/hari)';
+        const devLabel = isWind ? 'Deviasi (m/s)' : 'Deviasi (kWh/m\u00b2/hari)';
+        addSection('DATA PENGUKURAN');
+        addColHeaders(['Tanggal/Waktu', obsLabel, baseLabel, devLabel]);
+        measurements.forEach((m, i) => {
+          const obs = isWind
+            ? (m.wind_speed ?? 0)
+            : parseFloat(((m.ghi ?? 0) * 24 / 1000).toFixed(4));
+          const dev = parseFloat((obs - atlasBaseline).toFixed(4));
+          addDataRow([m.measured_at, obs, parseFloat(atlasBaseline.toFixed(4)), dev], i);
+        });
+      }
+
+      ws.addRow([]);
+      const fxr = ws.addRow(['Sumber: RE-Valid DSS \u2014 ERA5 (ECMWF) / GWA 3.0 / GSA (Solargis). Simulasi screening awal.']);
+      ws.mergeCells(`A${fxr.number}:D${fxr.number}`);
+      fxr.getCell(1).font = { italic: true, size: 8, color: { argb: C_GRAY }, name: 'Calibri' };
+
+      const buf = await wb.xlsx.writeBuffer();
+      const blob = new Blob([buf], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = `analisis_${station.id}_${energyType}_${new Date().toISOString().slice(0, 10)}.xlsx`;
+      a.click();
+      URL.revokeObjectURL(url);
+    } finally {
+      setExportingXlsx(false);
     }
-    const blob = new Blob([rows.join('\n')], { type: 'text/csv;charset=utf-8;' });
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement('a');
-    a.href = url;
-    a.download = `analisis_${station.id}_${energyType}_${new Date().toISOString().slice(0, 10)}.csv`;
-    a.click();
-    URL.revokeObjectURL(url);
   }
 
   // ─── Measurements & chart data ────────────────────────────────────────────
@@ -316,12 +427,13 @@ function AnalisisContent() {
                   Lihat Laporan
                 </Link>
                 <button
-                  onClick={exportCsv}
-                  className="flex items-center gap-1.5 px-3 py-2 bg-transparent border border-gray-300 dark:border-gray-600 text-slate-700 dark:text-white rounded-lg hover:bg-gray-50 dark:hover:bg-white/5 transition-all text-xs font-medium"
-                  title="Download hasil analisis sebagai CSV"
+                  onClick={exportXlsx}
+                  disabled={exportingXlsx}
+                  className="flex items-center gap-1.5 px-3 py-2 bg-transparent border border-gray-300 dark:border-gray-600 text-slate-700 dark:text-white rounded-lg hover:bg-gray-50 dark:hover:bg-white/5 transition-all text-xs font-medium disabled:opacity-60 disabled:cursor-wait"
+                  title="Download hasil analisis sebagai Excel (XLSX)"
                 >
-                  <span className="material-symbols-outlined text-[16px]">download</span>
-                  Ekspor CSV
+                  <span className={`material-symbols-outlined text-[16px] ${exportingXlsx ? 'animate-spin' : ''}`}>{exportingXlsx ? 'refresh' : 'download'}</span>
+                  {exportingXlsx ? 'Memproses...' : 'Ekspor XLSX'}
                 </button>
                 <button
                   onClick={runAnalysis}

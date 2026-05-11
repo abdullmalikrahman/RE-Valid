@@ -215,30 +215,33 @@ export default function KalkulatorPage() {
       paramLines.forEach((line) => { pdf.text(line, 10, y); y += 5; });
       y += 3;
 
-      // KPI section
+      // KPI section (6 columns: AEP, LCOE, NPV, Payback, IRR, ROI)
       pdf.setDrawColor(200, 200, 200);
       pdf.setFillColor(245, 247, 250);
       pdf.rect(10, y, W - 20, 28, 'FD');
-      pdf.setFontSize(8);
-      pdf.setFont('helvetica', 'bold');
-      pdf.setTextColor(100, 100, 100);
-      const kpiLabels = ['AEP Thn-1 (GWh)', 'LCOE (¢/kWh)', 'NPV (Jt USD)', 'Payback (Thn)', 'IRR (%)'];
+      const kpiLabels = ['AEP Thn-1 (GWh)', 'LCOE (¢/kWh)', 'NPV ($Jt)', 'Payback (Thn)', 'IRR (%)', 'ROI (%)'];
       const kpiVals = [
         kpis.aepY1.toFixed(2),
         kpis.lcoeCents.toFixed(2),
         `${kpis.npv >= 0 ? '+' : ''}${kpis.npv.toFixed(1)}`,
         kpis.payback.toFixed(1),
         kpis.irr !== null ? `${kpis.irr.toFixed(1)}%` : 'N/A',
+        `${kpis.roi >= 0 ? '+' : ''}${kpis.roi.toFixed(1)}%`,
       ];
-      const colW = (W - 20) / 5;
+      const colW = (W - 20) / 6;
       kpiLabels.forEach((lbl, i) => {
         const x = 10 + i * colW + colW / 2;
         pdf.setFont('helvetica', 'normal');
+        pdf.setFontSize(7);
         pdf.setTextColor(100, 100, 100);
         pdf.text(lbl, x, y + 8, { align: 'center' });
         pdf.setFont('helvetica', 'bold');
-        pdf.setFontSize(12);
-        pdf.setTextColor(i === 2 ? (kpis.npv >= 0 ? 34 : 220) : 19, i === 2 ? (kpis.npv >= 0 ? 197 : 38 ) : 127, i === 2 ? (kpis.npv >= 0 ? 94 : 60) : 236);
+        pdf.setFontSize(11);
+        const isGreen = (i === 2 && kpis.npv >= 0) || (i === 5 && kpis.roi >= 0);
+        const isRed = (i === 2 && kpis.npv < 0) || (i === 5 && kpis.roi < 0);
+        if (isGreen) pdf.setTextColor(34, 197, 94);
+        else if (isRed) pdf.setTextColor(220, 38, 38);
+        else pdf.setTextColor(19, 127, 236);
         pdf.text(kpiVals[i], x, y + 18, { align: 'center' });
         pdf.setFontSize(8);
       });
@@ -364,23 +367,41 @@ export default function KalkulatorPage() {
       pdf.text('Rincian Arus Kas', 10, y);
       y += 5;
 
-      const headers = ['Tahun', `AEP (GWh)`, 'Pendapatan ($Jt)', 'OPEX ($Jt)', 'Arus Kas Bersih ($Jt)'];
-      const cols = [15, 30, 45, 35, 50];
+      const headers = ['Tahun', 'AEP (GWh)', 'Pendapatan ($Jt)', 'OPEX ($Jt)', 'Arus Kas Bersih ($Jt)'];
+      const cols = [15, 30, 50, 35, 55];
       let x = 10;
-      pdf.setFillColor(235, 240, 248);
-      pdf.rect(10, y, W - 20, 7, 'F');
-      pdf.setFontSize(8);
-      pdf.setFont('helvetica', 'bold');
-      pdf.setTextColor(60, 60, 60);
-      headers.forEach((h, i) => { pdf.text(h, x + 2, y + 5); x += cols[i]; });
-      y += 7;
+      const drawCfHeader = () => {
+        x = 10;
+        pdf.setFillColor(235, 240, 248);
+        pdf.rect(10, y, W - 20, 7, 'F');
+        pdf.setFontSize(8);
+        pdf.setFont('helvetica', 'bold');
+        pdf.setTextColor(60, 60, 60);
+        headers.forEach((h, i) => { pdf.text(h, x + 2, y + 5); x += cols[i]; });
+        y += 7;
+      };
+      drawCfHeader();
 
-      cashFlows.forEach((row) => {
+      cashFlows.forEach((row, rowIdx) => {
+        if (y > 274) {
+          pdf.addPage();
+          pdf.setFillColor(19, 127, 236);
+          pdf.rect(0, 0, W, 14, 'F');
+          pdf.setTextColor(255, 255, 255);
+          pdf.setFontSize(11);
+          pdf.setFont('helvetica', 'bold');
+          pdf.text('RE-Valid \u2014 Kalkulator Energi & Ekonomi', 10, 9.5);
+          pdf.setFontSize(8);
+          pdf.setFont('helvetica', 'normal');
+          pdf.text(`Simulasi ${isWind ? 'PLTB' : 'PLTS'} \u2014 Rincian Arus Kas (lanjutan)`, W - 10, 9.5, { align: 'right' });
+          y = 18;
+          drawCfHeader();
+        }
         x = 10;
         pdf.setFont('helvetica', 'normal');
         pdf.setTextColor(40, 40, 40);
-        if (cashFlows.indexOf(row) % 2 === 0) { pdf.setFillColor(250, 250, 252); pdf.rect(10, y, W - 20, 6.5, 'F'); }
-        const cells = [String(row.year), String(row.energy), row.revenue.toFixed(2), row.opex.toFixed(2), (row.net >= 0 ? '+' : '') + row.net.toFixed(2)];
+        if (rowIdx % 2 === 0) { pdf.setFillColor(250, 250, 252); pdf.rect(10, y, W - 20, 6.5, 'F'); }
+        const cells = [String(row.year), parseFloat(String(row.energy)).toFixed(2), row.revenue.toFixed(2), row.opex.toFixed(2), (row.net >= 0 ? '+' : '') + row.net.toFixed(2)];
         cells.forEach((c, i) => {
           if (i === 4) pdf.setTextColor(row.net >= 0 ? 22 : 185, row.net >= 0 ? 163 : 28, row.net >= 0 ? 74 : 28);
           else pdf.setTextColor(40, 40, 40);
