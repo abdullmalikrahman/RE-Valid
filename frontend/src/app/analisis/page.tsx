@@ -380,10 +380,11 @@ function AnalisisContent() {
   const availDisplay = availPct !== null ? `${availPct}%` : '–';
 
   // ─── Validation rows (computed after measurements) ──────────────────────────────
+  const windRmseForRow = station.windRmse ?? (station.rmse > 0 ? station.rmse : null);
   const windValidationRows: { metric: string; value: string; target: string; pass: boolean | null }[] = [
-    { metric: 'RMSE (m/s)', value: station.rmse != null ? station.rmse.toFixed(2) : '–', target: '< 2.0', pass: station.rmse != null ? station.rmse < 2.0 : null },
+    { metric: 'RMSE (m/s)', value: windRmseForRow != null ? windRmseForRow.toFixed(2) : '–', target: '< 2.0', pass: windRmseForRow != null ? windRmseForRow < 2.0 : null },
     { metric: 'MAE (m/s)', value: mae !== null ? mae.toFixed(2) : '–', target: '< 1.5', pass: mae !== null ? mae < 1.5 : null },
-    { metric: 'Korelasi Atlas (R²)', value: windR2Val.toFixed(2), target: '> 0.70', pass: windR2Val > 0.70 },
+    { metric: 'Korelasi Atlas (R²)', value: windR2Val > 0 ? windR2Val.toFixed(2) : '–', target: '> 0.70', pass: windR2Val > 0 ? windR2Val > 0.70 : null },
     { metric: 'Bias vs GWA (%)', value: windDiffGwa !== null ? (windDiffGwa >= 0 ? '+' : '') + windDiffGwa + '%' : '–', target: '± 5%', pass: windDiffGwa !== null ? Math.abs(windDiffGwa) <= 5 : null },
     { metric: 'Bias vs ERA5/ECMWF (%)', value: windDiffNasa !== null ? (windDiffNasa >= 0 ? '+' : '') + windDiffNasa + '%' : '–', target: '± 5%', pass: windDiffNasa !== null ? Math.abs(windDiffNasa) <= 5 : null },
     { metric: 'Ketersediaan Data', value: availDisplay, target: '> 90%', pass: availPct !== null ? availPct > 90 : null },
@@ -392,7 +393,7 @@ function AnalisisContent() {
   const solarValidationRows: { metric: string; value: string; target: string; pass: boolean | null }[] = [
     { metric: 'RMSE (kWh/m²/hari)', value: solarRmseVal !== null ? solarRmseVal.toFixed(2) : '–', target: '< 1.5', pass: solarRmseVal !== null ? solarRmseVal < 1.5 : null },
     { metric: 'MAE (kWh/m²/hari)', value: mae !== null ? mae.toFixed(2) : '–', target: '< 1.0', pass: mae !== null ? mae < 1.0 : null },
-    { metric: 'Korelasi Atlas (R²)', value: solarR2Val.toFixed(2), target: '> 0.70', pass: solarR2Val > 0.70 },
+    { metric: 'Korelasi Atlas (R²)', value: solarR2Val > 0 ? solarR2Val.toFixed(2) : '–', target: '> 0.70', pass: solarR2Val > 0 ? solarR2Val > 0.70 : null },
     { metric: 'Bias vs GSA (%)', value: ghiDiffGsa !== null ? (ghiDiffGsa >= 0 ? '+' : '') + ghiDiffGsa + '%' : '–', target: '± 5%', pass: ghiDiffGsa !== null ? Math.abs(ghiDiffGsa) <= 5 : null },
     { metric: 'Bias vs ERA5/ECMWF (%)', value: ghiDiffNasa !== null ? (ghiDiffNasa >= 0 ? '+' : '') + ghiDiffNasa + '%' : '–', target: '± 5%', pass: ghiDiffNasa !== null ? Math.abs(ghiDiffNasa) <= 5 : null },
     { metric: 'Clearness Index (Kt)', value: ktIndex.toFixed(2), target: '0.40–0.65', pass: ktIndex >= 0.40 && ktIndex <= 0.65 },

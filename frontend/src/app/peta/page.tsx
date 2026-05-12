@@ -152,8 +152,8 @@ function StationPanel({
                 <div className="grid grid-cols-3 gap-2">
                   {[
                     { k: 'RMSE', v: station.windRmse != null ? station.windRmse.toFixed(2) : '–' },
-                    { k: 'Bias', v: `${station.windBias != null && station.windBias > 0 ? '+' : ''}${(station.windBias ?? 0).toFixed(1)}%` },
-                    { k: 'R²', v: (station.windR2 ?? 0).toFixed(2) },
+                  { k: 'Bias', v: station.windBias != null ? `${station.windBias > 0 ? '+' : ''}${station.windBias.toFixed(1)}%` : '\u2013' },
+                    { k: 'R\u00b2', v: station.windR2 != null ? station.windR2.toFixed(2) : '\u2013' },
                   ].map((m) => (
                     <div key={m.k} className="bg-slate-50 dark:bg-[#111a22] p-2.5 rounded-lg border border-slate-200 dark:border-[#233648] text-center">
                       <p className="text-[10px] text-slate-400 dark:text-text-secondary mb-0.5">{m.k}</p>
@@ -172,8 +172,8 @@ function StationPanel({
                 <div className="grid grid-cols-3 gap-2">
                   {[
                     { k: 'RMSE', v: station.solarRmse != null ? station.solarRmse.toFixed(2) : '–' },
-                    { k: 'Bias', v: `${station.solarBias != null && station.solarBias > 0 ? '+' : ''}${(station.solarBias ?? 0).toFixed(1)}%` },
-                    { k: 'R²', v: (station.solarR2 ?? 0).toFixed(2) },
+                  { k: 'Bias', v: station.solarBias != null ? `${station.solarBias > 0 ? '+' : ''}${station.solarBias.toFixed(1)}%` : '\u2013' },
+                    { k: 'R\u00b2', v: station.solarR2 != null ? station.solarR2.toFixed(2) : '\u2013' },
                   ].map((m) => (
                     <div key={m.k} className="bg-slate-50 dark:bg-[#111a22] p-2.5 rounded-lg border border-slate-200 dark:border-[#233648] text-center">
                       <p className="text-[10px] text-slate-400 dark:text-text-secondary mb-0.5">{m.k}</p>
@@ -194,11 +194,11 @@ function StationPanel({
           <div className="bg-slate-50 dark:bg-[#111a22] rounded-lg border border-slate-200 dark:border-[#233648] divide-y divide-slate-100 dark:divide-[#1e2d3d]">
             <div className="flex justify-between items-center px-3 py-2">
               <span className="text-slate-500 dark:text-text-secondary text-[12px]">Kec. Angin Rata-rata</span>
-              <span className="font-bold text-slate-900 dark:text-white text-[12px]">{station.windSpeed} m/s</span>
+              <span className="font-bold text-slate-900 dark:text-white text-[12px]">{station.windSpeed > 0 ? `${station.windSpeed} m/s` : '\u2013'}</span>
             </div>
             <div className="flex justify-between items-center px-3 py-2">
               <span className="text-slate-500 dark:text-text-secondary text-[12px]">Iradiasi Matahari</span>
-              <span className="font-bold text-slate-900 dark:text-white text-[12px]">{station.irradiation} kWh/m²/hari</span>
+              <span className="font-bold text-slate-900 dark:text-white text-[12px]">{station.irradiation > 0 ? `${station.irradiation} kWh/m\u00b2/hari` : '\u2013'}</span>
             </div>
             {(station.windAep != null && station.windAep > 0) && (
               <div className="flex justify-between items-center px-3 py-2">
@@ -222,9 +222,9 @@ function StationPanel({
               <div className="flex justify-between items-center px-3 py-2">
                 <span className="text-slate-500 dark:text-text-secondary text-[12px] flex items-center gap-1">
                   <span className="material-symbols-outlined text-[13px] text-amber-400">wb_sunny</span>
-                  AEP Surya (P50)
+                  AEP Surya (10 MWp, P50)
                 </span>
-                <span className="font-bold text-amber-400 text-[12px]">{Math.round(station.solarAep / 10).toLocaleString('id')} MWh/MWp</span>
+                <span className="font-bold text-amber-400 text-[12px]">{Math.round(station.solarAep).toLocaleString('id')} MWh/thn</span>
               </div>
             )}
           </div>
