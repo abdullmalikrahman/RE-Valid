@@ -22,6 +22,9 @@ npm-debug.log*
 # Docker volumes (data runtime, bukan config)
 pgdata/
 
+# Docker local override — konfigurasi dev lokal, tidak perlu di-commit
+docker-compose.override.yml
+
 # OS
 .DS_Store
 Thumbs.db
@@ -33,8 +36,25 @@ logs/
 # Editor
 .vscode/settings.json
 
+# MQTT password file — berisi hash password, jangan di-commit
+mqtt/config/passwd
+
+# Nginx — sertifikat SSL dan ACME challenge (diisi otomatis oleh Certbot)
+nginx/certbot/
+
 # Atlas GeoTIFF — file besar, jangan di-commit (download manual, lihat DOWNLOAD_INSTRUCTIONS.txt)
 *.tif
 *.tiff
-backend/data/atlas/*.tif
-backend/data/atlas/*.tiff
+
+# Celery beat — file state runtime, dibuat otomatis saat scheduler berjalan
+celerybeat-schedule
+celerybeat-schedule.db
+
+# SQLite — database lokal sementara
+*.db
+*.sqlite3
+
+# Testing & coverage
+.pytest_cache/
+.coverage
+htmlcov/

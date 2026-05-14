@@ -160,7 +160,7 @@ function StationModal({ station, onClose, onSave, onRefresh }: ModalProps) {
     return () => { if (coordDebounceRef.current) clearTimeout(coordDebounceRef.current); };
   }, []);
 
-  // Ambil nilai baseline atlas dari GWA/GSA/NASA POWER via endpoint backend
+  // Ambil nilai baseline atlas dari GWA/GSA/ERA5 via endpoint backend
   async function handleFetchAtlas(overrideId?: string) {
     const targetId = overrideId ?? station?.id;
     if (!targetId) {
@@ -195,8 +195,8 @@ function StationModal({ station, onClose, onSave, onRefresh }: ModalProps) {
       ];
       const fetchedCount = baselineFields.filter((v) => v !== null && v !== undefined).length;
       setAtlasSuccessCount(fetchedCount);
-      const srcWind = json.wind_baseline_gwa ? 'GWA' : 'NASA POWER';
-      const srcGhi = json.ghi_baseline_gsa ? 'GSA' : 'NASA POWER';
+      const srcWind = json.wind_baseline_gwa ? 'GWA' : 'ERA5';
+      const srcGhi = json.ghi_baseline_gsa ? 'GSA' : 'ERA5';
       setAtlasMsg(`${fetchedCount}/6 data berhasil diambil — Angin: ${json.wind_baseline ?? '-'} m/s (${srcWind}), GHI: ${json.ghi_baseline ?? '-'} kWh/m²/hari (${srcGhi}).`);
     } catch {
       setAtlasMsg('Tidak dapat terhubung ke server.');
@@ -356,7 +356,7 @@ function StationModal({ station, onClose, onSave, onRefresh }: ModalProps) {
           {!isEdit && atlasSuccessCount === null && (
             <div className="flex items-center gap-2 px-3 py-2.5 rounded-lg bg-blue-50 dark:bg-blue-900/10 border border-blue-200 dark:border-blue-800">
               <span className="material-symbols-outlined text-[14px] text-blue-500">cloud_download</span>
-              <span className="text-[11px] text-blue-600 dark:text-blue-400">Data baseline atlas (GWA · GSA · NASA POWER) akan diambil <strong>otomatis</strong> setelah lokasi disimpan.</span>
+              <span className="text-[11px] text-blue-600 dark:text-blue-400">Data baseline atlas (GWA · GSA · ERA5) akan diambil <strong>otomatis</strong> setelah lokasi disimpan.</span>
             </div>
           )}
           {!isEdit && atlasSuccessCount !== null && (
@@ -365,7 +365,7 @@ function StationModal({ station, onClose, onSave, onRefresh }: ModalProps) {
                 <span className="material-symbols-outlined text-[15px] text-green-600">check_circle</span>
                 <div>
                   <p className="text-xs font-semibold text-green-700 dark:text-green-400 uppercase tracking-wide">Baseline Referensi Atlas</p>
-                  <p className="text-[11px] text-green-600 dark:text-green-500 mt-0.5">Sumber: GWA (angin, GeoTIFF) · GSA (surya, API) · NASA POWER ERA5 (pembanding)</p>
+                  <p className="text-[11px] text-green-600 dark:text-green-500 mt-0.5">Sumber: GWA (angin, GeoTIFF) · GSA (surya, API) · ERA5/ECMWF via Open-Meteo (pembanding)</p>
                 </div>
                 <span className="ml-auto text-[11px] text-gray-400 italic shrink-0">{atlasSuccessCount}/6 berhasil · menutup otomatis...</span>
               </div>
@@ -390,7 +390,7 @@ function StationModal({ station, onClose, onSave, onRefresh }: ModalProps) {
                       <td className="px-3 py-1.5 text-right font-mono text-gray-800 dark:text-gray-200">{form.ghiBaselineGsa ?? <span className="text-gray-400">—</span>}</td>
                     </tr>
                     <tr className="bg-green-50/50 dark:bg-green-900/10">
-                      <td className="px-3 py-1.5 font-medium text-gray-700 dark:text-gray-300">NASA POWER</td>
+                      <td className="px-3 py-1.5 font-medium text-gray-700 dark:text-gray-300">ERA5</td>
                       <td className="px-3 py-1.5 text-right font-mono text-gray-800 dark:text-gray-200">{form.windBaselineNasa ?? <span className="text-gray-400">—</span>}</td>
                       <td className="px-3 py-1.5 text-right font-mono text-gray-800 dark:text-gray-200">{form.ghiBaselineNasa ?? <span className="text-gray-400">—</span>}</td>
                     </tr>
@@ -399,13 +399,13 @@ function StationModal({ station, onClose, onSave, onRefresh }: ModalProps) {
               </div>
               <div className="grid grid-cols-2 gap-3">
                 <div className="flex flex-col gap-1">
-                  <label className="text-[11px] text-gray-500 dark:text-gray-400">Angin 100m · m/s (best: GWA &gt; NASA)</label>
+                  <label className="text-[11px] text-gray-500 dark:text-gray-400">Angin 100m · m/s (best: GWA &gt; ERA5)</label>
                   <div className="bg-white dark:bg-input-bg-dark border border-gray-200 dark:border-border-dark rounded-lg px-3 py-2 text-sm font-mono text-gray-900 dark:text-white">
                     {form.windBaseline ?? <span className="text-gray-400">—</span>}
                   </div>
                 </div>
                 <div className="flex flex-col gap-1">
-                  <label className="text-[11px] text-gray-500 dark:text-gray-400">GHI · kWh/m²/hari (best: GSA &gt; NASA)</label>
+                  <label className="text-[11px] text-gray-500 dark:text-gray-400">GHI · kWh/m²/hari (best: GSA &gt; ERA5)</label>
                   <div className="bg-white dark:bg-input-bg-dark border border-gray-200 dark:border-border-dark rounded-lg px-3 py-2 text-sm font-mono text-gray-900 dark:text-white">
                     {form.ghiBaseline ?? <span className="text-gray-400">—</span>}
                   </div>
@@ -418,7 +418,7 @@ function StationModal({ station, onClose, onSave, onRefresh }: ModalProps) {
               <div className="flex items-center justify-between">
                 <div>
                   <p className="text-xs font-semibold text-blue-700 dark:text-blue-400 uppercase tracking-wide">Baseline Referensi Atlas</p>
-                  <p className="text-[11px] text-blue-500 dark:text-blue-500 mt-0.5">Sumber: GWA (angin, GeoTIFF) · GSA (surya, API) · NASA POWER ERA5 (pembanding)</p>
+                  <p className="text-[11px] text-blue-500 dark:text-blue-500 mt-0.5">Sumber: GWA (angin, GeoTIFF) · GSA (surya, API) · ERA5/ECMWF via Open-Meteo (pembanding)</p>
                 </div>
                 <button
                   type="button"
@@ -460,7 +460,7 @@ function StationModal({ station, onClose, onSave, onRefresh }: ModalProps) {
                         <td className="px-3 py-1.5 text-right font-mono text-gray-800 dark:text-gray-200">{form.ghiBaselineGsa ?? <span className="text-gray-400">—</span>}</td>
                       </tr>
                       <tr className="bg-blue-50/50 dark:bg-blue-900/10">
-                        <td className="px-3 py-1.5 font-medium text-gray-700 dark:text-gray-300">NASA POWER</td>
+                        <td className="px-3 py-1.5 font-medium text-gray-700 dark:text-gray-300">ERA5</td>
                         <td className="px-3 py-1.5 text-right font-mono text-gray-800 dark:text-gray-200">{form.windBaselineNasa ?? <span className="text-gray-400">—</span>}</td>
                         <td className="px-3 py-1.5 text-right font-mono text-gray-800 dark:text-gray-200">{form.ghiBaselineNasa ?? <span className="text-gray-400">—</span>}</td>
                       </tr>
@@ -482,7 +482,7 @@ function StationModal({ station, onClose, onSave, onRefresh }: ModalProps) {
                   />
                 </div>
                 <div className="flex flex-col gap-1">
-                  <label className="text-[11px] text-gray-500 dark:text-gray-400">GHI · kWh/m²/hari (best: GSA &gt; NASA)</label>
+                  <label className="text-[11px] text-gray-500 dark:text-gray-400">GHI · kWh/m²/hari (best: GSA &gt; ERA5)</label>
                   <input
                     type="number"
                     step="0.01"

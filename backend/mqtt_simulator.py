@@ -17,19 +17,30 @@ Atau untuk stasiun tertentu saja:
 import argparse
 import json
 import math
+import os
 import random
 import time
 from datetime import datetime, timezone
+from pathlib import Path
 
 import paho.mqtt.client as mqtt
 
 # ─── Konfigurasi broker ────────────────────────────────────────────────────────
-BROKER_HOST = "localhost"
-BROKER_PORT = 1883
+# Credentials dibaca dari .env (jangan hardcode di sini)
+try:
+    from dotenv import load_dotenv
+    load_dotenv(Path(__file__).parent / ".env")
+except ImportError:
+    pass  # python-dotenv tidak terinstall — gunakan env var yang sudah di-set
+
+BROKER_HOST = os.environ.get("MQTT_BROKER", "localhost")
+BROKER_PORT = int(os.environ.get("MQTT_PORT", "11883"))  # host port (Docker: 11883 → container 1883)
+MQTT_USERNAME = os.environ.get("MQTT_USERNAME", "")
+MQTT_PASSWORD = os.environ.get("MQTT_PASSWORD", "")
 DEFAULT_INTERVAL = 60  # detik
 
 # ─── Profil setiap stasiun ─────────────────────────────────────────────────────
-# base_wind: dikalibrasi terhadap wind_baseline (NASA POWER ERA5) per stasiun
+# base_wind: dikalibrasi terhadap wind_baseline (ERA5/ECMWF via Open-Meteo) per stasiun
 #   sehingga rata-rata obs mendekati nilai atlas dengan bias ±5–20%
 # base_ghi : dalam W/m² (rata-rata harian). Konsisten dengan 04_seed_measurements.sql
 #   MQTT client menyimpan ke measurements.ghi (W/m²)
@@ -91,6 +102,7 @@ def generate_reading(station_id: str, profile: dict) -> dict:
 
 def run_simulator(station_ids: list[str], interval: int) -> None:
     client = mqtt.Client(mqtt.CallbackAPIVersion.VERSION2)
+    client.username_pw_set(MQTT_USERNAME, MQTT_PASSWORD)
 
     def on_connect(c, userdata, flags, rc, properties=None):
         if rc == 0:

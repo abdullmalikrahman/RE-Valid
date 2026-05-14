@@ -33,7 +33,7 @@ function AnalisisContent() {
   const { stations, mutate } = useStations();
   const searchParams = useSearchParams();
   const router = useRouter();
-  const stationId = searchParams.get('station') ?? stations[0].id;
+  const stationId = searchParams.get('station') ?? stations[0]?.id ?? '';
   const station = stations.find((s) => s.id === stationId) ?? stations[0];
 
   const [energyType, setEnergyType] = useState<'wind' | 'solar'>('wind');
@@ -50,7 +50,7 @@ function AnalisisContent() {
   useEffect(() => {
     setTaskState('idle');
     setTaskMsg('');
-  }, [station.id, energyType]);
+  }, [station?.id, energyType]);
 
   const [isDark, setIsDark] = useState(true);
   useEffect(() => {
@@ -97,9 +97,20 @@ function AnalisisContent() {
         const r = await apiFetch(`/api/v1/analyze/${task_id}`);
         const data = await r.json();
         if (data.status === 'success') {
-          setTaskState('success');
-          setTaskMsg(`Selesai — RMSE: ${data.result?.rmse ?? '–'}  Bias: ${data.result?.bias ?? '–'}%  R²: ${data.result?.r2 ?? '–'}`);
-          mutate();
+          const innerStatus: string = data.result?.status ?? '';
+          // Celery task completed, but check inner result for soft errors
+          if (innerStatus === 'insufficient_data') {
+            setTaskState('error');
+            setTaskMsg(`Data tidak cukup (${data.result?.count ?? 0} baris, minimum 10). Pastikan sensor sudah mengirim data ke stasiun ini.`);
+            mutate();
+          } else if (innerStatus === 'baseline_not_set') {
+            setTaskState('error');
+            setTaskMsg('Baseline atlas belum diisi. Admin perlu mengisi nilai wind_baseline / ghi_baseline di halaman Pengelolaan Lokasi (/admin) terlebih dahulu (gunakan tombol "Ambil dari Atlas" atau input manual).');
+          } else {
+            setTaskState('success');
+            setTaskMsg(`Selesai — RMSE: ${data.result?.rmse ?? '–'}  Bias: ${data.result?.bias ?? '–'}%  R²: ${data.result?.r2 ?? '–'}`);
+            mutate();
+          }
         } else if (data.status === 'failed') {
           setTaskState('error');
           // Tampilkan pesan khusus jika baseline belum di-set
@@ -120,8 +131,25 @@ function AnalisisContent() {
     }
   }
 
+  // ─── Hook: Measurements (harus dipanggil sebelum early return) ────────────
+  const { measurements, isLoading: measLoading } = useMeasurements(station?.id ?? '', startDate, endDate);
+
+  // Jika belum ada stasiun di DB, tampilkan empty state
+  if (!station) {
+    return (
+      <div className="bg-background-light dark:bg-background-dark font-display text-slate-900 dark:text-white min-h-screen flex flex-col">
+        <Navbar />
+        <main className="flex-1 flex flex-col items-center justify-center gap-4 px-4">
+          <span className="material-symbols-outlined text-5xl text-slate-400">sensors_off</span>
+          <p className="text-lg font-semibold text-slate-600 dark:text-slate-400">Belum ada stasiun terdaftar</p>
+          <p className="text-sm text-slate-500 dark:text-slate-500 text-center max-w-sm">Tambahkan stasiun terlebih dahulu melalui halaman <a href="/admin" className="text-primary underline">Admin</a>, kemudian kembali ke halaman ini.</p>
+        </main>
+      </div>
+    );
+  }
+
   // ─── Wind derived ──────────────────────────────────────────────────────────
-  // Gunakan wind_baseline dari atlas (NASA POWER/GWA) jika tersedia; fallback ke aproksimasi
+  // Gunakan wind_baseline dari atlas (ERA5/GWA) jika tersedia; fallback ke aproksimasi
   const windBaselineVal = station.windBaseline ?? (station.windSpeed ?? 0) * 1.046;
   const windLongTerm = windBaselineVal.toFixed(1);
   const windDiff = windBaselineVal > 0 ? (((station.windSpeed - windBaselineVal) / windBaselineVal) * 100).toFixed(1) : '0.0';
@@ -148,7 +176,7 @@ function AnalisisContent() {
   const solarR2Bg = solarR2Val >= 0.85 ? 'bg-green-500/10 text-green-500' : solarR2Val >= 0.70 ? 'bg-amber-500/10 text-amber-400' : 'bg-red-500/10 text-red-400';
 
   // ─── Solar derived ─────────────────────────────────────────────────────────
-  // GHI baseline dari atlas (NASA POWER/PVGIS) jika tersedia; fallback ke aproksimasi
+  // GHI baseline dari atlas (ERA5/GSA) jika tersedia; fallback ke aproksimasi
   const ghiBaseline = parseFloat((station.ghiBaseline ?? (station.irradiation ?? 0) * 0.958).toFixed(2));
   const ghiDiff = ghiBaseline > 0 ? parseFloat((((station.irradiation - ghiBaseline) / ghiBaseline) * 100).toFixed(1)) : 0;
   const ghiDiffGsa = (station.ghiBaselineGsa != null && station.ghiBaselineGsa > 0)
@@ -326,10 +354,7 @@ function AnalisisContent() {
     }
   }
 
-  // ─── Measurements & chart data ────────────────────────────────────────────
-  const { measurements, isLoading: measLoading } = useMeasurements(station.id, startDate, endDate);
-
-  // Per-day values — baseline adalah konstanta atlas (NASA POWER/ERA5) per stasiun
+  // Per-day values — baseline adalah konstanta atlas (ERA5/ECMWF) per stasiun
   // Bukan fungsi dari obs (menghindari self-referential baseline)
   const atlasBaseline = isWind ? windBaselineVal : ghiBaseline;
   const dailyValues = measurements.map((m) => {

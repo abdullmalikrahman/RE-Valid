@@ -5,7 +5,7 @@ Sumber data:
   - GWA (Global Wind Atlas) : GeoTIFF per-piksel, resolusi ~250m
     → File: backend/data/atlas/IDN_wind-speed_100m.tif
     → Download: https://globalwindatlas.info → Download → GIS files → Indonesia → Wind speed → 100m
-    → Jika file tidak ada, fungsi return None (fallback ke NASA POWER)
+    → Jika file tidak ada, fungsi return None (fallback ke ERA5)
 
   - GSA (Global Solar Atlas) : REST API Solargis, tanpa autentikasi
     → Endpoint: https://api.globalsolaratlas.info/data/lta?loc={lat},{lon}
@@ -14,7 +14,7 @@ Sumber data:
 Catatan unit:
   - GWA GeoTIFF   : m/s (langsung dipakai)
   - GSA API       : kWh/m²/tahun → ÷365 → kWh/m²/hari
-  - NASA POWER    : kWh/m²/hari (sudah dikonversi di endpoint fetch-atlas)
+  - ERA5/ECMWF    : m/s dan kWh/m²/hari via Open-Meteo ERA5 Archive API
 """
 
 import logging

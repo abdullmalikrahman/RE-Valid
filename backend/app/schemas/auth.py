@@ -11,3 +11,4 @@ class TokenResponse(BaseModel):
     token_type: str = "bearer"
     username: str
     role: str
+    expires_in: int  # detik sampai token expire (= ACCESS_TOKEN_EXPIRE_MINUTES × 60)

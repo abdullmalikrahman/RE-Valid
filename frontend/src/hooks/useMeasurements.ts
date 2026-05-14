@@ -34,16 +34,18 @@ export function useMeasurements(
   stationId: string | null,
   start = oneYearAgoStr(),
   end = todayStr(),
+  limit = 2000,
 ) {
   const params = new URLSearchParams();
   if (stationId) params.set('station_id', stationId);
   params.set('start', start);
   params.set('end', end);
-  params.set('limit', '400');
+  params.set('limit', String(limit));
 
   const { data, error, isLoading } = useSWR<Measurement[]>(
     stationId ? `/api/v1/measurements?${params.toString()}` : null,
     fetchMeasurements,
+    { refreshInterval: 60_000 },
   );
 
   return { measurements: data ?? [], isLoading, error };

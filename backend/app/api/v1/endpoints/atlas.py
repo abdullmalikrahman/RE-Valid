@@ -5,7 +5,8 @@ GET /api/v1/atlas/heatmap?type=wind|solar
 
 Strategi sumber data:
   wind  → GWA GeoTIFF  (jika file tersedia)  else  IDW dari station wind_baseline
-  solar → IDW dari station ghi_baseline  (GSA/NASA POWER; tidak ada bulk raster tersedia)
+  solar → IDW dari station ghi_baseline  (GSA/ERA5; tidak ada bulk raster tersedia)
+          Fallback (belum ada stasiun): IDW dari grid kontrol GSA API (0.75° step, ~20 titik, cache 24 jam)
 
 Response:
   {
@@ -18,8 +19,10 @@ Response:
   }
 """
 
+import asyncio
 import math
 import logging
+import time
 from typing import Literal
 
 from fastapi import APIRouter, Depends, Query
@@ -30,6 +33,12 @@ from app.crud.station import get_all_stations
 
 logger = logging.getLogger(__name__)
 router = APIRouter()
+
+# ─── Cache GSA control grid (24 jam) ─────────────────────────────────────────
+_gsa_grid_cache: list[tuple[float, float, float]] | None = None
+_gsa_grid_cache_ts: float = 0.0
+_GSA_CACHE_TTL: float = 86_400.0   # detik
+_GSA_CTRL_STEP: float = 0.75       # ° → ~20 titik kontrol grid
 
 # ─── Bbox Jawa Barat + buffer ─────────────────────────────────────────────────
 _LAT_MIN, _LAT_MAX = -8.1, -5.9
@@ -78,6 +87,55 @@ def _normalize(raw_pts: list[tuple[float, float, float]]) \
         round(min_v, 2),
         round(max_v, 2),
     )
+
+
+# ─── GSA control-grid fetcher (fallback heatmap surya) ──────────────────────
+
+async def _fetch_gsa_control_grid() -> list[tuple[float, float, float]]:
+    """Ambil GHI dari GSA API pada grid kasar sebagai titik kontrol IDW.
+
+    Grid step 0.75° menghasilkan ~20 titik atas bbox Jawa Barat.
+    Semua request dijalankan secara paralel (asyncio.gather).
+    Hasil di-cache selama 24 jam.
+    """
+    global _gsa_grid_cache, _gsa_grid_cache_ts
+
+    if _gsa_grid_cache is not None and (time.time() - _gsa_grid_cache_ts) < _GSA_CACHE_TTL:
+        return _gsa_grid_cache
+
+    from app.workers.atlas_reader import fetch_gsa_ghi
+
+    # Buat grid kontrol kasar
+    ctrl_grid: list[tuple[float, float]] = []
+    lat = _LAT_MIN
+    while lat <= _LAT_MAX + 1e-9:
+        lon = _LON_MIN
+        while lon <= _LON_MAX + 1e-9:
+            ctrl_grid.append((round(lat, 2), round(lon, 2)))
+            lon += _GSA_CTRL_STEP
+        lat += _GSA_CTRL_STEP
+
+    logger.info("GSA fallback: mengambil %d titik kontrol secara paralel...", len(ctrl_grid))
+
+    # Fetch semua secara paralel
+    results = await asyncio.gather(
+        *[fetch_gsa_ghi(lat, lon) for lat, lon in ctrl_grid],
+        return_exceptions=True,
+    )
+
+    ctrl_pts: list[tuple[float, float, float]] = []
+    for (clat, clon), val in zip(ctrl_grid, results):
+        if isinstance(val, float):
+            ctrl_pts.append((clat, clon, val))
+
+    if ctrl_pts:
+        _gsa_grid_cache = ctrl_pts
+        _gsa_grid_cache_ts = time.time()
+        logger.info("GSA control grid berhasil: %d/%d titik", len(ctrl_pts), len(ctrl_grid))
+    else:
+        logger.warning("GSA API mengembalikan semua None — tidak ada cache disimpan")
+
+    return ctrl_pts
 
 
 # ─── GWA GeoTIFF grid sampler ────────────────────────────────────────────────
@@ -137,7 +195,7 @@ async def get_heatmap(
 
     Sumber data (urutan prioritas):
     - wind  : GWA GeoTIFF → IDW dari station wind_baseline
-    - solar : IDW dari station ghi_baseline (GSA/NASA POWER)
+    - solar : IDW dari station ghi_baseline (GSA/ERA5)
     """
     # ── Coba GWA GeoTIFF untuk angin ─────────────────────────────────────────
     if type == "wind":
@@ -167,6 +225,43 @@ async def get_heatmap(
         unit = "kWh/m²/hari"
 
     if not ctrl:
+            # ── Fallback solar: IDW dari GSA API (grid kontrol kasar) ────────────
+        if type == "solar":
+            gsa_ctrl = await _fetch_gsa_control_grid()
+            if gsa_ctrl:
+                grid = _grid_latlon()
+                raw_fb: list[tuple[float, float, float]] = [
+                    (lat, lon, _idw(lat, lon, gsa_ctrl))
+                    for lat, lon in grid
+                ]
+                pts_fb, min_fb, max_fb = _normalize(raw_fb)
+                return {
+                    "type": "solar",
+                    "source": f"GSA Solargis IDW dari {len(gsa_ctrl)} titik kontrol (belum ada stasiun — tambahkan via /admin untuk data aktual)",
+                    "points": pts_fb,
+                    "min_val": min_fb,
+                    "max_val": max_fb,
+                    "unit": "kWh/m²/hari",
+                }
+            # GSA juga gagal — estimasi klimatologi sebagai last resort
+            grid = _grid_latlon()
+            raw_lr: list[tuple[float, float, float]] = []
+            for flat, flon in grid:
+                east_factor   = (flon - 106.4) / (111.0 - 106.4) * 0.30
+                mountain_dist = math.sqrt(max(0.0, -(flat + 7.2)) ** 2
+                                          + max(0.0, abs(flon - 107.8) - 0.7) ** 2)
+                mountain_factor = max(0.0, 0.35 - mountain_dist * 0.5)
+                ghi = max(4.2, min(5.5, 5.0 + east_factor - mountain_factor))
+                raw_lr.append((flat, flon, round(ghi, 2)))
+            pts_lr, min_lr, max_lr = _normalize(raw_lr)
+            return {
+                "type": "solar",
+                "source": "Estimasi klimatologi (GSA tidak tersedia — tambahkan stasiun via /admin)",
+                "points": pts_lr,
+                "min_val": min_lr,
+                "max_val": max_lr,
+                "unit": "kWh/m²/hari",
+            }
         return {
             "type": type,
             "source": "Tidak ada data baseline tersedia",
@@ -186,7 +281,7 @@ async def get_heatmap(
     points_norm, min_v, max_v = _normalize(raw)
 
     src_type = "GWA + " if type == "wind" else ""
-    src_base = "NASA POWER" if type == "wind" else "GSA/NASA POWER"
+    src_base = "ERA5" if type == "wind" else "GSA/ERA5"
     n_ctrl = len(ctrl)
     source = f"IDW dari {n_ctrl} stasiun ({src_type}{src_base} baselines)"
 

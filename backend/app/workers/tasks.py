@@ -4,8 +4,8 @@ Celery tasks untuk RE-Valid.
 validate_station_mcp:
   · Ambil N data sensor terbaru dari tabel measurements
   · Hitung RMSE, Bias (%), R² antara observasi vs baseline atlas:
-      wind_speed  → baseline = nilai wind_baseline (m/s) dari kolom stations (NASA POWER / GWA)
-      ghi         → baseline = nilai ghi_baseline (kWh/m²/hari) dari kolom stations (NASA POWER / PVGIS)
+      wind_speed  → baseline = nilai wind_baseline (m/s) dari kolom stations (ERA5 / GWA)
+      ghi         → baseline = nilai ghi_baseline (kWh/m²/hari) dari kolom stations (ERA5 / GSA)
   · Baseline adalah konstanta per-stasiun (long-term atlas mean) yang dibanding dengan
     distribusi observasi untuk menilai deviasi relatif sensor terhadap referensi iklim.
   · Setelah validasi: hitung AEP estimasi dan score kesesuaian lokasi secara otomatis.
@@ -167,6 +167,12 @@ def validate_station_mcp(self, station_id: str, variable: str = "wind", n: int =
 
         if len(rows) < 10:
             logger.warning("validate_station_mcp: not enough data for %s (%d rows)", station_id, len(rows))
+            # Reset mcp_status so it doesn't stay stuck at 'berjalan'
+            cur.execute(
+                "UPDATE stations SET mcp_status = 'pending' WHERE id = %s",
+                (station_id,),
+            )
+            conn.commit()
             cur.close()
             conn.close()
             return {"station_id": station_id, "status": "insufficient_data", "count": len(rows)}
@@ -297,8 +303,3 @@ def validate_station_mcp(self, station_id: str, variable: str = "wind", n: int =
         logger.error("validate_station_mcp ERROR: %s", exc)
         raise self.retry(exc=exc, countdown=30, max_retries=3)
 
-
-@celery_app.task(name="generate_report")
-def generate_report(report_params: dict):
-    """Generate a report asynchronously (placeholder)."""
-    return {"status": "report_generated", "params": report_params}

@@ -40,7 +40,7 @@ function LaporanContent() {
   const { stations } = useStations();
   const searchParams = useSearchParams();
   const router = useRouter();
-  const stationId = searchParams.get('station') ?? stations[0].id;
+  const stationId = searchParams.get('station') ?? stations[0]?.id ?? '';
   const station = stations.find((s) => s.id === stationId) ?? stations[0];
 
   const fromPage = searchParams.get('from') ?? 'peta';
@@ -48,7 +48,21 @@ function LaporanContent() {
   const backLabel = fromPage === 'analisis' ? 'Kembali ke Analisis Lokasi' : fromPage === 'kalkulator' ? 'Kembali ke Kalkulator' : 'Kembali ke Peta';
 
   const { measurements } = useMeasurements(stationId);
-              
+
+  // Jika belum ada stasiun di DB, tampilkan empty state
+  if (!station) {
+    return (
+      <div className="bg-background-light dark:bg-background-dark font-display text-slate-900 dark:text-white min-h-screen flex flex-col">
+        <Navbar />
+        <main className="flex-1 flex flex-col items-center justify-center gap-4 px-4">
+          <span className="material-symbols-outlined text-5xl text-slate-400">sensors_off</span>
+          <p className="text-lg font-semibold text-slate-600 dark:text-slate-400">Belum ada stasiun terdaftar</p>
+          <p className="text-sm text-slate-500 dark:text-slate-500 text-center max-w-sm">Tambahkan stasiun terlebih dahulu melalui halaman <a href="/admin" className="text-primary underline">Admin</a>, kemudian kembali ke halaman ini.</p>
+        </main>
+      </div>
+    );
+  }
+
   // Gunakan data angin jika stasiun memiliki variabel angin, surya jika tidak
   const hasWind = station.variables.toLowerCase().includes('angin');
   const hasSolar = station.variables.toLowerCase().includes('iradiasi')

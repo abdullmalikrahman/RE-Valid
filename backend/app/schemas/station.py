@@ -23,12 +23,12 @@ class StationUpdate(BaseModel):
     altitude: Optional[int] = None
     status: Optional[str] = Field(None, pattern="^(prioritas|kandidat|tidak_sesuai)$")
     score: Optional[int] = Field(None, ge=0, le=100)
-    wind_baseline: Optional[float] = Field(None, ge=0, description="Best-available wind baseline (GWA jika tersedia, else NASA POWER) (m/s)")
-    ghi_baseline: Optional[float] = Field(None, ge=0, description="Best-available GHI baseline (GSA, else NASA POWER) (kWh/m²/day)")
+    wind_baseline: Optional[float] = Field(None, ge=0, description="Best-available wind baseline (GWA jika tersedia, else ERA5) (m/s)")
+    ghi_baseline: Optional[float] = Field(None, ge=0, description="Best-available GHI baseline (GSA, else ERA5) (kWh/m²/day)")
     wind_baseline_gwa: Optional[float] = Field(None, ge=0, description="GWA GeoTIFF 100m mean wind speed (m/s)")
     ghi_baseline_gsa: Optional[float] = Field(None, ge=0, description="GSA/Solargis mean GHI (kWh/m²/day)")
-    wind_baseline_nasa: Optional[float] = Field(None, ge=0, description="NASA POWER ERA5 WS100M (m/s)")
-    ghi_baseline_nasa: Optional[float] = Field(None, ge=0, description="NASA POWER ERA5 ALLSKY_SFC_SW_DWN (kWh/m²/day)")
+    wind_baseline_nasa: Optional[float] = Field(None, ge=0, description="ERA5/ECMWF wind speed 100m via Open-Meteo (m/s) — kolom lama, isi ERA5")
+    ghi_baseline_nasa: Optional[float] = Field(None, ge=0, description="ERA5/ECMWF GHI via Open-Meteo (kWh/m²/day) — kolom lama, isi ERA5")
 
 
 class StationResponse(BaseModel):

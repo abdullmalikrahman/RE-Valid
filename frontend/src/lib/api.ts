@@ -2,24 +2,85 @@ import type { Station } from './stationData';
 
 const API_BASE = '/api/v1';
 
+// ── Token auto-refresh ────────────────────────────────────────────────────────
+
+/** Decode payload dari JWT tanpa library eksternal (JWT = header.payload.sig base64). */
+function getTokenExpiry(token: string): number | null {
+  try {
+    const payload = JSON.parse(atob(token.split('.')[1].replace(/-/g, '+').replace(/_/g, '/')));
+    return typeof payload.exp === 'number' ? payload.exp : null;
+  } catch {
+    return null;
+  }
+}
+
+/** Sisa waktu token dalam detik. Negatif = sudah expire. */
+function tokenSecondsLeft(token: string): number {
+  const exp = getTokenExpiry(token);
+  if (exp === null) return 0;
+  return exp - Math.floor(Date.now() / 1000);
+}
+
+let _refreshPromise: Promise<string | null> | null = null;
+
+/** Minta token baru dari /auth/refresh. Mengembalikan token baru atau null jika gagal. */
+async function silentRefresh(currentToken: string): Promise<string | null> {
+  // Deduplikasi: jika sudah ada refresh berjalan, tunggu hasilnya
+  if (_refreshPromise) return _refreshPromise;
+
+  _refreshPromise = (async () => {
+    try {
+      const res = await fetch(`${API_BASE}/auth/refresh`, {
+        method: 'POST',
+        headers: { Authorization: `Bearer ${currentToken}` },
+      });
+      if (!res.ok) return null;
+      const data = await res.json();
+      localStorage.setItem('re_valid_token', data.access_token);
+      return data.access_token as string;
+    } catch {
+      return null;
+    } finally {
+      _refreshPromise = null;
+    }
+  })();
+
+  return _refreshPromise;
+}
+
 /**
- * Wrapper fetch yang otomatis redirect ke /login jika server
- * mengembalikan 401 (token expired atau tidak valid).
+ * Wrapper fetch yang:
+ * 1. Otomatis menyertakan Authorization header dari localStorage
+ * 2. Menyegarkan token secara diam-diam jika tersisa < 5 menit
+ * 3. Redirect ke /login jika server mengembalikan 401
  */
 export async function apiFetch(
   input: RequestInfo | URL,
   init?: RequestInit,
 ): Promise<Response> {
-  const res = await fetch(input, init);
+  let token = localStorage.getItem('re_valid_token');
+
+  // Refresh diam-diam jika token tersisa < 5 menit (300 detik)
+  if (token && tokenSecondsLeft(token) < 300) {
+    const refreshed = await silentRefresh(token);
+    if (refreshed) token = refreshed;
+  }
+
+  // Inject Authorization header jika ada token
+  const headers: Record<string, string> = {
+    ...(init?.headers as Record<string, string>),
+  };
+  if (token) headers['Authorization'] = `Bearer ${token}`;
+
+  const res = await fetch(input, { ...init, headers });
+
   if (res.status === 401) {
-    // Hapus token yang sudah tidak valid
+    // Token benar-benar tidak valid (mungkin sudah expire sebelum sempat refresh)
     localStorage.removeItem('re_valid_token');
     localStorage.removeItem('re_valid_username');
     localStorage.removeItem('re_valid_role');
     if (typeof window !== 'undefined') {
-      // Beritahu Navbar di tab yang sama agar segera update state login
       window.dispatchEvent(new CustomEvent('re_valid_auth_change'));
-      // Redirect ke login — gunakan window.location agar bersih dari SWR cache
       window.location.href = '/login';
     }
   }

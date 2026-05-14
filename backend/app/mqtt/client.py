@@ -22,6 +22,7 @@ import re
 from datetime import datetime, timezone
 
 import paho.mqtt.client as mqtt
+from sqlalchemy import text
 
 from app.core.config import settings
 from app.core.database import AsyncSessionLocal
@@ -95,6 +96,23 @@ def _store_measurement(record: dict) -> None:
                 pressure=record.get("pressure"),
             )
             session.add(obj)
+
+            # Also update stations.last_update (and current sensor values) so
+            # the peta/analisis pages show live data without running full analysis.
+            set_parts = ["last_update = NOW()"]
+            params: dict = {"station_id": record["station_id"]}
+            if record.get("wind_speed") is not None:
+                set_parts.append("wind_speed = :wind_speed")
+                params["wind_speed"] = record["wind_speed"]
+            if record.get("ghi") is not None:
+                # Convert instantaneous W/m² to kWh/m²/day (24h equivalent)
+                set_parts.append("irradiation = :irradiation")
+                params["irradiation"] = round(record["ghi"] * 24 / 1000, 2)
+            await session.execute(
+                text(f"UPDATE stations SET {', '.join(set_parts)} WHERE id = :station_id"),
+                params,
+            )
+
             await session.commit()
         logger.info(
             "MQTT stored: station=%s at=%s",

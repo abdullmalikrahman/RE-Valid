@@ -37,7 +37,7 @@ export default function KalkulatorPage() {
     if (!s) return;
     setSelectedStationId(id);
     if (isWind) {
-      // Prioritas: GWA 3.0 → NASA POWER → baseline → terukur
+      // Prioritas: GWA 3.0 → ERA5 → baseline → terukur
       const speed = s.windBaselineGwa ?? s.windBaselineNasa ?? s.windBaseline ?? s.windSpeed ?? 0;
       const cf = speed > 0 ? Math.round(Math.max(15, Math.min(42, speed * 3.8))) : 20;
       setFaktorKapasitas(cf);
@@ -57,7 +57,7 @@ export default function KalkulatorPage() {
       return (kapasitas * (faktorKapasitas / 100) * 8760) / 1000; // GWh
     } else {
       // AEP PLTS = kapasitas (MWp) × GHI (kWh/m²/day) × 365 × PR
-      // Prioritas sumber GHI: GSA (Solargis) → NASA POWER → baseline → irradiation terukur
+      // Prioritas sumber GHI: GSA (Solargis) → ERA5 → baseline → irradiation terukur
       const station = stations.find((s) => s.id === selectedStationId);
       const ghi = station
         ? (station.ghiBaselineGsa ?? station.ghiBaselineNasa ?? station.ghiBaseline ?? station.irradiation ?? 4.5)
@@ -553,7 +553,7 @@ export default function KalkulatorPage() {
                     <span className="material-symbols-outlined text-[14px]">check_circle</span>
                     {isWind
                       ? `CF dihitung dari baseline angin: ${selectedStation.windBaselineGwa ?? selectedStation.windBaselineNasa ?? selectedStation.windBaseline ?? selectedStation.windSpeed ?? '–'} m/s`
-                      : `GHI aktif: ${selectedStation.ghiBaselineGsa ?? selectedStation.ghiBaselineNasa ?? selectedStation.ghiBaseline ?? selectedStation.irradiation ?? '–'} kWh/m²/hari (GSA/NASA POWER)`}
+                      : `GHI aktif: ${selectedStation.ghiBaselineGsa ?? selectedStation.ghiBaselineNasa ?? selectedStation.ghiBaseline ?? selectedStation.irradiation ?? '–'} kWh/m²/hari (GSA/ERA5)`}
                   </div>
                   <div className="grid grid-cols-2 gap-1.5 text-[11px]">
                     <div className="bg-gray-50 dark:bg-[#111a22] rounded px-2.5 py-2 flex flex-col gap-0.5">

@@ -18,7 +18,7 @@ async def bulk_insert_measurements(
     stmt = (
         insert(Measurement)
         .values(rows)
-        .on_conflict_do_nothing(index_elements=["station_id", "measured_at"])
+        .on_conflict_do_nothing()
     )
     result = await db.execute(stmt)
     await db.commit()

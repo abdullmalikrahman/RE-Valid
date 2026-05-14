@@ -25,7 +25,7 @@ Catatan
 -------
 - Ukuran file sekitar 30-80 MB
 - File ini TIDAK di-commit ke git (sudah ditambahkan ke .gitignore)
-- Jika file tidak ada, sistem otomatis fallback ke NASA POWER ERA5
+- Jika file tidak ada, sistem otomatis fallback ke ERA5/ECMWF via Open-Meteo
 - Untuk GSA (Global Solar Atlas), tidak perlu download karena menggunakan
   REST API langsung: https://api.globalsolaratlas.info/data/lta?loc={lat},{lon}
 
