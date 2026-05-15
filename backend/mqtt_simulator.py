@@ -11,7 +11,7 @@ Atau dengan interval custom (detik):
     python mqtt_simulator.py --interval 30
 
 Atau untuk stasiun tertentu saja:
-    python mqtt_simulator.py --stations GWY-089 CMH-001
+    python mqtt_simulator.py --stations LOC-01
 """
 
 import argparse
@@ -40,18 +40,18 @@ MQTT_PASSWORD = os.environ.get("MQTT_PASSWORD", "")
 DEFAULT_INTERVAL = 60  # detik
 
 # ─── Profil setiap stasiun ─────────────────────────────────────────────────────
-# base_wind: dikalibrasi terhadap wind_baseline (ERA5/ECMWF via Open-Meteo) per stasiun
-#   sehingga rata-rata obs mendekati nilai atlas dengan bias ±5–20%
-# base_ghi : dalam W/m² (rata-rata harian). Konsisten dengan 04_seed_measurements.sql
-#   MQTT client menyimpan ke measurements.ghi (W/m²)
-#   tasks.py mengonversi × 24/1000 → kWh/m²/hari sebelum dibanding ghi_baseline
+# base_wind : m/s  — sesuaikan dengan wind_baseline stasiun (dari GWA/ERA5)
+# base_ghi  : W/m² rata-rata harian — konversi dari kWh/m²/hari × 1000 / 24
+#             Contoh: GSA 4.47 kWh/m²/hari → 4.47 × 1000 / 24 ≈ 186 W/m²
+#             MQTT client menyimpan ke measurements.ghi (W/m²)
+#             tasks.py mengonversi × 24/1000 → kWh/m²/hari saat validasi MCP
+# altitude  : meter dpl — dari data stasiun
+#
+# Tambahkan entri baru di sini setiap kali ada stasiun baru didaftarkan di /admin.
 STATIONS = {
-    "GWY-089": {"base_wind": 4.3, "base_ghi": 195.0, "altitude": 1820},
-    "CMH-001": {"base_wind": 4.0, "base_ghi": 209.0, "altitude": 752},
-    "PGD-023": {"base_wind": 4.6, "base_ghi": 215.0, "altitude": 12},
-    "SBG-105": {"base_wind": 3.5, "base_ghi": 210.0, "altitude": 48},
-    "GRT-056": {"base_wind": 5.1, "base_ghi": 205.0, "altitude": 730},
-    "TSM-034": {"base_wind": 4.6, "base_ghi": 200.0, "altitude": 368},
+    # Pengukuran 1 - Sumbersari (Sumbersari, Purwakarta)
+    # Baseline: GWA 2.84 m/s | GSA 4.47 kWh/m²/hari (186 W/m²) | ERA5 2.21 m/s / 5.03 kWh
+    "LOC-01": {"base_wind": 2.84, "base_ghi": 186.0, "altitude": 619},
 }
 
 
