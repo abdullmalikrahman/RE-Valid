@@ -49,6 +49,93 @@ function LaporanContent() {
 
   const { measurements } = useMeasurements(stationId);
 
+  // Derived baseline values — computed before any early return so hooks below are always called
+  const windBaselineVal = station?.windBaseline ?? (station?.windSpeed ?? 0) * 1.046;
+  const ghiBaselineVal = station?.ghiBaseline ?? (station?.irradiation ?? 0) * 0.958;
+
+  // Selalu tampilkan per hari — laporan menampilkan seluruh data validasi per titik harian
+  const chartGranularity = 'daily' as const;
+
+  function makeChartData(
+    meas: typeof measurements,
+    getValue: (m: (typeof measurements)[number]) => number,
+    baseline: number,
+    granularity: 'daily' | 'weekly' | 'monthly',
+  ) {
+    const getGroupKey = (date: Date): { key: string; label: string } => {
+      if (granularity === 'daily') {
+        return {
+          key: date.toISOString().slice(0, 10),
+          label: date.toLocaleDateString('id-ID', { day: 'numeric', month: 'short' }),
+        };
+      } else if (granularity === 'weekly') {
+        const d = new Date(date);
+        const day = d.getDay();
+        const diff = d.getDate() - day + (day === 0 ? -6 : 1);
+        d.setDate(diff);
+        return {
+          key: d.toISOString().slice(0, 10),
+          label: `Mgg ${d.toLocaleDateString('id-ID', { day: 'numeric', month: 'short' })}`,
+        };
+      } else {
+        return {
+          key: date.toISOString().slice(0, 7),
+          label: date.toLocaleDateString('id-ID', { month: 'short', year: '2-digit' }),
+        };
+      }
+    };
+    const groups = new Map<string, { label: string; values: number[] }>();
+    meas.forEach((m) => {
+      const { key, label } = getGroupKey(new Date(m.measured_at));
+      if (!groups.has(key)) groups.set(key, { label, values: [] });
+      const v = getValue(m);
+      if (v > 0) groups.get(key)!.values.push(v);
+    });
+    return [...groups.entries()]
+      .sort(([a], [b]) => a.localeCompare(b))
+      .filter(([, { values }]) => values.length > 0)
+      .map(([, { label, values }]) => ({
+        date: label,
+        obs: parseFloat((values.reduce((a, b) => a + b, 0) / values.length).toFixed(2)),
+        baseline,
+      }));
+  }
+
+  const windChartData = useMemo(
+    () => makeChartData(measurements, (m) => parseFloat((m.wind_speed ?? 0).toString()), windBaselineVal, chartGranularity),
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [measurements, windBaselineVal, chartGranularity],
+  );
+  const ghiChartData = useMemo(
+    () => makeChartData(measurements, (m) => parseFloat(((m.ghi ?? 0) * 24 / 1000).toFixed(2)), ghiBaselineVal, chartGranularity),
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [measurements, ghiBaselineVal, chartGranularity],
+  );
+  const windScatterData = useMemo(() => {
+    const all = measurements.map((m) => ({ obs: parseFloat((m.wind_speed ?? 0).toString()), baseline: windBaselineVal })).filter((p) => p.obs > 0);
+    // Downsample ke maks 400 titik — render 14.400 SVG dot sangat berat untuk browser
+    const step = all.length > 400 ? Math.ceil(all.length / 400) : 1;
+    return step === 1 ? all : all.filter((_, i) => i % step === 0);
+  }, [measurements, windBaselineVal]);
+  const ghiScatterData = useMemo(() => {
+    const all = measurements.map((m) => ({ obs: parseFloat(((m.ghi ?? 0) * 24 / 1000).toFixed(2)), baseline: ghiBaselineVal })).filter((p) => p.obs > 0);
+    const step = all.length > 400 ? Math.ceil(all.length / 400) : 1;
+    return step === 1 ? all : all.filter((_, i) => i % step === 0);
+  }, [measurements, ghiBaselineVal]);
+
+  // keep legacy aliases used by existing Recharts preview
+  const chartTsRef = useRef<HTMLDivElement>(null);
+  const chartScatterRef = useRef<HTMLDivElement>(null);
+  const chartTsGhiRef = useRef<HTMLDivElement>(null);
+  const chartScatterGhiRef = useRef<HTMLDivElement>(null);
+
+  const [exporting, setExporting] = useState<'pdf' | 'csv' | 'geojson' | null>(null);
+
+  const [isDark, setIsDark] = useState(true);
+  useEffect(() => {
+    setIsDark(localStorage.getItem('re_valid_theme') !== 'light');
+  }, []);
+
   // Jika belum ada stasiun di DB, tampilkan empty state
   if (!station) {
     return (
@@ -68,63 +155,9 @@ function LaporanContent() {
   const hasSolar = station.variables.toLowerCase().includes('iradiasi')
     || station.variables.toLowerCase().includes('surya')
     || station.variables.toLowerCase().includes('ghi');
-  const windBaselineVal = station.windBaseline ?? (station.windSpeed ?? 0) * 1.046;
-  const ghiBaselineVal = station.ghiBaseline ?? (station.irradiation ?? 0) * 0.958;
   const solarBiasVal = station.solarBias ?? station.bias;
   const ktVal = (station.irradiation ?? 0) / 8.5;
-
-  function makeMonthly(
-    meas: typeof measurements,
-    getValue: (m: (typeof measurements)[number]) => number,
-    baseline: number,
-  ) {
-    const groups = new Map<string, number[]>();
-    meas.forEach((m) => {
-      const key = new Date(m.measured_at).toLocaleDateString('id-ID', { month: 'short', year: '2-digit' });
-      if (!groups.has(key)) groups.set(key, []);
-      const v = getValue(m);
-      if (v > 0) groups.get(key)!.push(v);
-    });
-    return [...groups.entries()]
-      .filter(([, vs]) => vs.length > 0)
-      .map(([date, vs]) => ({
-        date,
-        obs: parseFloat((vs.reduce((a, b) => a + b, 0) / vs.length).toFixed(2)),
-        baseline,
-      }));
-  }
-
-  const windChartData = useMemo(
-    () => makeMonthly(measurements, (m) => parseFloat((m.wind_speed ?? 0).toString()), windBaselineVal),
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-    [measurements, windBaselineVal],
-  );
-  const ghiChartData = useMemo(
-    () => makeMonthly(measurements, (m) => parseFloat(((m.ghi ?? 0) * 24 / 1000).toFixed(2)), ghiBaselineVal),
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-    [measurements, ghiBaselineVal],
-  );
-  const windScatterData = useMemo(
-    () => measurements.map((m) => ({ obs: parseFloat((m.wind_speed ?? 0).toString()), baseline: windBaselineVal })).filter((p) => p.obs > 0),
-    [measurements, windBaselineVal],
-  );
-  const ghiScatterData = useMemo(
-    () => measurements.map((m) => ({ obs: parseFloat(((m.ghi ?? 0) * 24 / 1000).toFixed(2)), baseline: ghiBaselineVal })).filter((p) => p.obs > 0),
-    [measurements, ghiBaselineVal],
-  );
-
-  // keep legacy aliases used by existing Recharts preview
-  const chartTsRef = useRef<HTMLDivElement>(null);
-  const chartScatterRef = useRef<HTMLDivElement>(null);
-  const chartTsGhiRef = useRef<HTMLDivElement>(null);
-  const chartScatterGhiRef = useRef<HTMLDivElement>(null);
-
-  const [exporting, setExporting] = useState<'pdf' | 'csv' | 'geojson' | null>(null);
-
-  const [isDark, setIsDark] = useState(true);
-  useEffect(() => {
-    setIsDark(localStorage.getItem('re_valid_theme') !== 'light');
-  }, []);
+  const granularityLabel = chartGranularity === 'daily' ? 'Rata-rata Harian' : chartGranularity === 'weekly' ? 'Rata-rata Mingguan' : 'Rata-rata Bulanan';
   const gridColor = isDark ? '#2d3b4a' : '#e2e8f0';
   const tooltipBg = isDark ? '#1c2630' : '#ffffff';
   const tooltipBorder = isDark ? '#2d3b4a' : '#e2e8f0';
@@ -267,23 +300,50 @@ function LaporanContent() {
       pdf.text(`${station.name} (${station.id})`, W - 10, 9.5, { align: 'right' });
 
       // ── Helpers: build chart data ─────────────────────────────────────────
-      function buildMonthly(
+      function buildChartData(
         meas: typeof measurements,
         getValue: (m: (typeof measurements)[number]) => number,
         baseline: number,
       ): { date: string; obs: number; baseline: number }[] {
-        const groups = new Map<string, number[]>();
+        // Adaptive granularity: daily ≤31 days, weekly ≤180, monthly otherwise
+        const times = meas.map((m) => new Date(m.measured_at).getTime());
+        const spanDays = times.length >= 2 ? (Math.max(...times) - Math.min(...times)) / 86_400_000 : 0;
+        const granularity = spanDays <= 31 ? 'daily' : spanDays <= 180 ? 'weekly' : 'monthly';
+
+        const getGroupKey = (date: Date): { key: string; label: string } => {
+          if (granularity === 'daily') {
+            return {
+              key: date.toISOString().slice(0, 10),
+              label: date.toLocaleDateString('id-ID', { day: 'numeric', month: 'short' }),
+            };
+          } else if (granularity === 'weekly') {
+            const d = new Date(date);
+            const day = d.getDay();
+            d.setDate(d.getDate() - day + (day === 0 ? -6 : 1));
+            return {
+              key: d.toISOString().slice(0, 10),
+              label: `Mgg ${d.toLocaleDateString('id-ID', { day: 'numeric', month: 'short' })}`,
+            };
+          } else {
+            return {
+              key: date.toISOString().slice(0, 7),
+              label: date.toLocaleDateString('id-ID', { month: 'short', year: '2-digit' }),
+            };
+          }
+        };
+        const groups = new Map<string, { label: string; values: number[] }>();
         meas.forEach((m) => {
-          const key = new Date(m.measured_at).toLocaleDateString('id-ID', { month: 'short', year: '2-digit' });
-          if (!groups.has(key)) groups.set(key, []);
+          const { key, label } = getGroupKey(new Date(m.measured_at));
+          if (!groups.has(key)) groups.set(key, { label, values: [] });
           const v = getValue(m);
-          if (v > 0) groups.get(key)!.push(v);
+          if (v > 0) groups.get(key)!.values.push(v);
         });
         return [...groups.entries()]
-          .filter(([, vs]) => vs.length > 0)
-          .map(([date, vs]) => ({
-            date,
-            obs: parseFloat((vs.reduce((a, b) => a + b, 0) / vs.length).toFixed(2)),
+          .sort(([a], [b]) => a.localeCompare(b))
+          .filter(([, { values }]) => values.length > 0)
+          .map(([, { label, values }]) => ({
+            date: label,
+            obs: parseFloat((values.reduce((a, b) => a + b, 0) / values.length).toFixed(2)),
             baseline,
           }));
       }
@@ -447,7 +507,7 @@ function LaporanContent() {
         pdf.text('Tidak ada data grafik tersedia untuk stasiun ini.', W / 2, 150, { align: 'center' });
       } else {
         if (hasWind) {
-          const wMon = buildMonthly(measurements, (m) => parseFloat((m.wind_speed ?? 0).toString()), windBaseline);
+          const wMon = buildChartData(measurements, (m) => parseFloat((m.wind_speed ?? 0).toString()), windBaseline);
           const wSca = buildScatter(measurements, (m) => parseFloat((m.wind_speed ?? 0).toString()), windBaseline);
           addChartSection(
             'Kecepatan Angin — Baseline Atlas vs Observasi',
@@ -457,7 +517,7 @@ function LaporanContent() {
           );
         }
         if (hasSolar) {
-          const sMon = buildMonthly(measurements, (m) => parseFloat(((m.ghi ?? 0) * 24 / 1000).toFixed(2)), solarBaseline);
+          const sMon = buildChartData(measurements, (m) => parseFloat(((m.ghi ?? 0) * 24 / 1000).toFixed(2)), solarBaseline);
           const sSca = buildScatter(measurements, (m) => parseFloat(((m.ghi ?? 0) * 24 / 1000).toFixed(2)), solarBaseline);
           addChartSection(
             'Iradiasi Matahari (GHI) — Baseline Atlas vs Observasi',
@@ -877,6 +937,7 @@ function LaporanContent() {
                 <h4 className="text-sm font-bold text-slate-900 dark:text-white">Grafik Validasi</h4>
                 <span className="ml-auto text-[11px] text-slate-400">
                   {hasWind && hasSolar ? 'Angin & GHI — Obs vs Baseline Atlas' : hasWind ? 'Angin — Obs vs Baseline Atlas' : 'GHI — Obs vs Baseline Atlas'}
+                  {' '}({granularityLabel})
                 </span>
               </div>
 

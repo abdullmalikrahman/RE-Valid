@@ -34,18 +34,20 @@ export function useMeasurements(
   stationId: string | null,
   start = oneYearAgoStr(),
   end = todayStr(),
-  limit = 2000,
+  limit = 14400,
 ) {
   const params = new URLSearchParams();
   if (stationId) params.set('station_id', stationId);
-  params.set('start', start);
-  params.set('end', end);
+  // Pastikan end mencakup seluruh hari (backend parse 'YYYY-MM-DD' sebagai midnight,
+  // sehingga data di hari yang sama (jam > 00:00) akan terpotong tanpa ini).
+  params.set('start', start.includes('T') ? start : `${start}T00:00:00`);
+  params.set('end', end.includes('T') ? end : `${end}T23:59:59`);
   params.set('limit', String(limit));
 
   const { data, error, isLoading } = useSWR<Measurement[]>(
     stationId ? `/api/v1/measurements?${params.toString()}` : null,
     fetchMeasurements,
-    { refreshInterval: 60_000 },
+    { refreshInterval: 300_000 }, // 5 menit — 14.400 baris per fetch terlalu berat untuk tiap 60s
   );
 
   return { measurements: data ?? [], isLoading, error };

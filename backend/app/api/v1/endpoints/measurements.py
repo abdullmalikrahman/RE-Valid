@@ -100,7 +100,7 @@ async def list_measurements(
     station_id: str,
     start: datetime | None = Query(None),
     end: datetime | None = Query(None),
-    limit: int = Query(1000, ge=1, le=5000),
+    limit: int = Query(1000, ge=1, le=20000),
     db: AsyncSession = Depends(get_db),
 ):
     return await get_measurements(db, station_id, start, end, limit)

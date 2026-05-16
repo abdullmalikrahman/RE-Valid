@@ -6,7 +6,7 @@ export function useStations() {
   const { data, error, isLoading, mutate } = useSWR<Station[]>(
     '/api/v1/stations',
     fetchStations,
-    { refreshInterval: 30_000 },
+    { refreshInterval: 120_000 }, // 2 menit — metadata stasiun jarang berubah
   );
   return {
     stations: data ?? [],

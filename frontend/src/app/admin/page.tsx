@@ -470,7 +470,7 @@ function StationModal({ station, onClose, onSave, onRefresh }: ModalProps) {
               )}
               <div className="grid grid-cols-2 gap-3">
                 <div className="flex flex-col gap-1">
-                  <label className="text-[11px] text-gray-500 dark:text-gray-400">Angin 100m · m/s (best: GWA &gt; NASA)</label>
+                  <label className="text-[11px] text-gray-500 dark:text-gray-400">Angin 100m · m/s (best: GWA &gt; ERA5)</label>
                   <input
                     type="number"
                     step="0.01"

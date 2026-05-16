@@ -72,7 +72,7 @@ function AnalisisContent() {
           'Content-Type': 'application/json',
           ...(token ? { Authorization: `Bearer ${token}` } : {}),
         },
-        body: JSON.stringify({ station_id: station.id, variable: energyType, n: 90 }),
+        body: JSON.stringify({ station_id: station.id, variable: energyType, n: 14400 }),
       });
         if (!res.ok) {
         if (res.status === 403 || res.status === 401) {
@@ -364,33 +364,61 @@ function AnalisisContent() {
     return { obs, baseline: atlasBaseline };
   });
 
-  // Monthly averages for time-series line chart (12 clean points instead of 365 noisy ones)
+  // Granularitas adaptif: harian (≤31 hari), mingguan (≤180 hari), bulanan (>180 hari)
+  // Untuk kampanye 10 hari → setiap hari tampil sebagai 1 titik di grafik
+  const chartGranularity = (() => {
+    if (measurements.length < 2) return 'daily' as const;
+    const first = new Date(measurements[0].measured_at).getTime();
+    const last  = new Date(measurements[measurements.length - 1].measured_at).getTime();
+    const days  = (last - first) / 86_400_000;
+    return days <= 31 ? 'daily' as const : days <= 180 ? 'weekly' as const : 'monthly' as const;
+  })();
+  const chartGranularityLabel = chartGranularity === 'daily' ? 'Rata-rata Harian' : chartGranularity === 'weekly' ? 'Rata-rata Mingguan' : 'Rata-rata Bulanan';
+
   const chartData = (() => {
-    const groups = new Map<string, { obs: number[]; baseline: number[] }>();
+    const groups = new Map<string, { obs: number[]; baseline: number[]; label: string }>();
     measurements.forEach((m, i) => {
-      const key = new Date(m.measured_at).toLocaleDateString('id-ID', { month: 'short', year: '2-digit' });
-      if (!groups.has(key)) groups.set(key, { obs: [], baseline: [] });
-      const g = groups.get(key)!;
+      const d = new Date(m.measured_at);
+      let groupKey: string;
+      let label: string;
+      if (chartGranularity === 'daily') {
+        groupKey = d.toISOString().slice(0, 10); // YYYY-MM-DD
+        label = d.toLocaleDateString('id-ID', { day: 'numeric', month: 'short' });
+      } else if (chartGranularity === 'weekly') {
+        const weekStart = new Date(d);
+        weekStart.setDate(d.getDate() - d.getDay()); // Minggu sebagai awal pekan
+        groupKey = weekStart.toISOString().slice(0, 10);
+        label = weekStart.toLocaleDateString('id-ID', { day: 'numeric', month: 'short' });
+      } else {
+        groupKey = d.toISOString().slice(0, 7); // YYYY-MM
+        label = d.toLocaleDateString('id-ID', { month: 'short', year: '2-digit' });
+      }
+      if (!groups.has(groupKey)) groups.set(groupKey, { obs: [], baseline: [], label });
+      const g = groups.get(groupKey)!;
       g.obs.push(dailyValues[i].obs);
       g.baseline.push(dailyValues[i].baseline);
     });
-    return [...groups.entries()].map(([date, g]) => ({
-      date,
-      obs: parseFloat((g.obs.reduce((a, b) => a + b, 0) / g.obs.length).toFixed(2)),
-      baseline: parseFloat((g.baseline.reduce((a, b) => a + b, 0) / g.baseline.length).toFixed(2)),
+    // Map mempertahankan urutan insertion; measurements sudah diurutkan ASC dari backend
+    return [...groups.values()].map(({ label, obs, baseline }) => ({
+      date: label,
+      obs: parseFloat((obs.reduce((a, b) => a + b, 0) / obs.length).toFixed(2)),
+      baseline: parseFloat((baseline.reduce((a, b) => a + b, 0) / baseline.length).toFixed(2)),
     }));
   })();
 
   // Scatter: obs (X) vs deviasi dari atlas baseline (Y) — lebih informatif dari obs vs konstanta
   // Y > 0 = obs di atas atlas; Y < 0 = obs di bawah atlas; Y = 0 = cocok sempurna
-  const scatterData = dailyValues.map((d) => ({
+  const scatterDataAll = dailyValues.map((d) => ({
     obs: d.obs,
     dev: parseFloat((d.obs - atlasBaseline).toFixed(3)),
   }));
+  // Downsample ke maks 400 titik — render 14.400 SVG dot sangat berat untuk browser
+  const scatterStep = scatterDataAll.length > 400 ? Math.ceil(scatterDataAll.length / 400) : 1;
+  const scatterData = scatterStep === 1 ? scatterDataAll : scatterDataAll.filter((_, i) => i % scatterStep === 0);
 
-  // Reference line y = x (perfect agreement) for scatter plot
-  const scatterMin = scatterData.length ? Math.min(...scatterData.map((d) => d.obs)) : 0;
-  const scatterMax = scatterData.length ? Math.max(...scatterData.map((d) => d.obs)) : 10;
+  // Reference line — gunakan reduce bukan spread (...) untuk hindari stack overflow pada array besar
+  const scatterMin = scatterDataAll.length ? scatterDataAll.reduce((mn, d) => d.obs < mn ? d.obs : mn, Infinity) : 0;
+  const scatterMax = scatterDataAll.length ? scatterDataAll.reduce((mx, d) => d.obs > mx ? d.obs : mx, -Infinity) : 10;
 
   // MAE computed from real measurement data (mean absolute error obs vs baseline)
   // Returns null when no measurement data is available (avoids showing a fake fallback value)
@@ -699,8 +727,8 @@ function AnalisisContent() {
                 <h3 className="text-sm font-bold text-slate-900 dark:text-white">Visualisasi Perbandingan Data</h3>
                 <p className="text-xs text-slate-500 dark:text-text-secondary">
                   {isWind
-                    ? `Deret Waktu: Kec. Angin Obs vs GWA 3.0 — ${station.name}`
-                    : `Deret Waktu: GHI Obs vs GSA/Solargis — ${station.name}`}
+                    ? `Deret Waktu (${chartGranularityLabel}): Kec. Angin Obs vs GWA 3.0 — ${station.name}`
+                    : `Deret Waktu (${chartGranularityLabel}): GHI Obs vs GSA/Solargis — ${station.name}`}
                 </p>
               </div>
               <div className="flex items-center gap-3 text-xs font-medium">
@@ -1114,7 +1142,7 @@ function AnalisisContent() {
           </div>
           <div className="px-4 py-2 bg-blue-50/50 dark:bg-blue-900/10 border-t border-blue-100 dark:border-blue-900/30 text-[10px] text-slate-400 flex items-center gap-1.5">
             <span className="material-symbols-outlined text-[13px] text-blue-400">info</span>
-            Nilai <strong className="text-slate-500 dark:text-slate-300">Aktif</strong> dipakai sebagai baseline primer (GWA &gt; NASA untuk angin · GSA &gt; NASA untuk surya). Kolom kosong (–) artinya data atlas belum diambil — klik <em>Ambil dari GWA + GSA + NASA</em> di halaman Admin.
+            Nilai <strong className="text-slate-500 dark:text-slate-300">Aktif</strong> dipakai sebagai baseline primer (GWA &gt; ERA5 untuk angin · GSA &gt; ERA5 untuk surya). Kolom kosong (–) artinya data atlas belum diambil — klik <em>Ambil dari Atlas</em> di halaman Admin.
           </div>
         </div>
 

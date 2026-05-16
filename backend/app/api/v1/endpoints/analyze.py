@@ -1,5 +1,5 @@
 from fastapi import APIRouter, Depends, HTTPException
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 from celery.result import AsyncResult
 from app.core.security import get_current_user
 from app.workers.tasks import validate_station_mcp
@@ -11,7 +11,7 @@ router = APIRouter()
 class AnalyzeRequest(BaseModel):
     station_id: str
     variable: str = "wind"   # "wind" | "solar"
-    n: int = 90               # jumlah data terbaru yang dihitung
+    n: int = Field(14400, ge=10, le=100_000)  # batas: 10 ≤ n ≤ 100.000
 
 
 @router.post("", summary="Jalankan analisis MCP / validasi GHI untuk satu stasiun")

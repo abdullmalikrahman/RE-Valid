@@ -120,14 +120,17 @@ def _r2(obs: list[float], baseline: list[float]) -> float:
 
 
 @celery_app.task(name="validate_station_mcp", bind=True)
-def validate_station_mcp(self, station_id: str, variable: str = "wind", n: int = 90):
+def validate_station_mcp(self, station_id: str, variable: str = "wind", n: int = 14400):
     """
     Compute RMSE, bias, R² for a station and persist the result.
 
     Args:
-        station_id: e.g. "GWY-089"
+        station_id: e.g. "LOC-01"
         variable:  "wind" | "solar"
-        n:         number of recent measurements to use (default 90 days)
+        n:         Jumlah pembacaan terbaru yang digunakan.
+                   Default: 14.400 = 10 hari × 24h × 60 menit (interval 1 menit ESP32).
+                   Untuk interval 5 menit: 10 hari = 2.880 baris.
+                   Nilai ini hanya batas atas — jika data lebih sedikit, semua data dipakai.
     """
     import psycopg2  # sync driver for Celery worker
     from app.core.config import settings
@@ -146,23 +149,21 @@ def validate_station_mcp(self, station_id: str, variable: str = "wind", n: int =
         )
         conn.commit()
 
+        # Fetch recent non-null measurements — explicit queries (no f-string interpolation)
         if variable == "wind":
-            col = "wind_speed"
+            cur.execute(
+                "SELECT wind_speed FROM measurements"
+                " WHERE station_id = %s AND wind_speed IS NOT NULL"
+                " ORDER BY measured_at DESC LIMIT %s",
+                (station_id, n),
+            )
         else:
-            col = "ghi"
-
-        # Fetch recent non-null measurements
-        cur.execute(
-            f"""
-            SELECT {col}
-            FROM   measurements
-            WHERE  station_id = %s
-              AND  {col} IS NOT NULL
-            ORDER  BY measured_at DESC
-            LIMIT  %s
-            """,
-            (station_id, n),
-        )
+            cur.execute(
+                "SELECT ghi FROM measurements"
+                " WHERE station_id = %s AND ghi IS NOT NULL"
+                " ORDER BY measured_at DESC LIMIT %s",
+                (station_id, n),
+            )
         rows = cur.fetchall()
 
         if len(rows) < 10:
@@ -240,6 +241,35 @@ def validate_station_mcp(self, station_id: str, variable: str = "wind", n: int =
         else:
             derived_status = "tidak_sesuai"
 
+        # ── Hitung period dan variables untuk ditampilkan di panel stasiun ──────
+        MONTH_ID = ['', 'Jan', 'Feb', 'Mar', 'Apr', 'Mei', 'Jun',
+                    'Jul', 'Agu', 'Sep', 'Okt', 'Nov', 'Des']
+
+        cur.execute(
+            "SELECT MIN(measured_at), MAX(measured_at) FROM measurements WHERE station_id = %s",
+            (station_id,),
+        )
+        row_dates = cur.fetchone()
+        if row_dates and row_dates[0] and row_dates[1]:
+            t_min, t_max = row_dates[0], row_dates[1]
+            start_str = f"{t_min.day} {MONTH_ID[t_min.month]}"
+            end_str   = f"{t_max.day} {MONTH_ID[t_max.month]} {t_max.year}"
+            period_str = f"{start_str} \u2013 {end_str}"
+        else:
+            period_str = None
+
+        # Tentukan variabel yang sudah divalidasi (gabungkan dengan yang sudah ada)
+        if variable == "wind":
+            cur.execute("SELECT solar_rmse FROM stations WHERE id = %s", (station_id,))
+            row_chk = cur.fetchone()
+            has_solar = row_chk and row_chk[0] is not None
+            variables_str = "Angin, Iradiasi Surya" if has_solar else "Angin"
+        else:
+            cur.execute("SELECT wind_rmse FROM stations WHERE id = %s", (station_id,))
+            row_chk = cur.fetchone()
+            has_wind = row_chk and row_chk[0] is not None
+            variables_str = "Angin, Iradiasi Surya" if has_wind else "Iradiasi Surya"
+
         # Persist to stations table
         # Angin (wind) = analisis utama: tulis wind_*, score, status, aep, rmse/bias/r2
         # Surya (solar) = analisis pelengkap: tulis solar_* SAJA, tidak timpa score/status/aep
@@ -257,11 +287,14 @@ def validate_station_mcp(self, station_id: str, variable: str = "wind", n: int =
                        aep         = %s,
                        score       = %s,
                        status      = %s,
+                       period      = COALESCE(%s, period),
+                       variables   = %s,
                        mcp_status  = 'selesai',
                        last_update = NOW()
                 WHERE  id = %s
                 """,
-                (rmse, bias, r2, aep, rmse, bias, r2, aep, score, derived_status, station_id),
+                (rmse, bias, r2, aep, rmse, bias, r2, aep, score, derived_status,
+                 period_str, variables_str, station_id),
             )
         else:
             # Solar: hanya tulis kolom solar_* dan mcp_status, tidak timpa score/status/aep
@@ -272,11 +305,13 @@ def validate_station_mcp(self, station_id: str, variable: str = "wind", n: int =
                        solar_bias  = %s,
                        solar_r2    = %s,
                        solar_aep   = %s,
+                       period      = COALESCE(%s, period),
+                       variables   = %s,
                        mcp_status  = 'selesai',
                        last_update = NOW()
                 WHERE  id = %s
                 """,
-                (rmse, bias, r2, aep, station_id),
+                (rmse, bias, r2, aep, period_str, variables_str, station_id),
             )
         conn.commit()
         cur.close()

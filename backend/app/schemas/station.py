@@ -23,6 +23,8 @@ class StationUpdate(BaseModel):
     altitude: Optional[int] = None
     status: Optional[str] = Field(None, pattern="^(prioritas|kandidat|tidak_sesuai)$")
     score: Optional[int] = Field(None, ge=0, le=100)
+    period: Optional[str] = Field(None, max_length=100, description="Periode pengukuran, misal '23 Mei – 2 Jun 2026'")
+    variables: Optional[str] = Field(None, max_length=200, description="Variabel yang diukur, misal 'Angin, Iradiasi Surya'")
     wind_baseline: Optional[float] = Field(None, ge=0, description="Best-available wind baseline (GWA jika tersedia, else ERA5) (m/s)")
     ghi_baseline: Optional[float] = Field(None, ge=0, description="Best-available GHI baseline (GSA, else ERA5) (kWh/m²/day)")
     wind_baseline_gwa: Optional[float] = Field(None, ge=0, description="GWA GeoTIFF 100m mean wind speed (m/s)")
