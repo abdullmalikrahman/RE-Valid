@@ -18,6 +18,7 @@ node_modules/
 .next/
 out/
 npm-debug.log*
+*.tsbuildinfo
 
 # Docker volumes (data runtime, bukan config)
 pgdata/
@@ -38,6 +39,9 @@ logs/
 
 # MQTT password file — berisi hash password, jangan di-commit
 mqtt/config/passwd
+
+# ESP32 secrets — berisi IP server & password MQTT, jangan di-commit
+docs/esp32/secrets.h
 
 # Nginx — sertifikat SSL dan ACME challenge (diisi otomatis oleh Certbot)
 nginx/certbot/
