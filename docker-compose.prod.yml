@@ -1,0 +1,72 @@
+# =============================================================================
+# RE-Valid — Docker Compose Override untuk Production
+#
+# Cara pakai:
+#   docker compose -f docker-compose.yml -f docker-compose.prod.yml up -d
+#
+# File ini menambahkan:
+#   1. Nginx (reverse proxy + SSL termination)
+#   2. Certbot (manajemen sertifikat Let's Encrypt + auto-renewal)
+#   3. Port backend/frontend dibatasi ke localhost saja (tidak expose ke publik)
+#
+# Persiapan sebelum deploy:
+#   1. Ganti "yourdomain.com" di nginx/nginx.conf dengan domain asli Anda
+#   2. Pastikan DNS domain sudah mengarah ke IP server ini
+#   3. Jalankan init-ssl.sh SATU KALI untuk mendapatkan sertifikat awal
+# =============================================================================
+
+services:
+
+  # ── Nginx (reverse proxy + SSL) ─────────────────────────────────────────────
+  nginx:
+    image: nginx:1.27-alpine
+    container_name: re_valid_nginx
+    restart: unless-stopped
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      # Konfigurasi Nginx
+      - ./nginx/nginx.conf:/etc/nginx/conf.d/default.conf:ro
+      # Folder ACME challenge (diisi oleh Certbot)
+      - ./nginx/certbot/www:/var/www/certbot:ro
+      # Sertifikat SSL (diisi oleh Certbot)
+      - ./nginx/certbot/conf:/etc/letsencrypt:ro
+    depends_on:
+      - frontend
+      - backend
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://localhost/nginx-health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+
+  # ── Certbot (Let's Encrypt — auto-renewal setiap 12 jam) ────────────────────
+  certbot:
+    image: certbot/certbot:latest
+    container_name: re_valid_certbot
+    restart: unless-stopped
+    volumes:
+      # Folder ACME challenge (dibagi dengan Nginx)
+      - ./nginx/certbot/www:/var/www/certbot
+      # Folder sertifikat (dibagi dengan Nginx)
+      - ./nginx/certbot/conf:/etc/letsencrypt
+    # Cek renewal setiap 12 jam (Let's Encrypt cert berlaku 90 hari)
+    entrypoint: >
+      /bin/sh -c "trap exit TERM;
+      while :; do
+        certbot renew --webroot --webroot-path=/var/www/certbot --quiet;
+        sleep 12h & wait $${!};
+      done"
+
+  # ── Backend — port tetap 0.0.0.0:8000 (diblokir oleh UFW, bukan Docker) ────
+  # Nginx berkomunikasi ke backend via internal Docker network (http://backend:8000)
+  # sehingga tidak perlu binding 127.0.0.1. Akses publik diblokir oleh UFW.
+
+  # ── Frontend — port tetap 0.0.0.0:3000 (diblokir oleh UFW, bukan Docker) ───
+  # Nginx berkomunikasi ke frontend via internal Docker network (http://frontend:3000)
+  frontend:
+    environment:
+      # Di production, NEXT_PUBLIC_API_URL tetap http://backend:8000 (internal Docker)
+      # karena Next.js me-rewrite /api/v1/* ke backend secara server-side
+      NEXT_PUBLIC_API_URL: http://backend:8000
