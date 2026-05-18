@@ -226,6 +226,10 @@ def validate_station_mcp(self, station_id: str, variable: str = "wind", n: int =
         # Clamp R² to [0, 1]
         r2 = max(0.0, min(1.0, r2))
 
+        # Rata-rata observasi: dipakai untuk mengisi wind_speed / irradiation di stations
+        # sehingga halaman analisis menampilkan nilai aktual lapangan, bukan NULL/0
+        obs_mean = round(sum(obs) / len(obs), 2)
+
         # Kalkulasi AEP estimasi dan score kesesuaian lokasi secara otomatis
         aep   = _compute_aep(variable, atlas_value)
         score = _compute_score(r2, bias, rmse, variable, atlas_value)
@@ -277,7 +281,8 @@ def validate_station_mcp(self, station_id: str, variable: str = "wind", n: int =
             cur.execute(
                 """
                 UPDATE stations
-                SET    wind_rmse   = %s,
+                SET    wind_speed  = %s,
+                       wind_rmse   = %s,
                        wind_bias   = %s,
                        wind_r2     = %s,
                        wind_aep    = %s,
@@ -293,7 +298,7 @@ def validate_station_mcp(self, station_id: str, variable: str = "wind", n: int =
                        last_update = NOW()
                 WHERE  id = %s
                 """,
-                (rmse, bias, r2, aep, rmse, bias, r2, aep, score, derived_status,
+                (obs_mean, rmse, bias, r2, aep, rmse, bias, r2, aep, score, derived_status,
                  period_str, variables_str, station_id),
             )
         else:
@@ -301,7 +306,8 @@ def validate_station_mcp(self, station_id: str, variable: str = "wind", n: int =
             cur.execute(
                 """
                 UPDATE stations
-                SET    solar_rmse  = %s,
+                SET    irradiation = %s,
+                       solar_rmse  = %s,
                        solar_bias  = %s,
                        solar_r2    = %s,
                        solar_aep   = %s,
@@ -311,7 +317,7 @@ def validate_station_mcp(self, station_id: str, variable: str = "wind", n: int =
                        last_update = NOW()
                 WHERE  id = %s
                 """,
-                (rmse, bias, r2, aep, period_str, variables_str, station_id),
+                (obs_mean, rmse, bias, r2, aep, period_str, variables_str, station_id),
             )
         conn.commit()
         cur.close()
