@@ -34,7 +34,18 @@ async function silentRefresh(currentToken: string): Promise<string | null> {
         method: 'POST',
         headers: { Authorization: `Bearer ${currentToken}` },
       });
-      if (!res.ok) return null;
+      if (!res.ok) {
+        if (res.status === 401) {
+          // Token benar-benar expired — hapus dari localStorage agar loop berhenti
+          localStorage.removeItem('re_valid_token');
+          localStorage.removeItem('re_valid_username');
+          localStorage.removeItem('re_valid_role');
+          if (typeof window !== 'undefined') {
+            window.dispatchEvent(new CustomEvent('re_valid_auth_change'));
+          }
+        }
+        return null;
+      }
       const data = await res.json();
       localStorage.setItem('re_valid_token', data.access_token);
       return data.access_token as string;

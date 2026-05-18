@@ -1,17 +1,28 @@
 """
 RE-Valid MQTT Sensor Simulator
 ===============================
-Mensimulasikan sensor lapangan yang mengirim data meteorologi real-time
-ke broker MQTT setiap interval tertentu.
+Mensimulasikan sensor lapangan yang mengirim data meteorologi ke sistem RE-Valid.
 
-Cara menjalankan (dari folder backend/):
-    python mqtt_simulator.py
+━━ MODE REAL-TIME (default) ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+Kirim data ke broker MQTT setiap interval tertentu (timestamp = sekarang).
 
-Atau dengan interval custom (detik):
-    python mqtt_simulator.py --interval 30
+    python mqtt_simulator.py                           # semua stasiun, 60s interval
+    python mqtt_simulator.py --interval 10             # setiap 10 detik
+    python mqtt_simulator.py --stations LOC-01         # stasiun tertentu saja
 
-Atau untuk stasiun tertentu saja:
-    python mqtt_simulator.py --stations LOC-01
+━━ MODE BACKFILL (data historis) ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+Insert data historis langsung ke DB (tanpa MQTT, tanpa menunggu real-time).
+Berguna untuk mensimulasikan kampanye pengukuran 10 hari sebelum sensor siap.
+
+    python mqtt_simulator.py --backfill --start 2026-05-23 --end 2026-06-02
+    python mqtt_simulator.py --backfill --start 2026-05-23 --end 2026-06-02 --measure-interval 10
+
+Argumen backfill:
+  --start              Tanggal mulai (YYYY-MM-DD), default: hari ini - 10 hari
+  --end                Tanggal akhir  (YYYY-MM-DD), default: hari ini
+  --measure-interval   Interval antar pembacaan dalam MENIT (default: 1 menit)
+                       1 menit → ~14 400 baris per 10 hari
+                       10 menit → ~1 440 baris per 10 hari
 """
 
 import argparse
@@ -20,7 +31,7 @@ import math
 import os
 import random
 import time
-from datetime import datetime, timezone
+from datetime import date, datetime, timedelta, timezone
 from pathlib import Path
 
 import paho.mqtt.client as mqtt
@@ -55,14 +66,21 @@ STATIONS = {
 }
 
 
-def _now_doy() -> float:
-    """Day-of-year as float 1–365."""
-    return datetime.now().timetuple().tm_yday
+def _doy(dt: datetime) -> float:
+    """Day-of-year (1–365) dari datetime tertentu (untuk variasi musiman)."""
+    return dt.timetuple().tm_yday
 
 
-def generate_reading(station_id: str, profile: dict) -> dict:
-    """Generate one realistic measurement reading for a station."""
-    doy = _now_doy()
+def generate_reading(station_id: str, profile: dict, at: datetime | None = None) -> dict:
+    """Generate one realistic measurement reading for a station.
+
+    Args:
+        at: Timestamp untuk reading ini. Default = sekarang (UTC).
+            Pada mode backfill, gunakan timestamp historis agar variasi
+            musiman (angin/GHI) sesuai dengan periode waktu yang disimulasikan.
+    """
+    dt = at if at is not None else datetime.now(timezone.utc)
+    doy = _doy(dt)
     base_wind: float = profile["base_wind"]
     base_ghi: float = profile["base_ghi"]
 
@@ -89,7 +107,7 @@ def generate_reading(station_id: str, profile: dict) -> dict:
     pressure = round(1013.0 - profile["altitude"] * 0.115 + random.gauss(0, 0.5), 1)
 
     return {
-        "measured_at": datetime.now(timezone.utc).isoformat(),
+        "measured_at": dt.isoformat(),
         "wind_speed": wind_speed,
         "wind_dir": wind_dir,
         "ghi": ghi,
@@ -147,16 +165,162 @@ def run_simulator(station_ids: list[str], interval: int) -> None:
         client.disconnect()
 
 
+def run_backfill(
+    station_ids: list[str],
+    start: date,
+    end: date,
+    measure_interval_min: int,
+) -> None:
+    """Insert data historis langsung ke DB (bypass MQTT) untuk simulasi kampanye pengukuran.
+
+    Berguna untuk:
+    - Testing sistem sebelum sensor lapangan siap
+    - Mensimulasikan 10 hari kampanye pengukuran (misal: 23 Mei – 2 Juni 2026)
+    - Validasi MCP dengan data yang merepresentasikan periode tertentu
+
+    Timestamp setiap baris diset ke periode historis sehingga variasi musiman
+    (angin/GHI) sesuai dengan bulan yang disimulasikan — bukan bulan saat ini.
+    """
+    try:
+        import psycopg2
+        from psycopg2 import extras as pg_extras
+    except ImportError:
+        print("[backfill] ERROR: psycopg2 tidak terinstall. Jalankan: pip install psycopg2-binary")
+        return
+
+    # Dapatkan DATABASE_URL dari app settings (baca .env otomatis)
+    try:
+        from app.core.config import settings
+        db_url = settings.DATABASE_URL.replace("postgresql+asyncpg://", "postgresql://")
+    except Exception as e:
+        print(f"[backfill] ERROR: Tidak bisa membaca DATABASE_URL dari config: {e}")
+        return
+
+    # Hitung total langkah
+    step = timedelta(minutes=measure_interval_min)
+    start_dt = datetime.combine(start, datetime.min.time()).replace(tzinfo=timezone.utc)
+    end_dt   = datetime.combine(end,   datetime.max.time()).replace(tzinfo=timezone.utc)
+    total_steps = int((end_dt - start_dt).total_seconds() / step.total_seconds()) + 1
+
+    print(f"\n[backfill] Periode  : {start.isoformat()} s/d {end.isoformat()}")
+    print(f"[backfill] Interval : {measure_interval_min} menit → ~{total_steps} pembacaan per stasiun")
+    print(f"[backfill] Stasiun  : {', '.join(station_ids)}")
+    print(f"[backfill] Total baris yang akan digenerate: {total_steps * len(station_ids)}")
+    print("[backfill] Menghubungkan ke database...\n")
+
+    try:
+        conn = psycopg2.connect(db_url)
+        cur = conn.cursor()
+    except Exception as e:
+        print(f"[backfill] ERROR: Koneksi DB gagal: {e}")
+        return
+
+    # Generate semua baris
+    rows: list[tuple] = []
+    at = start_dt
+    tick = 0
+    while at <= end_dt:
+        tick += 1
+        for sid in station_ids:
+            profile = STATIONS[sid]
+            r = generate_reading(sid, profile, at=at)
+            rows.append((
+                sid,
+                r["measured_at"],
+                r["wind_speed"],
+                r["wind_dir"],
+                r["ghi"],
+                r["dni"],
+                r["temperature"],
+                r["humidity"],
+                r["pressure"],
+            ))
+        if tick % 500 == 0:
+            pct = tick / total_steps * 100
+            print(f"[backfill] Generating... {tick}/{total_steps} ({pct:.0f}%)")
+        at += step
+
+    print(f"[backfill] {len(rows)} baris siap — menginsert ke DB...")
+
+    try:
+        # Hapus data lama di rentang yang sama sebelum insert ulang
+        # (TimescaleDB PK = (id, measured_at), ON CONFLICT tidak bisa deteksi duplikat
+        # berdasarkan station_id+measured_at saja karena id auto-increment selalu baru)
+        cur.execute(
+            "DELETE FROM measurements WHERE station_id = ANY(%s)"
+            " AND measured_at >= %s AND measured_at <= %s",
+            (station_ids, start_dt, end_dt),
+        )
+        deleted = cur.rowcount if cur.rowcount >= 0 else 0
+        if deleted:
+            print(f"[backfill] {deleted} baris lama dihapus (replace mode).")
+
+        pg_extras.execute_values(
+            cur,
+            """INSERT INTO measurements
+                   (station_id, measured_at, wind_speed, wind_dir, ghi, dni,
+                    temperature, humidity, pressure)
+               VALUES %s""",
+            rows,
+            page_size=500,
+        )
+        conn.commit()
+        print(f"\n[backfill] Selesai! {len(rows)} baris diinsert.")
+        print(f"[backfill] Jalankan analisis MCP di /analisis untuk melihat hasilnya.")
+    except Exception as e:
+        conn.rollback()
+        print(f"[backfill] ERROR saat insert: {e}")
+    finally:
+        cur.close()
+        conn.close()
+
+
 if __name__ == "__main__":
-    parser = argparse.ArgumentParser(description="RE-Valid MQTT Sensor Simulator")
-    parser.add_argument(
-        "--interval", type=int, default=DEFAULT_INTERVAL,
-        help=f"Interval antar publish dalam detik (default: {DEFAULT_INTERVAL})",
+    parser = argparse.ArgumentParser(
+        description="RE-Valid MQTT Sensor Simulator",
+        formatter_class=argparse.RawDescriptionHelpFormatter,
     )
+
+    # ─── Mode selection ────────────────────────────────────────────────────────
+    parser.add_argument(
+        "--backfill", action="store_true",
+        help="Mode backfill: insert data historis langsung ke DB (tidak pakai MQTT)",
+    )
+
+    # ─── Shared: stations ─────────────────────────────────────────────────────
     parser.add_argument(
         "--stations", nargs="+", default=list(STATIONS.keys()),
         choices=list(STATIONS.keys()),
         help="Daftar station_id yang akan disimulasikan (default: semua)",
     )
+
+    # ─── Real-time mode args ───────────────────────────────────────────────────
+    parser.add_argument(
+        "--interval", type=int, default=DEFAULT_INTERVAL,
+        help=f"[Real-time] Interval antar publish dalam detik (default: {DEFAULT_INTERVAL})",
+    )
+
+    # ─── Backfill mode args ────────────────────────────────────────────────────
+    _today = date.today()
+    parser.add_argument(
+        "--start", type=date.fromisoformat,
+        default=(_today - timedelta(days=10)).isoformat(),
+        help="[Backfill] Tanggal mulai YYYY-MM-DD (default: hari ini - 10 hari)",
+    )
+    parser.add_argument(
+        "--end", type=date.fromisoformat,
+        default=_today.isoformat(),
+        help="[Backfill] Tanggal akhir YYYY-MM-DD (default: hari ini)",
+    )
+    parser.add_argument(
+        "--measure-interval", type=int, default=1, dest="measure_interval",
+        help="[Backfill] Interval antar pembacaan dalam MENIT (default: 1 menit)",
+    )
+
     args = parser.parse_args()
-    run_simulator(args.stations, args.interval)
+
+    if args.backfill:
+        run_backfill(args.stations, args.start, args.end, args.measure_interval)
+    else:
+        run_simulator(args.stations, args.interval)
+
