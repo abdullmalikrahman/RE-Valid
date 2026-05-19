@@ -11,6 +11,10 @@ export const metadata: Metadata = {
   title: "RE-Valid | Platform WebGIS Energi Terbarukan",
   description:
     "Platform WebGIS untuk validasi dan pemetaan wilayah potensial energi angin dan surya di Jawa Barat",
+  icons: {
+    icon: "/favicon.svg",
+    shortcut: "/favicon.svg",
+  },
 };
 
 export default function RootLayout({
