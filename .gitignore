@@ -41,7 +41,7 @@ logs/
 mqtt/config/passwd
 
 # ESP32 secrets — berisi IP server & password MQTT, jangan di-commit
-docs/esp32/secrets.h
+docs/esp32/re_valid_sensor/secrets.h
 
 # Nginx — sertifikat SSL dan ACME challenge (diisi otomatis oleh Certbot)
 nginx/certbot/
