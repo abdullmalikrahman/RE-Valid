@@ -336,6 +336,32 @@ function AnalisisContent() {
         });
       }
 
+      const meteoForXlsx = measurements.filter((m) => m.temperature !== null || m.humidity !== null || m.pressure !== null || m.wind_dir !== null);
+      if (meteoForXlsx.length > 0) {
+        ws.getColumn(5).width = 14;
+        addSection('DATA METEOROLOGI');
+        const meteoHdrRow = ws.addRow(['Tanggal/Waktu', 'Suhu (°C)', 'Kelembapan (%)', 'Tekanan (hPa)', 'Arah Angin (°)']);
+        meteoHdrRow.eachCell({ includeEmpty: true }, (c: import('exceljs').Cell, i: number) => {
+          if (i > 5) return;
+          c.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: C_BLUE } };
+          c.font = { bold: true, size: 9, color: { argb: C_WHITE }, name: 'Calibri' };
+          c.alignment = { horizontal: 'center', vertical: 'middle' };
+        });
+        meteoHdrRow.height = 15;
+        meteoForXlsx.forEach((m, i) => {
+          const xr = ws.addRow([m.measured_at, m.temperature, m.humidity, m.pressure, m.wind_dir]);
+          const isAlt = i % 2 === 1;
+          xr.eachCell({ includeEmpty: true }, (c: import('exceljs').Cell, ci: number) => {
+            if (ci > 5) return;
+            c.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: isAlt ? C_ALT : 'FFFFFFFF' } };
+            c.font = { size: 9, color: { argb: C_TEXT }, name: 'Calibri' };
+            c.alignment = { horizontal: ci === 1 ? 'left' : 'center', vertical: 'middle', indent: ci === 1 ? 1 : 0 };
+            c.border = { bottom: { style: 'hair', color: { argb: 'FFE5E7EB' } } };
+          });
+          xr.height = 14;
+        });
+      }
+
       ws.addRow([]);
       const fxr = ws.addRow(['Sumber: RE-Valid DSS \u2014 ERA5 (ECMWF) / GWA 3.0 / GSA (Solargis). Simulasi screening awal.']);
       ws.mergeCells(`A${fxr.number}:D${fxr.number}`);
@@ -419,6 +445,58 @@ function AnalisisContent() {
   // Reference line — gunakan reduce bukan spread (...) untuk hindari stack overflow pada array besar
   const scatterMin = scatterDataAll.length ? scatterDataAll.reduce((mn, d) => d.obs < mn ? d.obs : mn, Infinity) : 0;
   const scatterMax = scatterDataAll.length ? scatterDataAll.reduce((mx, d) => d.obs > mx ? d.obs : mx, -Infinity) : 10;
+
+  // ─── Meteorological chart data (temperature, humidity, pressure, wind_dir) ─────
+  function makeMeteoChartData(
+    meas: typeof measurements,
+    getValue: (m: typeof measurements[number]) => number | null,
+    granularity: 'daily' | 'weekly' | 'monthly',
+  ) {
+    const groups = new Map<string, { label: string; values: number[] }>();
+    meas.forEach((m) => {
+      const v = getValue(m);
+      if (v === null) return;
+      const d = new Date(m.measured_at);
+      let key: string, label: string;
+      if (granularity === 'daily') {
+        key = d.toISOString().slice(0, 10);
+        label = d.toLocaleDateString('id-ID', { day: 'numeric', month: 'short' });
+      } else if (granularity === 'weekly') {
+        const w = new Date(d); w.setDate(d.getDate() - d.getDay());
+        key = w.toISOString().slice(0, 10);
+        label = w.toLocaleDateString('id-ID', { day: 'numeric', month: 'short' });
+      } else {
+        key = d.toISOString().slice(0, 7);
+        label = d.toLocaleDateString('id-ID', { month: 'short', year: '2-digit' });
+      }
+      if (!groups.has(key)) groups.set(key, { label, values: [] });
+      groups.get(key)!.values.push(v);
+    });
+    return [...groups.entries()]
+      .sort(([a], [b]) => a.localeCompare(b))
+      .filter(([, { values }]) => values.length > 0)
+      .map(([, { label, values }]) => ({
+        date: label,
+        obs: parseFloat((values.reduce((a, b) => a + b, 0) / values.length).toFixed(2)),
+      }));
+  }
+  const tempChartData    = makeMeteoChartData(measurements, (m) => m.temperature, chartGranularity);
+  const humChartData     = makeMeteoChartData(measurements, (m) => m.humidity,    chartGranularity);
+  const presChartData    = makeMeteoChartData(measurements, (m) => m.pressure,    chartGranularity);
+  const windDirChartData = makeMeteoChartData(measurements, (m) => m.wind_dir,    chartGranularity);
+  const meteoHasData = [tempChartData, humChartData, presChartData, windDirChartData].some((d) => d.length > 0);
+
+  const tempValues    = measurements.map((m) => m.temperature).filter((v): v is number => v !== null);
+  const humValues     = measurements.map((m) => m.humidity).filter((v): v is number => v !== null);
+  const presValues    = measurements.map((m) => m.pressure).filter((v): v is number => v !== null);
+  const windDirValues = measurements.map((m) => m.wind_dir).filter((v): v is number => v !== null);
+  const tempAvg    = tempValues.length    > 0 ? tempValues.reduce((a, b) => a + b, 0)    / tempValues.length    : null;
+  const humAvg     = humValues.length     > 0 ? humValues.reduce((a, b) => a + b, 0)     / humValues.length     : null;
+  const presAvg    = presValues.length    > 0 ? presValues.reduce((a, b) => a + b, 0)    / presValues.length    : null;
+  const windDirAvg = windDirValues.length > 0 ? windDirValues.reduce((a, b) => a + b, 0) / windDirValues.length : null;
+  function compassDir(deg: number): string {
+    return ['U', 'TL', 'T', 'TG', 'S', 'BD', 'B', 'BL'][Math.round(deg / 45) % 8];
+  }
 
   // MAE computed from real measurement data (mean absolute error obs vs baseline)
   // Returns null when no measurement data is available (avoids showing a fake fallback value)
@@ -1145,6 +1223,60 @@ function AnalisisContent() {
             Nilai <strong className="text-slate-500 dark:text-slate-300">Aktif</strong> dipakai sebagai baseline primer (GWA &gt; ERA5 untuk angin · GSA &gt; ERA5 untuk surya). Kolom kosong (–) artinya data atlas belum diambil — klik <em>Ambil dari Atlas</em> di halaman Admin.
           </div>
         </div>
+
+        {/* ── Data Meteorologi ─────────────────────────────────────────── */}
+        {meteoHasData && (
+          <div className="bg-white dark:bg-card-dark rounded-xl border border-gray-200 dark:border-border-dark overflow-hidden mb-4">
+            <div className="px-4 py-3 border-b border-gray-200 dark:border-border-dark flex items-center gap-2">
+              <span className="material-symbols-outlined text-teal-400 text-[18px]">device_thermostat</span>
+              <h3 className="text-sm font-bold text-slate-900 dark:text-white">Data Meteorologi</h3>
+              <span className="ml-auto text-[10px] text-slate-400 bg-slate-100 dark:bg-slate-800 px-2 py-0.5 rounded-full">{chartGranularityLabel}</span>
+            </div>
+            <div className="p-4">
+              <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-4 mb-4">
+                {([
+                  { label: 'Suhu', unit: '°C', data: tempChartData, color: '#f97316', icon: 'thermometer', textColor: 'text-orange-400' },
+                  { label: 'Kelembapan', unit: '%', data: humChartData, color: '#06b6d4', icon: 'water_drop', textColor: 'text-cyan-400' },
+                  { label: 'Tekanan Udara', unit: 'hPa', data: presChartData, color: '#8b5cf6', icon: 'compress', textColor: 'text-violet-400', domain: ['auto', 'auto'] as [string, string] },
+                  { label: 'Arah Angin', unit: '°', data: windDirChartData, color: '#10b981', icon: 'explore', textColor: 'text-emerald-400', domain: [0, 360] as [number, number] },
+                ] as { label: string; unit: string; data: { date: string; obs: number }[]; color: string; icon: string; textColor: string; domain?: [number, number] | [string, string] }[]).map(({ label, unit, data, color, icon, textColor, domain }) => (
+                  <div key={label} className="bg-gray-50 dark:bg-[#111a22] rounded-lg border border-gray-100 dark:border-gray-800 p-3">
+                    <p className={`text-xs font-semibold ${textColor} mb-2 flex items-center gap-1`}>
+                      <span className="material-symbols-outlined text-[14px]">{icon}</span>
+                      {label} ({unit})
+                    </p>
+                    {data.length === 0 ? (
+                      <div className="h-30 flex items-center justify-center text-slate-400 text-xs">Belum ada data</div>
+                    ) : (
+                      <ResponsiveContainer width="100%" height={120}>
+                        <LineChart data={data} margin={{ top: 5, right: 8, bottom: 5, left: -8 }}>
+                          <CartesianGrid strokeDasharray="3 3" stroke={gridColor} />
+                          <XAxis dataKey="date" tick={{ fontSize: 7, fill: '#64748b' }} tickLine={false} interval="preserveStartEnd" />
+                          <YAxis tick={{ fontSize: 7, fill: '#64748b' }} tickLine={false} axisLine={false} domain={domain ?? ['auto', 'auto']} />
+                          <Tooltip contentStyle={{ backgroundColor: tooltipBg, border: `1px solid ${tooltipBorder}`, borderRadius: '8px', fontSize: 10 }} />
+                          <Line type="monotone" dataKey="obs" stroke={color} strokeWidth={2} dot={false} name={label} />
+                        </LineChart>
+                      </ResponsiveContainer>
+                    )}
+                  </div>
+                ))}
+              </div>
+              <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+                {[
+                  { label: 'Suhu Rata-rata', value: tempAvg !== null ? `${tempAvg.toFixed(1)} °C` : '–', color: 'text-orange-400' },
+                  { label: 'Kelembapan Rata-rata', value: humAvg !== null ? `${humAvg.toFixed(1)} %` : '–', color: 'text-cyan-400' },
+                  { label: 'Tekanan Udara Rata-rata', value: presAvg !== null ? `${presAvg.toFixed(1)} hPa` : '–', color: 'text-violet-400' },
+                  { label: 'Arah Angin Dominan', value: windDirAvg !== null ? `${windDirAvg.toFixed(0)}° (${compassDir(windDirAvg)})` : '–', color: 'text-emerald-400' },
+                ].map((s) => (
+                  <div key={s.label} className="bg-gray-50 dark:bg-[#111a22] rounded-lg p-3 border border-gray-100 dark:border-gray-800">
+                    <p className="text-[10px] text-slate-400 uppercase mb-1">{s.label}</p>
+                    <p className={`text-base font-bold ${s.color}`}>{s.value}</p>
+                  </div>
+                ))}
+              </div>
+            </div>
+          </div>
+        )}
 
         {/* Assumptions */}
         <div className="bg-amber-500/5 border border-amber-500/20 rounded-xl p-4 mb-4">

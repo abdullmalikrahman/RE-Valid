@@ -123,6 +123,29 @@ function LaporanContent() {
     return step === 1 ? all : all.filter((_, i) => i % step === 0);
   }, [measurements, ghiBaselineVal]);
 
+  // ─── Meteorological chart data ────────────────────────────────────────────
+  const tempChartData = useMemo(
+    () => makeChartData(measurements, (m) => (m.temperature !== null ? m.temperature : -1), 0, chartGranularity).filter((d) => d.obs >= 0),
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [measurements, chartGranularity],
+  );
+  const humChartData = useMemo(
+    () => makeChartData(measurements, (m) => (m.humidity !== null ? m.humidity : -1), 0, chartGranularity).filter((d) => d.obs >= 0),
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [measurements, chartGranularity],
+  );
+  const presChartData = useMemo(
+    () => makeChartData(measurements, (m) => (m.pressure !== null ? m.pressure : -1), 0, chartGranularity).filter((d) => d.obs > 0),
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [measurements, chartGranularity],
+  );
+  const windDirChartData = useMemo(
+    () => makeChartData(measurements, (m) => (m.wind_dir !== null ? m.wind_dir : -1), 0, chartGranularity).filter((d) => d.obs >= 0),
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [measurements, chartGranularity],
+  );
+  const meteoHasData = [tempChartData, humChartData, presChartData, windDirChartData].some((d) => d.length > 0);
+
   // keep legacy aliases used by existing Recharts preview
   const chartTsRef = useRef<HTMLDivElement>(null);
   const chartScatterRef = useRef<HTMLDivElement>(null);
@@ -1102,6 +1125,48 @@ function LaporanContent() {
                 </div>
               </div>
             </div>
+
+          {/* Row 3b: Grafik Meteorologi */}
+          {meteoHasData && (
+            <div className="bg-white dark:bg-card-dark border border-gray-200 dark:border-border-dark rounded-xl p-5 shadow-sm">
+              <div className="flex items-center gap-2 mb-4">
+                <span className="material-symbols-outlined text-teal-400 text-[20px]">device_thermostat</span>
+                <h4 className="text-sm font-bold text-slate-900 dark:text-white">Grafik Meteorologi</h4>
+                <span className="ml-auto text-[11px] text-slate-400">Suhu · Kelembapan · Tekanan · Arah Angin ({granularityLabel})</span>
+              </div>
+              <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-4">
+                {([
+                  { label: 'Suhu', unit: '°C', data: tempChartData, color: '#f97316', icon: 'thermometer', textColor: 'text-orange-400' },
+                  { label: 'Kelembapan', unit: '%', data: humChartData, color: '#06b6d4', icon: 'water_drop', textColor: 'text-cyan-400' },
+                  { label: 'Tekanan Udara', unit: 'hPa', data: presChartData, color: '#8b5cf6', icon: 'compress', textColor: 'text-violet-400', domain: ['auto', 'auto'] as [string, string] },
+                  { label: 'Arah Angin', unit: '°', data: windDirChartData, color: '#10b981', icon: 'explore', textColor: 'text-emerald-400', domain: [0, 360] as [number, number] },
+                ] as { label: string; unit: string; data: { date: string; obs: number; baseline: number }[]; color: string; icon: string; textColor: string; domain?: [number, number] | [string, string] }[]).map(({ label, unit, data, color, icon, textColor, domain }) => (
+                  <div key={label} className="bg-gray-50 dark:bg-[#111a22] rounded-lg border border-gray-100 dark:border-gray-800 p-3">
+                    <p className={`text-xs font-semibold ${textColor} mb-2 flex items-center gap-1`}>
+                      <span className="material-symbols-outlined text-[14px]">{icon}</span>
+                      {label} ({unit})
+                    </p>
+                    {data.length === 0 ? (
+                      <div className="h-37 flex items-center justify-center text-slate-400 text-xs">Belum ada data</div>
+                    ) : (
+                      <ResponsiveContainer width="100%" height={150}>
+                        <LineChart data={data} margin={{ top: 5, right: 8, bottom: 5, left: -8 }}>
+                          <CartesianGrid strokeDasharray="3 3" stroke={gridColor} vertical={false} />
+                          <XAxis dataKey="date" tick={{ fontSize: 7, fill: '#64748b' }} tickLine={false} interval="preserveStartEnd" />
+                          <YAxis tick={{ fontSize: 7, fill: '#64748b' }} tickLine={false} axisLine={false} domain={domain ?? ['auto', 'auto']} />
+                          <Tooltip
+                            contentStyle={{ backgroundColor: tooltipBg, border: `1px solid ${tooltipBorder}`, borderRadius: '8px', fontSize: 10 }}
+                            labelStyle={{ color: tooltipLabel }}
+                          />
+                          <Line type="monotone" dataKey="obs" stroke={color} strokeWidth={2} dot={{ r: 2 }} name={label} />
+                        </LineChart>
+                      </ResponsiveContainer>
+                    )}
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
 
           {/* Row 4: Perbandingan Baseline + Potensi Energi — 2 kolom */}
           <div className="grid grid-cols-1 lg:grid-cols-2 gap-5">

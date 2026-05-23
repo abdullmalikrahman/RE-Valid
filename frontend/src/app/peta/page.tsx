@@ -6,6 +6,7 @@ import { useState, useCallback, useEffect, useRef } from 'react';
 import Navbar from '@/components/Navbar';
 import { relativeTime, type Station } from '@/lib/stationData';
 import { useStations } from '@/hooks/useStations';
+import { useMeasurements } from '@/hooks/useMeasurements';
 import { fetchHeatmapData, type HeatmapData } from '@/lib/api';
 
 // Leaflet must be client-side only (no SSR)
@@ -62,6 +63,17 @@ function StationPanel({
     document.addEventListener('keydown', onKey);
     return () => document.removeEventListener('keydown', onKey);
   }, [onClose]);
+
+  // Fetch latest measurement for this station (7-day window, lightweight)
+  const sevenDaysAgo = new Date(Date.now() - 7 * 86400000).toISOString().slice(0, 10);
+  const { measurements: recentMeasurements } = useMeasurements(station.id, sevenDaysAgo);
+  const latestMeasurement = recentMeasurements.length > 0 ? recentMeasurements[recentMeasurements.length - 1] : null;
+  const hasMeteoData = latestMeasurement !== null && (
+    latestMeasurement.temperature !== null ||
+    latestMeasurement.humidity !== null ||
+    latestMeasurement.pressure !== null ||
+    latestMeasurement.wind_dir !== null
+  );
 
   return (
     <div className="fixed left-0 right-0 bottom-0 max-h-[75vh] rounded-t-2xl lg:absolute lg:left-auto lg:right-16 lg:top-4 lg:bottom-4 lg:max-h-none lg:w-80 lg:rounded-xl bg-white/95 dark:bg-panel-dark/95 backdrop-blur-md border border-slate-200 dark:border-[#233648] shadow-2xl z-1000 flex flex-col overflow-hidden">
@@ -271,6 +283,55 @@ function StationPanel({
                 </div>
               )}
             </div>
+          </section>
+        )}
+
+        {/* Data Sensor Terkini */}
+        {hasMeteoData && latestMeasurement && (
+          <section>
+            <h3 className="text-[13px] font-bold text-slate-900 dark:text-white mb-2 flex items-center gap-1.5">
+              <span className="material-symbols-outlined text-teal-400 text-[17px]">device_thermostat</span>
+              Data Sensor Terkini
+            </h3>
+            <div className="bg-slate-50 dark:bg-[#111a22] rounded-lg border border-slate-200 dark:border-[#233648] divide-y divide-slate-100 dark:divide-[#1e2d3d] text-[12px]">
+              {latestMeasurement.temperature !== null && (
+                <div className="flex justify-between items-center px-3 py-2">
+                  <span className="text-slate-500 dark:text-text-secondary flex items-center gap-1">
+                    <span className="material-symbols-outlined text-[13px] text-orange-400">thermometer</span> Suhu
+                  </span>
+                  <span className="font-semibold text-slate-800 dark:text-slate-200">{latestMeasurement.temperature.toFixed(1)} °C</span>
+                </div>
+              )}
+              {latestMeasurement.humidity !== null && (
+                <div className="flex justify-between items-center px-3 py-2">
+                  <span className="text-slate-500 dark:text-text-secondary flex items-center gap-1">
+                    <span className="material-symbols-outlined text-[13px] text-cyan-400">water_drop</span> Kelembapan
+                  </span>
+                  <span className="font-semibold text-slate-800 dark:text-slate-200">{latestMeasurement.humidity.toFixed(1)} %</span>
+                </div>
+              )}
+              {latestMeasurement.pressure !== null && (
+                <div className="flex justify-between items-center px-3 py-2">
+                  <span className="text-slate-500 dark:text-text-secondary flex items-center gap-1">
+                    <span className="material-symbols-outlined text-[13px] text-violet-400">compress</span> Tekanan Udara
+                  </span>
+                  <span className="font-semibold text-slate-800 dark:text-slate-200">{latestMeasurement.pressure.toFixed(1)} hPa</span>
+                </div>
+              )}
+              {latestMeasurement.wind_dir !== null && (
+                <div className="flex justify-between items-center px-3 py-2">
+                  <span className="text-slate-500 dark:text-text-secondary flex items-center gap-1">
+                    <span className="material-symbols-outlined text-[13px] text-emerald-400">explore</span> Arah Angin
+                  </span>
+                  <span className="font-semibold text-slate-800 dark:text-slate-200">
+                    {latestMeasurement.wind_dir.toFixed(0)}° ({['U','TL','T','TG','S','BD','B','BL'][Math.round(latestMeasurement.wind_dir / 45) % 8]})
+                  </span>
+                </div>
+              )}
+            </div>
+            <p className="text-[10px] text-slate-400 mt-1">
+              {new Date(latestMeasurement.measured_at).toLocaleString('id-ID', { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' })}
+            </p>
           </section>
         )}
 
