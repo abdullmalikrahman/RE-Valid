@@ -67,4 +67,4 @@ class StationResponse(BaseModel):
     solar_rmse: float | None
     solar_bias: float | None
     solar_r2: float | None
-    last_update: datetime
+    last_update: datetime | None

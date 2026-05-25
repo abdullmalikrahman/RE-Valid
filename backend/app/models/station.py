@@ -56,7 +56,7 @@ class Station(Base):
     solar_rmse: Mapped[float | None] = mapped_column(Numeric(6, 3))
     solar_bias: Mapped[float | None] = mapped_column(Numeric(6, 2))
     solar_r2: Mapped[float | None] = mapped_column(Numeric(5, 3))
-    last_update: Mapped[datetime] = mapped_column(
+    last_update: Mapped[datetime | None] = mapped_column(
         DateTime(timezone=True), server_default=func.now(), onupdate=func.now()
     )
     created_at: Mapped[datetime] = mapped_column(
