@@ -71,6 +71,20 @@ function isRecentlyActive(lastUpdate: string): boolean {
   return Date.now() - parsed.getTime() < 24 * 60 * 60 * 1000;
 }
 
+// Format ISO timestamp to human-readable WIB (e.g. "25 Mei 2026, 15:32")
+function formatLastUpdate(ts: string): string {
+  const parsed = new Date(ts);
+  if (isNaN(parsed.getTime())) return '—';
+  return parsed.toLocaleString('id-ID', {
+    timeZone: 'Asia/Jakarta',
+    day: '2-digit',
+    month: 'short',
+    year: 'numeric',
+    hour: '2-digit',
+    minute: '2-digit',
+  }) + ' WIB';
+}
+
 //  Add / Edit Modal
 type ModalProps = {
   station: AdminStation | null; // null = add mode
@@ -1063,8 +1077,8 @@ export default function AdminPage() {
                             </div>
                           </td>
                           <td className="px-6 py-3 font-mono text-xs text-gray-500 dark:text-gray-400">stations/{s.id}/data</td>
-                          <td className="px-6 py-3 text-xs text-gray-600 dark:text-gray-300">{s.lastUpdate}</td>
-                          <td className="px-6 py-3 text-xs text-gray-600 dark:text-gray-300">{online ? '~3 dtk' : '—'}</td>
+                          <td className="px-6 py-3 text-xs text-gray-600 dark:text-gray-300">{formatLastUpdate(s.lastUpdate)}</td>
+                          <td className="px-6 py-3 text-xs text-gray-600 dark:text-gray-300">{online ? '~1 jam' : '—'}</td>
                           <td className="px-6 py-3">
                             {online ? (
                               <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-medium bg-green-100 text-green-800 dark:bg-green-900/30 dark:text-green-400">

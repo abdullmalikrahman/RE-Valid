@@ -19,7 +19,11 @@ COPY . .
 ARG NEXT_PUBLIC_API_URL=http://backend:8000
 ENV NEXT_PUBLIC_API_URL=$NEXT_PUBLIC_API_URL
 
-RUN npm run build
+# BuildKit cache mount: simpan .next/cache di host antar build.
+# Build pertama tetap ~17 menit, build berikutnya turun ke ~2-3 menit
+# karena Next.js hanya mengompilasi ulang file yang benar-benar berubah.
+RUN --mount=type=cache,target=/app/.next/cache \
+    npm run build
 
 # ── Stage 3: runner — minimal production image ────────────────────────────────
 FROM node:22-alpine AS runner
