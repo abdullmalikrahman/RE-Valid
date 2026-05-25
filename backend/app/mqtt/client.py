@@ -22,7 +22,7 @@ import re
 from datetime import datetime, timezone
 
 import paho.mqtt.client as mqtt
-from sqlalchemy import text
+from sqlalchemy import select, text
 
 from app.core.config import settings
 from app.core.database import AsyncSessionLocal
@@ -84,6 +84,21 @@ def _store_measurement(record: dict) -> None:
     """Fire-and-forget coroutine to insert a measurement row."""
     async def _do() -> None:
         async with AsyncSessionLocal() as session:
+            # Deduplicate: skip if same station_id + measured_at already exists
+            dup = await session.execute(
+                select(Measurement.id).where(
+                    Measurement.station_id == record["station_id"],
+                    Measurement.measured_at == record["measured_at"],
+                ).limit(1)
+            )
+            if dup.scalar() is not None:
+                logger.debug(
+                    "MQTT: duplicate skipped station=%s at=%s",
+                    record["station_id"],
+                    record["measured_at"].isoformat(),
+                )
+                return
+
             obj = Measurement(
                 station_id=record["station_id"],
                 measured_at=record["measured_at"],

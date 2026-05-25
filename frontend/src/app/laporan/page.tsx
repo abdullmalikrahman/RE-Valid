@@ -301,6 +301,24 @@ function LaporanContent() {
       mcdaFactors.forEach((f) => row(f.label, `${f.pct}%`));
       y += 3;
 
+      // Data Meteorologi — show if any sensor readings exist
+      const meteoMeas = measurements.filter(
+        (m) => m.temperature !== null || m.humidity !== null || m.pressure !== null,
+      );
+      if (meteoMeas.length > 0) {
+        const avgTemp = meteoMeas.filter((m) => m.temperature !== null).reduce((s, m) => s + m.temperature!, 0) / meteoMeas.filter((m) => m.temperature !== null).length;
+        const avgHum = meteoMeas.filter((m) => m.humidity !== null).reduce((s, m) => s + m.humidity!, 0) / meteoMeas.filter((m) => m.humidity !== null).length;
+        const avgPres = meteoMeas.filter((m) => m.pressure !== null).reduce((s, m) => s + m.pressure!, 0) / meteoMeas.filter((m) => m.pressure !== null).length;
+        const lastWindDir = [...meteoMeas].reverse().find((m) => m.wind_dir !== null)?.wind_dir ?? null;
+        sectionTitle('Data Meteorologi Rata-rata (Sensor Lapangan)');
+        row('Suhu Rata-rata (°C)', `${avgTemp.toFixed(1)} °C`);
+        row('Kelembapan Rata-rata (%)', `${avgHum.toFixed(1)} %`);
+        row('Tekanan Udara Rata-rata (hPa)', `${avgPres.toFixed(1)} hPa`);
+        row('Arah Angin Terakhir (°)', lastWindDir != null ? `${lastWindDir.toFixed(0)}°` : '–');
+        row('Jumlah Pembacaan Sensor', `${meteoMeas.length} data`);
+        y += 3;
+      }
+
       // Footer page 1
       pdf.setFontSize(7);
       pdf.setFont('helvetica', 'italic');
@@ -692,6 +710,50 @@ function LaporanContent() {
       addSection('FAKTOR KESESUAIAN GIS-MCDA');
       mcdaFactors.forEach(({ label, pct }, i) => addRow2(label, `${pct}%`, i));
 
+      // DATA METEOROLOGI — raw sensor readings if available
+      const meteoRows = measurements.filter(
+        (m) => m.temperature !== null || m.humidity !== null || m.pressure !== null || m.wind_dir !== null,
+      );
+      if (meteoRows.length > 0) {
+        ws.addRow([]);
+        const meteoSection = ws.addRow(['DATA METEOROLOGI (SENSOR LAPANGAN)']);
+        ws.mergeCells(`A${meteoSection.number}:B${meteoSection.number}`);
+        const msCell = meteoSection.getCell(1);
+        msCell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FF0F2D57' } };
+        msCell.font = { bold: true, size: 9, color: { argb: C_WHITE }, name: 'Calibri' };
+        msCell.alignment = { horizontal: 'left', vertical: 'middle', indent: 1 };
+        meteoSection.height = 16;
+
+        // Expand to 5 columns for meteo table
+        ws.columns = [
+          { key: 'a', width: 26 },
+          { key: 'b', width: 14 },
+          { key: 'c', width: 14 },
+          { key: 'd', width: 14 },
+          { key: 'e', width: 14 },
+        ];
+        const meteoHdr = ws.addRow(['Tanggal/Waktu', 'Suhu (°C)', 'Kelembapan (%)', 'Tekanan (hPa)', 'Arah Angin (°)']);
+        meteoHdr.eachCell({ includeEmpty: true }, (c: import('exceljs').Cell, ci: number) => {
+          if (ci > 5) return;
+          c.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: C_BLUE } };
+          c.font = { bold: true, size: 9, color: { argb: C_WHITE }, name: 'Calibri' };
+          c.alignment = { horizontal: 'center', vertical: 'middle' };
+        });
+        meteoHdr.height = 15;
+        meteoRows.forEach((m, i) => {
+          const xr = ws.addRow([m.measured_at, m.temperature, m.humidity, m.pressure, m.wind_dir]);
+          const isAlt = i % 2 === 1;
+          xr.eachCell({ includeEmpty: true }, (c: import('exceljs').Cell, ci: number) => {
+            if (ci > 5) return;
+            c.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: isAlt ? C_ALT : 'FFFFFFFF' } };
+            c.font = { size: 9, color: { argb: C_TEXT }, name: 'Calibri' };
+            c.alignment = { horizontal: ci === 1 ? 'left' : 'center', vertical: 'middle', indent: ci === 1 ? 1 : 0 };
+            c.border = { bottom: { style: 'hair', color: { argb: 'FFE5E7EB' } } };
+          });
+          xr.height = 14;
+        });
+      }
+
       ws.addRow([]);
       const fxr = ws.addRow(['Sumber: RE-Valid DSS \u2014 ERA5 (ECMWF) / GWA 3.0 / GSA (Solargis). Simulasi screening awal, bukan studi kelayakan.']);
       merge2(fxr.number);
@@ -712,6 +774,7 @@ function LaporanContent() {
 
   function handleExportGeoJSON() {
     setExporting('geojson');
+    const latestMeasurement = measurements.length > 0 ? measurements[measurements.length - 1] : null;
     const geojson = {
       type: 'FeatureCollection',
       features: [
@@ -743,6 +806,11 @@ function LaporanContent() {
             aep_pltb_p90_net_mwh_yr: station.aep != null ? Math.round(station.aep * 0.767) : null,
             solar_aep_mwh_yr: station.solarAep ?? null,
             period: station.period,
+            latest_temperature_c: latestMeasurement?.temperature ?? null,
+            latest_humidity_pct: latestMeasurement?.humidity ?? null,
+            latest_pressure_hpa: latestMeasurement?.pressure ?? null,
+            latest_wind_dir_deg: latestMeasurement?.wind_dir ?? null,
+            latest_measurement_at: latestMeasurement?.measured_at ?? null,
             exported_at: new Date().toISOString(),
             source: 'RE-Valid DSS',
           },

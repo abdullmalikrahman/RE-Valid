@@ -1,6 +1,6 @@
 'use client';
 
-import { Suspense, useState, useEffect } from 'react';
+import { Suspense, useState, useEffect, useRef } from 'react';
 import { useSearchParams, useRouter } from 'next/navigation';
 import Link from 'next/link';
 import {
@@ -44,6 +44,18 @@ function AnalisisContent() {
     return d.toISOString().slice(0, 10);
   });
   const [endDate, setEndDate] = useState(() => new Date().toISOString().slice(0, 10));
+  // Tracks which station has already had dates auto-set from first measurement
+  const datesAutoSetRef = useRef<string | null>(null);
+
+  // When station changes, reset auto-set flag and restore wide default range
+  // (data will load with wide range, then auto-set useEffect narrows the window)
+  useEffect(() => {
+    if (datesAutoSetRef.current === station?.id) return;
+    datesAutoSetRef.current = null;
+    const d = new Date(); d.setFullYear(d.getFullYear() - 1); d.setDate(d.getDate() + 1);
+    setStartDate(d.toISOString().slice(0, 10));
+    setEndDate(new Date().toISOString().slice(0, 10));
+  }, [station?.id]);
   const [exportingXlsx, setExportingXlsx] = useState(false);
 
   // Reset task feedback whenever the user switches station or energy type
@@ -133,6 +145,17 @@ function AnalisisContent() {
 
   // ─── Hook: Measurements (harus dipanggil sebelum early return) ────────────
   const { measurements, isLoading: measLoading } = useMeasurements(station?.id ?? '', startDate, endDate);
+
+  // Auto-set dates to first measurement → first + 10 days once data loads for a station
+  useEffect(() => {
+    if (!measurements.length || datesAutoSetRef.current === station?.id) return;
+    datesAutoSetRef.current = station?.id ?? null;
+    const earliest = new Date(measurements[0].measured_at);
+    const start = earliest.toISOString().slice(0, 10);
+    const endD = new Date(earliest.getTime() + 10 * 86_400_000);
+    setStartDate(start);
+    setEndDate(endD.toISOString().slice(0, 10));
+  }, [measurements, station?.id]);
 
   // Jika belum ada stasiun di DB, tampilkan empty state
   if (!station) {
