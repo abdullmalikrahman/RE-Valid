@@ -22,8 +22,9 @@ ENV NEXT_PUBLIC_API_URL=$NEXT_PUBLIC_API_URL
 # BuildKit cache mount: simpan .next/cache di host antar build.
 # Build pertama tetap ~17 menit, build berikutnya turun ke ~2-3 menit
 # karena Next.js hanya mengompilasi ulang file yang benar-benar berubah.
+# NODE_OPTIONS membatasi heap Node.js agar tidak OOM-kill di VPS RAM kecil.
 RUN --mount=type=cache,target=/app/.next/cache \
-    npm run build
+    NODE_OPTIONS="--max-old-space-size=1400" npm run build
 
 # ── Stage 3: runner — minimal production image ────────────────────────────────
 FROM node:22-alpine AS runner
