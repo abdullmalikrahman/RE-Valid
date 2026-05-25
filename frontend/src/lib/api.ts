@@ -131,7 +131,7 @@ interface ApiStation {
   solar_rmse: number | null;
   solar_bias: number | null;
   solar_r2: number | null;
-  last_update: string;
+  last_update: string | null;
 }
 
 function mapStation(s: ApiStation): Station {
@@ -144,7 +144,7 @@ function mapStation(s: ApiStation): Station {
     altitude: s.altitude ?? 0,
     status: s.status as Station['status'],
     score: s.score,
-    lastUpdate: s.last_update,
+    lastUpdate: s.last_update ?? '',
     period: s.period ?? '—',
     variables: s.variables ?? '—',
     mcpStatus: s.mcp_status as Station['mcpStatus'],
