@@ -11,16 +11,22 @@ async def get_all_stations(db: AsyncSession) -> list[Station]:
     stations = list(result.scalars().all())
 
     if stations:
-        # Attach last_measurement_at (MAX measured_at per station) to each object
+        # Attach first_measurement_at (MIN) and last_measurement_at (MAX) per station
         station_ids = [s.id for s in stations]
         meas_result = await db.execute(
-            select(Measurement.station_id, func.max(Measurement.measured_at).label("last_meas"))
+            select(
+                Measurement.station_id,
+                func.min(Measurement.measured_at).label("first_meas"),
+                func.max(Measurement.measured_at).label("last_meas"),
+            )
             .where(Measurement.station_id.in_(station_ids))
             .group_by(Measurement.station_id)
         )
-        last_meas_map = {row.station_id: row.last_meas for row in meas_result}
+        meas_map = {row.station_id: row for row in meas_result}
         for s in stations:
-            s.last_measurement_at = last_meas_map.get(s.id)  # type: ignore[attr-defined]
+            row = meas_map.get(s.id)
+            s.first_measurement_at = row.first_meas if row else None  # type: ignore[attr-defined]
+            s.last_measurement_at = row.last_meas if row else None  # type: ignore[attr-defined]
 
     return stations
 

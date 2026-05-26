@@ -11,6 +11,7 @@ export interface Station {
   score: number; // 0-100
   lastUpdate: string;
   lastMeasurementAt: string | null; // Timestamp of last actual MQTT measurement
+  firstMeasurementAt: string | null; // Timestamp of first actual MQTT measurement
   period: string;
   variables: string;
   mcpStatus: 'selesai' | 'berjalan' | 'pending';

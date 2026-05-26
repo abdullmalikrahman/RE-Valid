@@ -37,6 +37,7 @@ type AdminStation = {
   ghiBaselineNasa: number | null;
   lastUpdate: string;
   lastMeasurementAt: string | null;
+  firstMeasurementAt: string | null;
 };
 
 // Status badge
@@ -90,7 +91,7 @@ function formatLastUpdate(ts: string): string {
 type ModalProps = {
   station: AdminStation | null; // null = add mode
   onClose: () => void;
-  onSave: (data: Omit<AdminStation, 'score' | 'windSpeed' | 'irradiation' | 'lastUpdate' | 'lastMeasurementAt' | 'mcpStatus'> & { score: number }) => Promise<string | undefined>;
+  onSave: (data: Omit<AdminStation, 'score' | 'windSpeed' | 'irradiation' | 'lastUpdate' | 'lastMeasurementAt' | 'firstMeasurementAt' | 'mcpStatus'> & { score: number }) => Promise<string | undefined>;
   onRefresh: () => void; // Dipanggil setelah fetch-atlas agar SWR tabel terupdate
 };
 
@@ -602,6 +603,7 @@ export default function AdminPage() {
     ghiBaselineNasa: s.ghiBaselineNasa ?? null,
     lastUpdate: s.lastUpdate,
     lastMeasurementAt: s.lastMeasurementAt ?? null,
+    firstMeasurementAt: s.firstMeasurementAt ?? null,
   }));
 
   const [query, setQuery] = useState('');

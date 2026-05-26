@@ -133,6 +133,7 @@ interface ApiStation {
   solar_r2: number | null;
   last_update: string | null;
   last_measurement_at: string | null;
+  first_measurement_at: string | null;
 }
 
 function mapStation(s: ApiStation): Station {
@@ -147,6 +148,7 @@ function mapStation(s: ApiStation): Station {
     score: s.score,
     lastUpdate: s.last_update ?? '',
     lastMeasurementAt: s.last_measurement_at ?? null,
+    firstMeasurementAt: s.first_measurement_at ?? null,
     period: s.period ?? '—',
     variables: s.variables ?? '—',
     mcpStatus: s.mcp_status as Station['mcpStatus'],

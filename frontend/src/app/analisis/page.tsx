@@ -39,23 +39,34 @@ function AnalisisContent() {
   const [energyType, setEnergyType] = useState<'wind' | 'solar'>('wind');
   const [taskState, setTaskState] = useState<'idle' | 'loading' | 'success' | 'error'>('idle');
   const [taskMsg, setTaskMsg] = useState('');
-  const [startDate, setStartDate] = useState(() => {
-    const d = new Date(); d.setFullYear(d.getFullYear() - 1); d.setDate(d.getDate() + 1);
-    return d.toISOString().slice(0, 10);
-  });
-  const [endDate, setEndDate] = useState(() => new Date().toISOString().slice(0, 10));
-  // Tracks which station has already had dates auto-set from first measurement
-  const datesAutoSetRef = useRef<string | null>(null);
 
-  // When station changes, reset auto-set flag and restore wide default range
-  // (data will load with wide range, then auto-set useEffect narrows the window)
+  // Compute default date range: first measurement → first + 10 days.
+  // Falls back to last 30 days when a station has no data yet.
+  function defaultDateRange(firstMeasAt: string | null | undefined): { start: string; end: string } {
+    if (firstMeasAt) {
+      const first = new Date(firstMeasAt);
+      const start = first.toISOString().slice(0, 10);
+      const end = new Date(first.getTime() + 10 * 86_400_000).toISOString().slice(0, 10);
+      return { start, end };
+    }
+    const today = new Date();
+    const start = new Date(today.getTime() - 30 * 86_400_000).toISOString().slice(0, 10);
+    return { start, end: today.toISOString().slice(0, 10) };
+  }
+
+  const [startDate, setStartDate] = useState(() => defaultDateRange(station?.firstMeasurementAt).start);
+  const [endDate, setEndDate] = useState(() => defaultDateRange(station?.firstMeasurementAt).end);
+  const prevStationIdRef = useRef<string | null>(null);
+
+  // When station changes, reset dates to that station's first-measurement window
   useEffect(() => {
-    if (datesAutoSetRef.current === station?.id) return;
-    datesAutoSetRef.current = null;
-    const d = new Date(); d.setFullYear(d.getFullYear() - 1); d.setDate(d.getDate() + 1);
-    setStartDate(d.toISOString().slice(0, 10));
-    setEndDate(new Date().toISOString().slice(0, 10));
-  }, [station?.id]);
+    if (prevStationIdRef.current === station?.id) return;
+    prevStationIdRef.current = station?.id ?? null;
+    const { start, end } = defaultDateRange(station?.firstMeasurementAt);
+    setStartDate(start);
+    setEndDate(end);
+  }, [station?.id, station?.firstMeasurementAt]);
+
   const [exportingXlsx, setExportingXlsx] = useState(false);
 
   // Reset task feedback whenever the user switches station or energy type
@@ -145,17 +156,6 @@ function AnalisisContent() {
 
   // ─── Hook: Measurements (harus dipanggil sebelum early return) ────────────
   const { measurements, isLoading: measLoading } = useMeasurements(station?.id ?? '', startDate, endDate);
-
-  // Auto-set dates to first measurement → first + 10 days once data loads for a station
-  useEffect(() => {
-    if (!measurements.length || datesAutoSetRef.current === station?.id) return;
-    datesAutoSetRef.current = station?.id ?? null;
-    const earliest = new Date(measurements[0].measured_at);
-    const start = earliest.toISOString().slice(0, 10);
-    const endD = new Date(earliest.getTime() + 10 * 86_400_000);
-    setStartDate(start);
-    setEndDate(endD.toISOString().slice(0, 10));
-  }, [measurements, station?.id]);
 
   // Jika belum ada stasiun di DB, tampilkan empty state
   if (!station) {
