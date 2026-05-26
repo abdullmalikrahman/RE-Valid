@@ -1,13 +1,28 @@
-from sqlalchemy import select
+from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.models.measurement import Measurement
 from app.models.station import Station
 from app.schemas.station import StationCreate, StationUpdate
 
 
 async def get_all_stations(db: AsyncSession) -> list[Station]:
     result = await db.execute(select(Station).order_by(Station.name))
-    return list(result.scalars().all())
+    stations = list(result.scalars().all())
+
+    if stations:
+        # Attach last_measurement_at (MAX measured_at per station) to each object
+        station_ids = [s.id for s in stations]
+        meas_result = await db.execute(
+            select(Measurement.station_id, func.max(Measurement.measured_at).label("last_meas"))
+            .where(Measurement.station_id.in_(station_ids))
+            .group_by(Measurement.station_id)
+        )
+        last_meas_map = {row.station_id: row.last_meas for row in meas_result}
+        for s in stations:
+            s.last_measurement_at = last_meas_map.get(s.id)  # type: ignore[attr-defined]
+
+    return stations
 
 
 async def get_station_by_id(db: AsyncSession, station_id: str) -> Station | None:

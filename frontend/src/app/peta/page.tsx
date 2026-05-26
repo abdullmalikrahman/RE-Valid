@@ -90,7 +90,7 @@ function StationPanel({
             </span>
             <span className="text-[11px] text-slate-400 ml-auto whitespace-nowrap flex items-center gap-1">
               <span className="material-symbols-outlined text-[13px]">schedule</span>
-              {relativeTime(station.lastUpdate)}
+              {relativeTime(station.lastMeasurementAt)}
             </span>
           </div>
           <h2 className="text-[17px] font-bold text-slate-900 dark:text-white leading-tight">{station.name}</h2>

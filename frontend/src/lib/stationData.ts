@@ -10,6 +10,7 @@ export interface Station {
   status: StationStatus;
   score: number; // 0-100
   lastUpdate: string;
+  lastMeasurementAt: string | null; // Timestamp of last actual MQTT measurement
   period: string;
   variables: string;
   mcpStatus: 'selesai' | 'berjalan' | 'pending';
@@ -38,9 +39,11 @@ export interface Station {
 }
 
 // ─── Relative time formatter (works with ISO timestamp strings) ──────────────
-export function relativeTime(iso: string): string {
+export function relativeTime(iso: string | null | undefined): string {
+  if (!iso) return '—';
   const diff = Date.now() - new Date(iso).getTime();
   const secs = Math.floor(diff / 1000);
+  if (!Number.isFinite(secs) || secs < 0) return '—';
   if (secs < 60) return `${secs} dtk lalu`;
   const mins = Math.floor(secs / 60);
   if (mins < 60) return `${mins} mnt lalu`;

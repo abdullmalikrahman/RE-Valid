@@ -36,6 +36,7 @@ type AdminStation = {
   windBaselineNasa: number | null;
   ghiBaselineNasa: number | null;
   lastUpdate: string;
+  lastMeasurementAt: string | null;
 };
 
 // Status badge
@@ -600,6 +601,7 @@ export default function AdminPage() {
     windBaselineNasa: s.windBaselineNasa ?? null,
     ghiBaselineNasa: s.ghiBaselineNasa ?? null,
     lastUpdate: s.lastUpdate,
+    lastMeasurementAt: s.lastMeasurementAt ?? null,
   }));
 
   const [query, setQuery] = useState('');
@@ -1067,7 +1069,7 @@ export default function AdminPage() {
                   </thead>
                   <tbody className="divide-y divide-gray-200 dark:divide-border-dark">
                     {stationList.map((s) => {
-                      const online = isRecentlyActive(s.lastUpdate);
+                      const online = isRecentlyActive(s.lastMeasurementAt ?? '');
                       return (
                         <tr key={s.id} className="hover:bg-gray-50 dark:hover:bg-white/5">
                           <td className="px-6 py-3">
@@ -1077,7 +1079,7 @@ export default function AdminPage() {
                             </div>
                           </td>
                           <td className="px-6 py-3 font-mono text-xs text-gray-500 dark:text-gray-400">stations/{s.id}/data</td>
-                          <td className="px-6 py-3 text-xs text-gray-600 dark:text-gray-300">{formatLastUpdate(s.lastUpdate)}</td>
+                          <td className="px-6 py-3 text-xs text-gray-600 dark:text-gray-300">{formatLastUpdate(s.lastMeasurementAt ?? '')}</td>
                           <td className="px-6 py-3 text-xs text-gray-600 dark:text-gray-300">{online ? '~1 jam' : '—'}</td>
                           <td className="px-6 py-3">
                             {online ? (
