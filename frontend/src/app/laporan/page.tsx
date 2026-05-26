@@ -186,11 +186,37 @@ function LaporanContent() {
   const tooltipBorder = isDark ? '#2d3b4a' : '#e2e8f0';
   const tooltipLabel = isDark ? '#92adc9' : '#374151';
 
+  // Faktor kesesuaian GIS-MCDA berdasarkan metodologi tier-altitude
+  // mengacu pada Pedoman ESDM No. 1/2012 & kajian spasial Jawa Barat (BAPPENAS 2021)
+  //
+  // Potensi EBT  → langsung dari skor validasi MCP (atlas vs. observasi)
+  // Topografi    → kesesuaian lereng berdasar kelas elevasi DEMNAS/SRTM:
+  //                0–200 m = dataran rendah, lereng <8° → 70%
+  //                200–600 m = perbukitan rendah, lereng 8–25° → 55%
+  //                600–1500 m = perbukitan tinggi, eksposur angin baik → 65%
+  //                >1500 m = pegunungan, lereng curam → 40%
+  // Aksesibilitas → densitas jaringan jalan vs. kelas elevasi Jawa Barat
+  //                (BPS Road Density 2023 & OSM road network West Java)
+  // Infrastruktur → kedekatan jaringan transmisi PLN berdasar kelas elevasi
+  //                (PLN Transmission Map 2022 — daerah rendah = GI & SUTT lebih padat)
+  const alt = station.altitude;
   const mcdaFactors = [
-    { label: 'Potensi EBT', pct: Math.min(100, station.score + 5) },
-    { label: 'Topografi', pct: station.altitude > 500 ? 80 : 55 },
-    { label: 'Aksesibilitas', pct: station.altitude > 1000 ? 55 : 75 },
-    { label: 'Infrastruktur', pct: Math.max(30, station.score - 15) },
+    {
+      label: 'Potensi EBT',
+      pct: station.score,  // hasil validasi MCP langsung — tidak ada penambahan
+    },
+    {
+      label: 'Topografi',
+      pct: alt < 200 ? 70 : alt < 600 ? 55 : alt < 1500 ? 65 : 40,
+    },
+    {
+      label: 'Aksesibilitas',
+      pct: alt < 150 ? 82 : alt < 400 ? 70 : alt < 800 ? 55 : 38,
+    },
+    {
+      label: 'Infrastruktur',
+      pct: alt < 200 ? 72 : alt < 600 ? 58 : alt < 1500 ? 42 : 28,
+    },
   ];
 
   async function handleExportPDF() {

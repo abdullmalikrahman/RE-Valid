@@ -317,7 +317,9 @@ export default function LeafletMap({
       const grp = L.layerGroup();
       stations.forEach((s) => {
         const color = s.status === 'prioritas' ? '#22c55e' : s.status === 'kandidat' ? '#f59e0b' : '#64748b';
-        const r = 12000 + (s.score / 100) * 18000;
+        // Radius representasi zona potensi: 2–5 km sesuai jangkauan tipikal
+        // stasiun pemantauan EBT (angin/surya skala meso ~2–5 km per titik)
+        const r = 2000 + (s.score / 100) * 3000;
         L.circle([s.lat, s.lon], { radius: r, color, weight: 2, opacity: 0.7, fillColor: color, fillOpacity: 0.12, interactive: false }).addTo(grp);
         L.circle([s.lat, s.lon], { radius: r * 0.35, color, weight: 1, opacity: 0.5, fillColor: color, fillOpacity: 0.25, interactive: false }).addTo(grp);
       });
