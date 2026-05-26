@@ -90,7 +90,7 @@ function formatLastUpdate(ts: string): string {
 type ModalProps = {
   station: AdminStation | null; // null = add mode
   onClose: () => void;
-  onSave: (data: Omit<AdminStation, 'score' | 'windSpeed' | 'irradiation' | 'lastUpdate' | 'mcpStatus'> & { score: number }) => Promise<string | undefined>;
+  onSave: (data: Omit<AdminStation, 'score' | 'windSpeed' | 'irradiation' | 'lastUpdate' | 'lastMeasurementAt' | 'mcpStatus'> & { score: number }) => Promise<string | undefined>;
   onRefresh: () => void; // Dipanggil setelah fetch-atlas agar SWR tabel terupdate
 };
 
