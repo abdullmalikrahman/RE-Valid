@@ -19,7 +19,10 @@ import asyncio
 import json
 import logging
 import re
-from datetime import datetime, timezone
+from datetime import datetime, timezone, timedelta
+
+# WIB = UTC+7 — zona waktu DS3231 RTC pada ESP32 (disetel ke waktu lokal Indonesia)
+_WIB = timezone(timedelta(hours=7))
 
 import paho.mqtt.client as mqtt
 from sqlalchemy import select, text
@@ -55,19 +58,21 @@ def _parse_payload(topic: str, raw: str) -> dict | None:
         logger.warning("MQTT: invalid JSON on topic %s: %r", topic, raw)
         return None
 
-    # Parse timestamp — always produce timezone-aware UTC.
-    # The DB column is TIMESTAMPTZ, asyncpg requires aware datetimes.
+    # Parse timestamp — always produce timezone-aware datetime.
+    # ESP32 mengirim timestamp naif (tanpa offset) dari RTC DS3231 yang
+    # disetel ke WIB (UTC+7). Jika tidak ada offset, asumsikan WIB.
     raw_ts = data.get("measured_at")
     if raw_ts:
         try:
             measured_at = datetime.fromisoformat(str(raw_ts))
             if measured_at.tzinfo is None:
-                measured_at = measured_at.replace(tzinfo=timezone.utc)
+                # RTC DS3231 pada ESP32 disetel ke WIB — tambah +07:00
+                measured_at = measured_at.replace(tzinfo=_WIB)
         except ValueError:
             logger.warning("MQTT: invalid measured_at %r, using now", raw_ts)
-            measured_at = datetime.now(timezone.utc)
+            measured_at = datetime.now(_WIB)
     else:
-        measured_at = datetime.now(timezone.utc)
+        measured_at = datetime.now(_WIB)
 
     record: dict = {"station_id": station_id, "measured_at": measured_at}
     for field in _NUMERIC_FIELDS:
