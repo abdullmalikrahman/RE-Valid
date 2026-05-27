@@ -365,21 +365,21 @@ export default function LeafletMap({
               .filter((f) => ['Topografi', 'Aksesibilitas', 'Infrastruktur'].includes(f.label))
               .map(
                 (f) =>
-                  `<div style="display:flex;justify-content:space-between;align-items:baseline;gap:14px;margin-top:3px">`
-                  + `<span style="color:#94a3b8;font-size:11px">${f.label}</span>`
+                  `<div style="display:flex;justify-content:space-between;align-items:baseline;gap:14px;margin-top:4px">`
+                  + `<span style="color:#cbd5e1;font-size:11px">${f.label}</span>`
                   + `<span style="font-weight:700;color:${pctColor(f.pct)};font-size:12px">${f.pct}%`
-                  + `${f.detail ? `<span style="font-weight:400;color:#64748b;font-size:10px"> · ${f.detail}</span>` : ''}`
+                  + `${f.detail ? `<span style="font-weight:400;color:#94a3b8;font-size:10px"> · ${f.detail}</span>` : ''}`
                   + `</span></div>`
               )
               .join('')
-          : `<div style="color:#64748b;margin-top:3px;font-size:11px">Memuat data GIS…</div>`;
+          : `<div style="color:#94a3b8;margin-top:3px;font-size:11px">Memuat data GIS…</div>`;
 
         const tooltipHtml =
-          `<div class="lf-tt-inner" style="min-width:190px;padding:7px 10px">`
-          + `<div style="margin-bottom:5px;font-size:11px;font-weight:600;color:#e2eaf0">`
-          + `<span style="color:${color}">&#9679;</span> ${s.id} <span style="color:#475569;font-weight:400">— GIS-MCDA</span></div>`
+          `<div class="lf-tt-inner" style="min-width:200px;padding:8px 11px">`
+          + `<div style="margin-bottom:6px;font-size:11px;font-weight:700;color:#f1f5f9">`
+          + `<span style="color:${color}">&#9679;</span> ${s.id} <span style="color:#94a3b8;font-weight:400;font-size:10px">— GIS-MCDA</span></div>`
           + gisRows
-          + (mcda ? `<div style="font-size:9px;color:#334155;margin-top:6px;border-top:1px solid rgba(255,255,255,0.06);padding-top:4px">${mcda.data_source}</div>` : '')
+          + (mcda ? `<div style="font-size:9px;color:#64748b;margin-top:7px;border-top:1px solid rgba(148,163,184,0.15);padding-top:5px">${mcda.data_source}</div>` : '')
           + `</div>`;
 
         // Lingkaran luar: zona kesesuaian lahan GIS
