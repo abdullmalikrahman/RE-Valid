@@ -187,9 +187,12 @@ function AnalisisContent() {
   const windDiffNasa = (station.windBaselineNasa != null && station.windBaselineNasa > 0)
     ? parseFloat((((station.windSpeed - station.windBaselineNasa) / station.windBaselineNasa) * 100).toFixed(1))
     : null;
-  const aepGross = station.aep ?? 0;
-  const aepNetP50 = Math.round((station.aep ?? 0) * 0.877);
-  const aepNetP90 = Math.round((station.aep ?? 0) * 0.767);
+  // hasWindObs: apakah ada data observasi angin yang valid (bukan 0 dari ketiadaan sensor)
+  const hasWindObs = (station.aep ?? 0) > 0;
+  // Jika tidak ada observasi angin, gunakan windAep (atlas GWA 3.0 estimate) sebagai fallback
+  const aepGross = hasWindObs ? (station.aep ?? 0) : (station.windAep ?? 0);
+  const aepNetP50 = Math.round(aepGross * 0.877);
+  const aepNetP90 = Math.round(aepGross * 0.767);
   const biasDisplay = station.bias != null ? (station.bias > 0 ? '+' : '') + station.bias.toFixed(1) + '%' : '–';
   // Wind-specific R² (from windR2 column, fallback to generic r2)
   const windR2Val = station.windR2 ?? station.r2 ?? 0;
@@ -756,14 +759,19 @@ function AnalisisContent() {
                   <span className="material-symbols-outlined text-[56px] text-primary">bolt</span>
                 </div>
                 <div className="flex justify-between items-start mb-1.5">
-                  <p className="text-xs text-slate-500 dark:text-text-secondary font-semibold">Estimasi AEP PLTB (P50)</p>
+                  <div className="flex items-center gap-1.5">
+                    <p className="text-xs text-slate-500 dark:text-text-secondary font-semibold">Estimasi AEP PLTB (P50)</p>
+                    {!hasWindObs && <span className="text-[9px] font-semibold px-1.5 py-0.5 rounded bg-amber-500/20 text-amber-400">Atlas</span>}
+                  </div>
                   <span className="material-symbols-outlined text-primary text-[20px]">bolt</span>
                 </div>
                 <div className="flex items-baseline gap-2">
                   <h3 className="text-2xl font-bold text-slate-900 dark:text-white">{aepNetP50.toLocaleString('id')}</h3>
                   <span className="text-sm text-slate-500 dark:text-slate-400">MWh/thn</span>
                 </div>
-                <p className="text-[10px] text-slate-400 mt-1">Setelah faktor losses MCP</p>
+                <p className="text-[10px] text-slate-400 mt-1">
+                  {hasWindObs ? 'Setelah faktor losses MCP' : 'Estimasi GWA 3.0 · belum ada data observasi angin'}
+                </p>
               </div>
             </>
           ) : (
@@ -1019,7 +1027,20 @@ function AnalisisContent() {
                   </div>
                 </div>
                 <div>
-                  <p className="text-xs font-bold text-slate-900 dark:text-white mb-2">Estimasi AEP PLTB</p>
+                  <div className="flex items-center gap-2 mb-2">
+                    <p className="text-xs font-bold text-slate-900 dark:text-white">Estimasi AEP PLTB</p>
+                    {!hasWindObs && (
+                      <span className="text-[9px] font-semibold px-1.5 py-0.5 rounded bg-amber-500/20 text-amber-400">
+                        Estimasi Atlas GWA 3.0
+                      </span>
+                    )}
+                  </div>
+                  {!hasWindObs && (
+                    <p className="text-[10px] text-amber-400/80 mb-2 flex items-center gap-1">
+                      <span className="material-symbols-outlined text-[11px]">info</span>
+                      Belum ada data observasi angin. Nilai berdasarkan baseline GWA 3.0 ({station.windBaselineGwa ?? station.windBaseline ?? '—'} m/s).
+                    </p>
+                  )}
                   <div className="flex flex-col gap-2">
                     <div className="flex justify-between items-center p-3 rounded bg-gray-50 dark:bg-[#111a22]">
                       <div className="flex items-center gap-2 text-xs text-slate-600 dark:text-slate-300">
