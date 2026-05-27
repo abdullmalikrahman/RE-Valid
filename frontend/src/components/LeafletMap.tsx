@@ -356,26 +356,30 @@ export default function LeafletMap({
         }
         const r = 1000 + (composite / 100) * 4000;
 
+        // Warna persentase berdasarkan nilai (bukan warna status stasiun yang bisa gelap)
+        const pctColor = (pct: number) => pct >= 75 ? '#4ade80' : pct >= 50 ? '#fbbf24' : '#f87171';
+
         // Tooltip breakdown GIS-MCDA per faktor
         const gisRows = mcda
           ? mcda.factors
               .filter((f) => ['Topografi', 'Aksesibilitas', 'Infrastruktur'].includes(f.label))
               .map(
                 (f) =>
-                  `<div style="display:flex;justify-content:space-between;gap:12px;margin-top:2px">`
-                  + `<span style="opacity:0.7">${f.label}</span>`
-                  + `<span style="font-weight:600;color:${color}">${f.pct}%`
-                  + `${f.detail ? `<span style="font-weight:400;opacity:0.6"> · ${f.detail}</span>` : ''}`
+                  `<div style="display:flex;justify-content:space-between;align-items:baseline;gap:14px;margin-top:3px">`
+                  + `<span style="color:#94a3b8;font-size:11px">${f.label}</span>`
+                  + `<span style="font-weight:700;color:${pctColor(f.pct)};font-size:12px">${f.pct}%`
+                  + `${f.detail ? `<span style="font-weight:400;color:#64748b;font-size:10px"> · ${f.detail}</span>` : ''}`
                   + `</span></div>`
               )
               .join('')
-          : `<div style="opacity:0.5;margin-top:3px">Memuat data GIS…</div>`;
+          : `<div style="color:#64748b;margin-top:3px;font-size:11px">Memuat data GIS…</div>`;
 
         const tooltipHtml =
-          `<div class="lf-tt-inner" style="min-width:170px">`
-          + `<div style="margin-bottom:4px"><span style="color:${color}">&#9679;</span> <b>${s.id}</b> — GIS-MCDA</div>`
+          `<div class="lf-tt-inner" style="min-width:190px;padding:7px 10px">`
+          + `<div style="margin-bottom:5px;font-size:11px;font-weight:600;color:#e2eaf0">`
+          + `<span style="color:${color}">&#9679;</span> ${s.id} <span style="color:#475569;font-weight:400">— GIS-MCDA</span></div>`
           + gisRows
-          + (mcda ? `<div style="font-size:10px;opacity:0.45;margin-top:5px">${mcda.data_source}</div>` : '')
+          + (mcda ? `<div style="font-size:9px;color:#334155;margin-top:6px;border-top:1px solid rgba(255,255,255,0.06);padding-top:4px">${mcda.data_source}</div>` : '')
           + `</div>`;
 
         // Lingkaran luar: zona kesesuaian lahan GIS
