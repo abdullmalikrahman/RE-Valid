@@ -112,7 +112,7 @@ function StationModal({ station, onClose, onSave, onRefresh }: ModalProps) {
     windBaselineNasa: station?.windBaselineNasa ?? null as number | null,
     ghiBaselineNasa: station?.ghiBaselineNasa ?? null as number | null,
   });
-
+  
   const isEdit = station !== null;
   const [isSaving, setIsSaving] = useState(false);
   const [saveError, setSaveError] = useState<string | null>(null);

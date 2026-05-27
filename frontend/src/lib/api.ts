@@ -196,3 +196,32 @@ export async function fetchHeatmapData(type: 'wind' | 'solar'): Promise<HeatmapD
   if (!res.ok) throw new Error(`Heatmap API error: ${res.status}`);
   return res.json();
 }
+
+export interface GisMcdaFactor {
+  label: string;
+  pct: number;
+  source: string;
+  detail: string | null;
+}
+
+export interface GisMcdaData {
+  station_id: string;
+  lat: number;
+  lon: number;
+  altitude: number | null;
+  road_dist_km: number | null;
+  power_dist_km: number | null;
+  data_source: string;
+  factors: GisMcdaFactor[];
+}
+
+/**
+ * Ambil faktor kesesuaian GIS-MCDA berbasis koordinat nyata (Overpass API/OSM).
+ * Aksesibilitas = jarak ke jalan terdekat; Infrastruktur = jarak ke transmisi listrik terdekat.
+ * Hasil di-cache 6 jam di server.
+ */
+export async function fetchGisMcda(stationId: string): Promise<GisMcdaData> {
+  const res = await apiFetch(`${API_BASE}/stations/${stationId}/gis-mcda`);
+  if (!res.ok) throw new Error(`GIS-MCDA API error: ${res.status}`);
+  return res.json();
+}

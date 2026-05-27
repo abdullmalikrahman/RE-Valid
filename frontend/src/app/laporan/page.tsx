@@ -11,6 +11,7 @@ import Navbar from '@/components/Navbar';
 import Footer from '@/components/Footer';
 import { useStations } from '@/hooks/useStations';
 import { useMeasurements } from '@/hooks/useMeasurements';
+import { fetchGisMcda, type GisMcdaData } from '@/lib/api';
 
 const statusLabel: Record<string, string> = {
   prioritas: 'Prioritas',
@@ -48,6 +49,19 @@ function LaporanContent() {
   const backLabel = fromPage === 'analisis' ? 'Kembali ke Analisis Lokasi' : fromPage === 'kalkulator' ? 'Kembali ke Kalkulator' : 'Kembali ke Peta';
 
   const { measurements } = useMeasurements(stationId);
+
+  // ── GIS-MCDA: fetch dari backend (Overpass API / OSM) ─────────────────────
+  const [gisMcda, setGisMcda] = useState<GisMcdaData | null>(null);
+  const [gisMcdaLoading, setGisMcdaLoading] = useState(false);
+  useEffect(() => {
+    if (!stationId) return;
+    setGisMcda(null);
+    setGisMcdaLoading(true);
+    fetchGisMcda(stationId)
+      .then(setGisMcda)
+      .catch(() => setGisMcda(null))
+      .finally(() => setGisMcdaLoading(false));
+  }, [stationId]);
 
   // Derived baseline values — computed before any early return so hooks below are always called
   const windBaselineVal = station?.windBaseline ?? (station?.windSpeed ?? 0) * 1.046;
@@ -186,38 +200,30 @@ function LaporanContent() {
   const tooltipBorder = isDark ? '#2d3b4a' : '#e2e8f0';
   const tooltipLabel = isDark ? '#92adc9' : '#374151';
 
-  // Faktor kesesuaian GIS-MCDA berdasarkan metodologi tier-altitude
-  // mengacu pada Pedoman ESDM No. 1/2012 & kajian spasial Jawa Barat (BAPPENAS 2021)
-  //
-  // Potensi EBT  → langsung dari skor validasi MCP (atlas vs. observasi)
-  // Topografi    → kesesuaian lereng berdasar kelas elevasi DEMNAS/SRTM:
-  //                0–200 m = dataran rendah, lereng <8° → 70%
-  //                200–600 m = perbukitan rendah, lereng 8–25° → 55%
-  //                600–1500 m = perbukitan tinggi, eksposur angin baik → 65%
-  //                >1500 m = pegunungan, lereng curam → 40%
-  // Aksesibilitas → densitas jaringan jalan vs. kelas elevasi Jawa Barat
-  //                (BPS Road Density 2023 & OSM road network West Java)
-  // Infrastruktur → kedekatan jaringan transmisi PLN berdasar kelas elevasi
-  //                (PLN Transmission Map 2022 — daerah rendah = GI & SUTT lebih padat)
+  // Faktor kesesuaian GIS-MCDA
+  // Jika data Overpass sudah tiba → gunakan jarak nyata per koordinat
+  // Jika masih loading / gagal → fallback ke tier-altitude
   const alt = station.altitude;
-  const mcdaFactors = [
-    {
-      label: 'Potensi EBT',
-      pct: station.score,  // hasil validasi MCP langsung — tidak ada penambahan
-    },
-    {
-      label: 'Topografi',
-      pct: alt < 200 ? 70 : alt < 600 ? 55 : alt < 1500 ? 65 : 40,
-    },
-    {
-      label: 'Aksesibilitas',
-      pct: alt < 150 ? 82 : alt < 400 ? 70 : alt < 800 ? 55 : 38,
-    },
-    {
-      label: 'Infrastruktur',
-      pct: alt < 200 ? 72 : alt < 600 ? 58 : alt < 1500 ? 42 : 28,
-    },
-  ];
+  const mcdaFactors: { label: string; pct: number; detail?: string | null }[] = gisMcda
+    ? gisMcda.factors
+    : [
+        { label: 'Potensi EBT', pct: station.score, detail: null },
+        {
+          label: 'Topografi',
+          pct: alt < 200 ? 70 : alt < 600 ? 55 : alt < 1500 ? 65 : 40,
+          detail: `${alt} m dpl`,
+        },
+        {
+          label: 'Aksesibilitas',
+          pct: alt < 150 ? 82 : alt < 400 ? 70 : alt < 800 ? 55 : 38,
+          detail: 'Estimasi tier-altitude',
+        },
+        {
+          label: 'Infrastruktur',
+          pct: alt < 200 ? 72 : alt < 600 ? 58 : alt < 1500 ? 42 : 28,
+          detail: 'Estimasi tier-altitude',
+        },
+      ];
 
   async function handleExportPDF() {
     setExporting('pdf');
@@ -324,7 +330,13 @@ function LaporanContent() {
 
       // GIS-MCDA
       sectionTitle('Faktor Kesesuaian GIS-MCDA');
-      mcdaFactors.forEach((f) => row(f.label, `${f.pct}%`));
+      mcdaFactors.forEach((f) => {
+        const detailSuffix = f.detail ? ` (${f.detail})` : '';
+        row(f.label, `${f.pct}%${detailSuffix}`);
+      });
+      if (gisMcda) {
+        row('Sumber data', gisMcda.data_source);
+      }
       y += 3;
 
       // Data Meteorologi — show if any sensor readings exist
@@ -734,7 +746,19 @@ function LaporanContent() {
       ].forEach((pair, i) => addRow2(pair[0], pair[1], i));
 
       addSection('FAKTOR KESESUAIAN GIS-MCDA');
-      mcdaFactors.forEach(({ label, pct }, i) => addRow2(label, `${pct}%`, i));
+      mcdaFactors.forEach(({ label, pct, detail }, i) => {
+        const detailSuffix = detail ? ` (${detail})` : '';
+        addRow2(label, `${pct}%${detailSuffix}`, i);
+      });
+      if (gisMcda) {
+        addRow2('Sumber Data', gisMcda.data_source, mcdaFactors.length);
+        if (gisMcda.road_dist_km !== null) {
+          addRow2('Jarak ke Jalan Terdekat', `${gisMcda.road_dist_km.toFixed(1)} km`, mcdaFactors.length + 1);
+        }
+        if (gisMcda.power_dist_km !== null) {
+          addRow2('Jarak ke Transmisi Terdekat', `${gisMcda.power_dist_km.toFixed(1)} km`, mcdaFactors.length + 2);
+        }
+      }
 
       // DATA METEOROLOGI — raw sensor readings if available
       const meteoRows = measurements.filter(
@@ -1325,24 +1349,49 @@ function LaporanContent() {
                   {station.score}/100
                 </span>
               </div>
-              <p className="text-[10px] text-slate-400 mb-3">Estimasi distribusi berbasis skor lokasi &amp; ketinggian. Analisis MCDA penuh tersedia di halaman Peta.</p>
+
+              {/* Source badge */}
+              <div className="flex items-center gap-2 mb-3">
+                {gisMcdaLoading ? (
+                  <span className="inline-flex items-center gap-1.5 text-[10px] font-medium px-2 py-0.5 rounded-full bg-blue-500/10 border border-blue-500/30 text-blue-400">
+                    <span className="material-symbols-outlined text-[12px] animate-spin">progress_activity</span>
+                    Mengambil data koordinat dari OSM…
+                  </span>
+                ) : gisMcda ? (
+                  <span className="inline-flex items-center gap-1.5 text-[10px] font-medium px-2 py-0.5 rounded-full bg-emerald-500/10 border border-emerald-500/30 text-emerald-400">
+                    <span className="material-symbols-outlined text-[12px]">gps_fixed</span>
+                    Berbasis koordinat nyata · {gisMcda.data_source}
+                  </span>
+                ) : (
+                  <span className="inline-flex items-center gap-1.5 text-[10px] font-medium px-2 py-0.5 rounded-full bg-amber-500/10 border border-amber-500/30 text-amber-400">
+                    <span className="material-symbols-outlined text-[12px]">warning</span>
+                    Estimasi tier-altitude (Overpass tidak tersedia)
+                  </span>
+                )}
+              </div>
+
               <div className="space-y-3">
                 {mcdaFactors.map((f) => (
                   <div key={f.label}>
-                    <div className="flex justify-between text-xs text-slate-500 dark:text-text-secondary mb-1">
+                    <div className="flex justify-between text-xs text-slate-500 dark:text-text-secondary mb-0.5">
                       <span className="font-medium">{f.label}</span>
                       <span
                         className={`font-bold ${
                           f.pct >= 75 ? 'text-green-400' : f.pct >= 55 ? 'text-amber-400' : 'text-red-400'
                         }`}
                       >
-                        {f.pct}%
+                        {gisMcdaLoading && (f.label === 'Aksesibilitas' || f.label === 'Infrastruktur') ? '…' : `${f.pct}%`}
                       </span>
                     </div>
+                    {f.detail && (
+                      <p className="text-[9px] text-slate-400 dark:text-slate-500 mb-1 leading-tight">{f.detail}</p>
+                    )}
                     <div className="h-2 rounded-full bg-slate-200 dark:bg-[#233648]">
                       <div
                         className={`h-2 rounded-full transition-all ${
-                          f.pct >= 75 ? 'bg-green-500' : f.pct >= 55 ? 'bg-amber-400' : 'bg-red-400'
+                          gisMcdaLoading && (f.label === 'Aksesibilitas' || f.label === 'Infrastruktur')
+                            ? 'bg-slate-400 animate-pulse'
+                            : f.pct >= 75 ? 'bg-green-500' : f.pct >= 55 ? 'bg-amber-400' : 'bg-red-400'
                         }`}
                         style={{ width: `${f.pct}%` }}
                       />
