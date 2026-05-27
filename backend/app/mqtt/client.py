@@ -130,10 +130,10 @@ def _store_measurement(record: dict) -> None:
                 if record.get("wind_speed") is not None:
                     set_parts.append("wind_speed = :wind_speed")
                     params["wind_speed"] = record["wind_speed"]
-                if record.get("ghi") is not None:
-                    # Convert instantaneous W/m² to kWh/m²/day (24h equivalent)
-                    set_parts.append("irradiation = :irradiation")
-                    params["irradiation"] = round(record["ghi"] * 24 / 1000, 2)
+                # Catatan: kolom irradiation TIDAK diperbarui dari data MQTT langsung.
+                # Formula mean(GHI) × 24/1000 hanya valid untuk data 24 jam penuh.
+                # Nilai irradiation yang benar dihitung oleh Celery task validate_station_mcp
+                # menggunakan agregasi per hari kalender (SUM(GHI_i) / 60_000 kWh/m²/hari).
                 await session.execute(
                     text(f"UPDATE stations SET {', '.join(set_parts)} WHERE id = :station_id"),
                     params,

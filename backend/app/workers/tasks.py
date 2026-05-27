@@ -180,10 +180,44 @@ def validate_station_mcp(self, station_id: str, variable: str = "wind", n: int =
 
         obs = [float(r[0]) for r in rows]
 
-        # Untuk solar: konversi GHI dari W/m² (rata-rata harian) ke kWh/m²/hari
-        # agar unit konsisten dengan ghi_baseline yang disimpan dalam kWh/m²/hari
+        # Untuk solar: konversi GHI dari W/m² ke kWh/m²/hari menggunakan integrasi per hari kalender.
+        # Formula mean(GHI) × 24/1000 hanya valid jika data mencakup 24 jam penuh (termasuk malam).
+        # Dengan data parsial (misal 1 jam siang saja), hasilnya overestimate 10–20×.
+        # Solusi: hitung total harian aktual per hari kalender (WIB):
+        #   daily_kwh_m2 = SUM(GHI_i W/m²) × (1/60 jam) / 1000 = SUM(GHI_i) / 60_000
+        # untuk interval pengukuran 1 menit (ESP32 default).
         if variable == "solar":
-            obs = [o * 24 / 1000 for o in obs]
+            cur.execute(
+                """
+                SELECT
+                    DATE(measured_at AT TIME ZONE 'Asia/Jakarta') AS obs_day,
+                    COUNT(*) AS n_obs,
+                    SUM(ghi::float) / 60000.0 AS daily_kwh_m2
+                FROM measurements
+                WHERE station_id = %s AND ghi IS NOT NULL
+                GROUP BY obs_day
+                ORDER BY obs_day DESC
+                LIMIT 365
+                """,
+                (station_id,),
+            )
+            day_agg = cur.fetchall()
+            # Hari "lengkap" = ≥ 720 pembacaan (12 jam × 60 menit pada interval 1 menit).
+            # Threshold 12 jam memastikan pengukuran malam (GHI ≈ 0) sudah tercakup sehingga
+            # integrasi harian tidak overestimate karena hanya berisi jam siang hari.
+            daily_totals = [float(r[2]) for r in day_agg if int(r[1]) >= 720]
+            if daily_totals:
+                obs = daily_totals
+            else:
+                # Fallback: belum ada hari kalender lengkap (< 12 jam data/hari).
+                # Gunakan formula lama sebagai estimasi — hasilnya akan overestimate
+                # karena hanya mencakup jam siang hari dengan GHI tinggi.
+                obs = [o * 24 / 1000 for o in obs]
+                logger.warning(
+                    "validate_station_mcp: solar %s — belum ada hari kalender lengkap (≥ 720 obs/hari). "
+                    "GHI harian kemungkinan overestimate. Diperlukan ≥ 12 jam data per hari.",
+                    station_id,
+                )
 
         # Ambil nilai baseline atlas dari kolom stations
         if variable == "wind":

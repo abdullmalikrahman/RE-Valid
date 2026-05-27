@@ -352,18 +352,31 @@ function AnalisisContent() {
       });
 
       if (measurements.length > 0) {
-        const obsLabel = isWind ? 'Kec. Angin Obs (m/s)' : 'GHI Obs (kWh/m\u00b2/hari)';
-        const baseLabel = isWind ? 'Baseline Atlas (m/s)' : 'Baseline Atlas (kWh/m\u00b2/hari)';
-        const devLabel = isWind ? 'Deviasi (m/s)' : 'Deviasi (kWh/m\u00b2/hari)';
-        addSection('DATA PENGUKURAN');
-        addColHeaders(['Tanggal/Waktu', obsLabel, baseLabel, devLabel]);
-        measurements.forEach((m, i) => {
-          const obs = isWind
-            ? (m.wind_speed ?? 0)
-            : parseFloat(((m.ghi ?? 0) * 24 / 1000).toFixed(4));
-          const dev = parseFloat((obs - atlasBaseline).toFixed(4));
-          addDataRow([m.measured_at, obs, parseFloat(atlasBaseline.toFixed(4)), dev], i);
-        });
+        if (isWind) {
+          addSection('DATA PENGUKURAN');
+          addColHeaders(['Tanggal/Waktu', 'Kec. Angin Obs (m/s)', 'Baseline Atlas (m/s)', 'Deviasi (m/s)']);
+          measurements.forEach((m, i) => {
+            const obs = m.wind_speed ?? 0;
+            const dev = parseFloat((obs - atlasBaseline).toFixed(4));
+            addDataRow([m.measured_at, obs, parseFloat(atlasBaseline.toFixed(4)), dev], i);
+          });
+        } else {
+          // Untuk solar: agregasi per hari kalender — bandingkan total GHI harian vs atlas
+          // GHI harian (kWh/m²/hari) = SUM(GHI_i W/m²) × (1/60 jam) / 1000 = SUM(GHI_i) / 60_000
+          const dayGhiMap = new Map<string, number[]>();
+          measurements.forEach((m) => {
+            const day = new Date(m.measured_at).toISOString().slice(0, 10);
+            if (!dayGhiMap.has(day)) dayGhiMap.set(day, []);
+            dayGhiMap.get(day)!.push(m.ghi ?? 0);
+          });
+          addSection('DATA GHI HARIAN (Agregasi per Hari Kalender)');
+          addColHeaders(['Tanggal', 'Total GHI Harian (kWh/m²/hari)', 'Baseline Atlas (kWh/m²/hari)', 'Deviasi (kWh/m²/hari)']);
+          [...dayGhiMap.entries()].sort(([a], [b]) => a.localeCompare(b)).forEach(([day, ghiArr], i) => {
+            const dailyTotal = parseFloat((ghiArr.reduce((a, b) => a + b, 0) / 60000).toFixed(2));
+            const dev = parseFloat((dailyTotal - atlasBaseline).toFixed(2));
+            addDataRow([day, dailyTotal, parseFloat(atlasBaseline.toFixed(2)), dev], i);
+          });
+        }
       }
 
       const meteoForXlsx = measurements.filter((m) => m.temperature !== null || m.humidity !== null || m.pressure !== null || m.wind_dir !== null);
@@ -432,7 +445,7 @@ function AnalisisContent() {
   const chartGranularityLabel = chartGranularity === 'daily' ? 'Rata-rata Harian' : chartGranularity === 'weekly' ? 'Rata-rata Mingguan' : 'Rata-rata Bulanan';
 
   const chartData = (() => {
-    const groups = new Map<string, { obs: number[]; baseline: number[]; label: string }>();
+    const groups = new Map<string, { obs: number[]; rawGhi: number[]; baseline: number[]; label: string }>();
     measurements.forEach((m, i) => {
       const d = new Date(m.measured_at);
       let groupKey: string;
@@ -449,15 +462,20 @@ function AnalisisContent() {
         groupKey = d.toISOString().slice(0, 7); // YYYY-MM
         label = d.toLocaleDateString('id-ID', { month: 'short', year: '2-digit' });
       }
-      if (!groups.has(groupKey)) groups.set(groupKey, { obs: [], baseline: [], label });
+      if (!groups.has(groupKey)) groups.set(groupKey, { obs: [], rawGhi: [], baseline: [], label });
       const g = groups.get(groupKey)!;
       g.obs.push(dailyValues[i].obs);
+      g.rawGhi.push(m.ghi ?? 0);
       g.baseline.push(dailyValues[i].baseline);
     });
     // Map mempertahankan urutan insertion; measurements sudah diurutkan ASC dari backend
-    return [...groups.values()].map(({ label, obs, baseline }) => ({
+    // Surya: GHI harian (kWh/m²/hari) = SUM(GHI_i W/m²) / 60_000 (interval 1 menit)
+    // Angin: rata-rata kecepatan angin (m/s)
+    return [...groups.values()].map(({ label, obs, rawGhi, baseline }) => ({
       date: label,
-      obs: parseFloat((obs.reduce((a, b) => a + b, 0) / obs.length).toFixed(2)),
+      obs: isWind
+        ? parseFloat((obs.reduce((a, b) => a + b, 0) / obs.length).toFixed(2))
+        : parseFloat((rawGhi.reduce((a, b) => a + b, 0) / 60000).toFixed(2)),
       baseline: parseFloat((baseline.reduce((a, b) => a + b, 0) / baseline.length).toFixed(2)),
     }));
   })();
@@ -539,6 +557,12 @@ function AnalisisContent() {
     ? Math.round(measurements.filter((m) => (isWind ? m.wind_speed : m.ghi) !== null).length / measurements.length * 100)
     : null;
   const availDisplay = availPct !== null ? `${availPct}%` : '–';
+
+  // ─── Data duration — used for validity warning when observasi period is too short ────
+  const obsDurationDays = measurements.length >= 2
+    ? Math.round((new Date(measurements[measurements.length - 1].measured_at).getTime() - new Date(measurements[0].measured_at).getTime()) / 86400000) + 1
+    : measurements.length === 1 ? 1 : 0;
+  const isDataShort = isWind ? obsDurationDays < 90 : obsDurationDays < 30;
 
   // ─── Validation rows (computed after measurements) ──────────────────────────────
   const windRmseForRow = station.windRmse ?? (station.rmse > 0 ? station.rmse : null);
@@ -713,6 +737,24 @@ function AnalisisContent() {
             <span>Periode: <span className="text-slate-700 dark:text-slate-200 font-semibold">{station.period}</span></span>
           </div>
         </div>
+
+        {/* Peringatan data terlalu pendek */}
+        {isDataShort && (
+          <div className="flex items-start gap-3 bg-amber-500/10 border border-amber-500/30 rounded-xl px-5 py-4 mb-4">
+            <span className="material-symbols-outlined text-amber-400 text-[22px] mt-0.5">warning</span>
+            <div>
+              <p className="text-sm font-bold text-amber-400">
+                Data Observasi Terlalu Pendek — Hasil Analisis Belum Representatif
+              </p>
+              <p className="text-xs text-slate-400 mt-1">
+                Durasi data yang dipilih: <span className="text-amber-300 font-semibold">{obsDurationDays} hari</span>.{' '}
+                {isWind
+                  ? 'Analisis MCP memerlukan minimal 90 hari data (IEC 61400-12 merekomendasikan 12 bulan). Metrik R², Bias, RMSE, dan AEP belum valid secara statistik.'
+                  : 'Validasi GHI memerlukan minimal 30 hari data. GHI harian dan Clearness Index (Kt) akan akurat setelah data mencakup hari kalender penuh (≥ 12 jam/hari termasuk malam).'}
+              </p>
+            </div>
+          </div>
+        )}
 
         {/* Stats cards */}
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-3 mb-4">

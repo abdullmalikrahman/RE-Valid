@@ -75,6 +75,7 @@ function LaporanContent() {
     getValue: (m: (typeof measurements)[number]) => number,
     baseline: number,
     granularity: 'daily' | 'weekly' | 'monthly',
+    sumNotMean = false,
   ) {
     const getGroupKey = (date: Date): { key: string; label: string } => {
       if (granularity === 'daily') {
@@ -110,7 +111,9 @@ function LaporanContent() {
       .filter(([, { values }]) => values.length > 0)
       .map(([, { label, values }]) => ({
         date: label,
-        obs: parseFloat((values.reduce((a, b) => a + b, 0) / values.length).toFixed(2)),
+        obs: sumNotMean
+          ? parseFloat(values.reduce((a, b) => a + b, 0).toFixed(2))
+          : parseFloat((values.reduce((a, b) => a + b, 0) / values.length).toFixed(2)),
         baseline,
       }));
   }
@@ -121,7 +124,8 @@ function LaporanContent() {
     [measurements, windBaselineVal, chartGranularity],
   );
   const ghiChartData = useMemo(
-    () => makeChartData(measurements, (m) => parseFloat(((m.ghi ?? 0) * 24 / 1000).toFixed(2)), ghiBaselineVal, chartGranularity),
+    // GHI harian (kWh/m²/hari) = SUM(GHI_i W/m²) / 60_000 (interval 1 menit, sumNotMean=true)
+    () => makeChartData(measurements, (m) => (m.ghi ?? 0) / 60000, ghiBaselineVal, chartGranularity, true),
     // eslint-disable-next-line react-hooks/exhaustive-deps
     [measurements, ghiBaselineVal, chartGranularity],
   );
@@ -132,7 +136,17 @@ function LaporanContent() {
     return step === 1 ? all : all.filter((_, i) => i % step === 0);
   }, [measurements, windBaselineVal]);
   const ghiScatterData = useMemo(() => {
-    const all = measurements.map((m) => ({ obs: parseFloat(((m.ghi ?? 0) * 24 / 1000).toFixed(2)), baseline: ghiBaselineVal })).filter((p) => p.obs > 0);
+    // Agregasi per hari kalender: scatter menampilkan total GHI harian vs atlas (apple-to-apple)
+    const dayMap = new Map<string, number[]>();
+    measurements.forEach((m) => {
+      const day = new Date(m.measured_at).toISOString().slice(0, 10);
+      if (!dayMap.has(day)) dayMap.set(day, []);
+      dayMap.get(day)!.push(m.ghi ?? 0);
+    });
+    const all = [...dayMap.entries()].map(([, ghiArr]) => ({
+      obs: parseFloat((ghiArr.reduce((a, b) => a + b, 0) / 60000).toFixed(2)),
+      baseline: ghiBaselineVal,
+    })).filter((p) => p.obs > 0);
     const step = all.length > 400 ? Math.ceil(all.length / 400) : 1;
     return step === 1 ? all : all.filter((_, i) => i % step === 0);
   }, [measurements, ghiBaselineVal]);
@@ -383,6 +397,7 @@ function LaporanContent() {
         meas: typeof measurements,
         getValue: (m: (typeof measurements)[number]) => number,
         baseline: number,
+        sumNotMean = false,
       ): { date: string; obs: number; baseline: number }[] {
         // Adaptive granularity: daily ≤31 days, weekly ≤180, monthly otherwise
         const times = meas.map((m) => new Date(m.measured_at).getTime());
@@ -422,7 +437,9 @@ function LaporanContent() {
           .filter(([, { values }]) => values.length > 0)
           .map(([, { label, values }]) => ({
             date: label,
-            obs: parseFloat((values.reduce((a, b) => a + b, 0) / values.length).toFixed(2)),
+            obs: sumNotMean
+              ? parseFloat(values.reduce((a, b) => a + b, 0).toFixed(2))
+              : parseFloat((values.reduce((a, b) => a + b, 0) / values.length).toFixed(2)),
             baseline,
           }));
       }
@@ -596,8 +613,8 @@ function LaporanContent() {
           );
         }
         if (hasSolar) {
-          const sMon = buildChartData(measurements, (m) => parseFloat(((m.ghi ?? 0) * 24 / 1000).toFixed(2)), solarBaseline);
-          const sSca = buildScatter(measurements, (m) => parseFloat(((m.ghi ?? 0) * 24 / 1000).toFixed(2)), solarBaseline);
+          const sMon = buildChartData(measurements, (m) => (m.ghi ?? 0) / 60000, solarBaseline, true);
+          const sSca = buildScatter(measurements, (m) => (m.ghi ?? 0) / 60000, solarBaseline);
           addChartSection(
             'Iradiasi Matahari (GHI) — Baseline Atlas vs Observasi',
             `GSA/ERA5 Baseline: ${solarBaseline.toFixed(2)} kWh/m²/hari  ·  RMSE: ${station.solarRmse != null ? station.solarRmse.toFixed(2) : '–'} kWh/m²/hari  ·  Kt: ${ktVal.toFixed(2)}`,
