@@ -205,19 +205,40 @@ def validate_station_mcp(self, station_id: str, variable: str = "wind", n: int =
             # Hari "lengkap" = ≥ 720 pembacaan (12 jam × 60 menit pada interval 1 menit).
             # Threshold 12 jam memastikan pengukuran malam (GHI ≈ 0) sudah tercakup sehingga
             # integrasi harian tidak overestimate karena hanya berisi jam siang hari.
+            # Hari "lengkap" = ≥ 720 pembacaan (12 jam × 60 menit).
             daily_totals = [float(r[2]) for r in day_agg if int(r[1]) >= 720]
+            # Data parsial = ≥ 360 pembacaan (6 jam minimum daylight).
+            # SUM/60000 tetap valid secara fisika untuk data parsial siang hari:
+            # sebagian besar energi surya harian terpusat pada jam 9–15, sehingga
+            # 6 jam data siang ≈ 80–90 % energi harian penuh.
+            partial_totals = [float(r[2]) for r in day_agg if int(r[1]) >= 360]
             if daily_totals:
                 obs = daily_totals
-            else:
-                # Fallback: belum ada hari kalender lengkap (< 12 jam data/hari).
-                # Gunakan formula lama sebagai estimasi — hasilnya akan overestimate
-                # karena hanya mencakup jam siang hari dengan GHI tinggi.
-                obs = [o * 24 / 1000 for o in obs]
+            elif partial_totals:
+                # Data parsial (6–12 jam/hari): gunakan SUM/60000 — JANGAN kalikan 24/1000
+                # per-pembacaan karena itu menghasilkan overestimate 3–4×.
+                obs = partial_totals
                 logger.warning(
-                    "validate_station_mcp: solar %s — belum ada hari kalender lengkap (≥ 720 obs/hari). "
-                    "GHI harian kemungkinan overestimate. Diperlukan ≥ 12 jam data per hari.",
+                    "validate_station_mcp: solar %s — menggunakan data parsial (≥ 6 jam/hari). "
+                    "Hasil mungkin sedikit underestimate karena hari belum penuh.",
                     station_id,
                 )
+            else:
+                # < 6 jam data/hari — tolak komputasi, jangan simpan solar_bias yang salah
+                logger.warning(
+                    "validate_station_mcp: solar %s — data tidak cukup (< 6 jam/hari). "
+                    "Validasi GHI dibatalkan.",
+                    station_id,
+                )
+                cur.execute(
+                    "UPDATE stations SET mcp_status = 'pending' WHERE id = %s",
+                    (station_id,),
+                )
+                conn.commit()
+                cur.close()
+                conn.close()
+                return {"station_id": station_id, "status": "insufficient_solar_data",
+                        "message": "Data < 6 jam/hari. Ulangi setelah sensor berjalan ≥ 6 jam."}
 
         # Ambil nilai baseline atlas dari kolom stations
         if variable == "wind":
