@@ -2,6 +2,7 @@
 
 import { useEffect, useRef, useState } from 'react';
 import type { Station } from '@/lib/stationData';
+import { fetchGisMcda, type GisMcdaData } from '@/lib/api';
 
 interface Props {
   stations: Station[];
@@ -42,6 +43,8 @@ export default function LeafletMap({
   // Ref to track current selectedStation inside marker click closures (avoids stale state)
   const selectedStationRef = useRef(selectedStation);
   const [mapReady, setMapReady] = useState(false);
+  // GIS-MCDA data cache: station_id → fetched data
+  const [mcdaCache, setMcdaCache] = useState<Record<string, GisMcdaData>>({});
 
   // ── Initialize map ──────────────────────────────────────────────────────────
   useEffect(() => {
@@ -307,6 +310,27 @@ export default function LeafletMap({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [mapReady, activeLayer, windPoints, solarPoints]);
 
+  // ── Fetch GIS-MCDA data when layer is enabled ──────────────────────────────
+  useEffect(() => {
+    if (!showMCDA || stations.length === 0) return;
+    const toFetch = stations.filter((s) => !mcdaCache[s.id]);
+    if (toFetch.length === 0) return;
+    Promise.all(
+      toFetch.map((s) =>
+        fetchGisMcda(s.id)
+          .then((d) => ({ id: s.id, data: d }))
+          .catch(() => ({ id: s.id, data: null }))
+      )
+    ).then((results) => {
+      setMcdaCache((prev) => {
+        const next = { ...prev };
+        results.forEach((r) => { if (r.data) next[r.id] = r.data; });
+        return next;
+      });
+    });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [showMCDA, stations]);
+
   // ── Prioritas GIS-MCDA ─────────────────────────────────────────────────────
   useEffect(() => {
     if (!mapReady || !mapInstanceRef.current) return;
@@ -317,17 +341,62 @@ export default function LeafletMap({
       const grp = L.layerGroup();
       stations.forEach((s) => {
         const color = s.status === 'prioritas' ? '#22c55e' : s.status === 'kandidat' ? '#f59e0b' : '#64748b';
-        // Radius representasi zona potensi: 2–5 km sesuai jangkauan tipikal
-        // stasiun pemantauan EBT (angin/surya skala meso ~2–5 km per titik)
-        const r = 2000 + (s.score / 100) * 3000;
-        L.circle([s.lat, s.lon], { radius: r, color, weight: 2, opacity: 0.7, fillColor: color, fillOpacity: 0.12, interactive: false }).addTo(grp);
-        L.circle([s.lat, s.lon], { radius: r * 0.35, color, weight: 1, opacity: 0.5, fillColor: color, fillOpacity: 0.25, interactive: false }).addTo(grp);
+
+        // Radius berdasarkan skor GIS-MCDA komposit (rata-rata Topografi + Aksesibilitas + Infrastruktur)
+        // Skala: 1km (composite=0%) → 5km (composite=100%)
+        const mcda = mcdaCache[s.id];
+        let composite = 40; // default sementara selama data belum dimuat
+        if (mcda) {
+          const gisFactors = mcda.factors.filter((f) =>
+            f.label === 'Topografi' || f.label === 'Aksesibilitas' || f.label === 'Infrastruktur'
+          );
+          if (gisFactors.length > 0) {
+            composite = gisFactors.reduce((sum, f) => sum + f.pct, 0) / gisFactors.length;
+          }
+        }
+        const r = 1000 + (composite / 100) * 4000;
+
+        // Tooltip breakdown GIS-MCDA per faktor
+        const gisRows = mcda
+          ? mcda.factors
+              .filter((f) => ['Topografi', 'Aksesibilitas', 'Infrastruktur'].includes(f.label))
+              .map(
+                (f) =>
+                  `<div style="display:flex;justify-content:space-between;gap:12px;margin-top:2px">`
+                  + `<span style="opacity:0.7">${f.label}</span>`
+                  + `<span style="font-weight:600;color:${color}">${f.pct}%`
+                  + `${f.detail ? `<span style="font-weight:400;opacity:0.6"> · ${f.detail}</span>` : ''}`
+                  + `</span></div>`
+              )
+              .join('')
+          : `<div style="opacity:0.5;margin-top:3px">Memuat data GIS…</div>`;
+
+        const tooltipHtml =
+          `<div class="lf-tt-inner" style="min-width:170px">`
+          + `<div style="margin-bottom:4px"><span style="color:${color}">&#9679;</span> <b>${s.id}</b> — GIS-MCDA</div>`
+          + gisRows
+          + (mcda ? `<div style="font-size:10px;opacity:0.45;margin-top:5px">${mcda.data_source}</div>` : '')
+          + `</div>`;
+
+        // Lingkaran luar: zona kesesuaian lahan GIS
+        L.circle([s.lat, s.lon], {
+          radius: r, color, weight: 2, opacity: 0.7,
+          fillColor: color, fillOpacity: 0.10, interactive: true,
+        })
+          .bindTooltip(tooltipHtml, { permanent: false, direction: 'top', className: 'leaflet-tooltip-custom' })
+          .addTo(grp);
+
+        // Lingkaran dalam: inti representatif stasiun (~30% radius)
+        L.circle([s.lat, s.lon], {
+          radius: r * 0.30, color, weight: 1.5, opacity: 0.6,
+          fillColor: color, fillOpacity: 0.22, interactive: false,
+        }).addTo(grp);
       });
       grp.addTo(mapInstanceRef.current);
       mcdaLayerRef.current = grp;
     });
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [mapReady, showMCDA, stations]);
+  }, [mapReady, showMCDA, stations, mcdaCache]);
 
   return (
     <>
