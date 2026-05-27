@@ -42,11 +42,15 @@ function AnalisisContent() {
 
   // Compute default date range: first measurement → first + 10 days.
   // Falls back to last 30 days when a station has no data yet.
+  // PENTING: first_measurement_at dikirim backend sebagai UTC. ESP32 memakai RTC WIB (UTC+7),
+  // sehingga tanggal harus diekstrak dalam WIB agar tidak off-by-one (mis. 26 Mei vs 27 Mei).
   function defaultDateRange(firstMeasAt: string | null | undefined): { start: string; end: string } {
     if (firstMeasAt) {
       const first = new Date(firstMeasAt);
-      const start = first.toISOString().slice(0, 10);
-      const end = new Date(first.getTime() + 10 * 86_400_000).toISOString().slice(0, 10);
+      // Ekstrak tanggal dalam WIB (UTC+7) menggunakan en-CA locale (format YYYY-MM-DD)
+      const start = first.toLocaleDateString('en-CA', { timeZone: 'Asia/Jakarta' });
+      const end = new Date(first.getTime() + 10 * 86_400_000)
+        .toLocaleDateString('en-CA', { timeZone: 'Asia/Jakarta' });
       return { start, end };
     }
     const today = new Date();
