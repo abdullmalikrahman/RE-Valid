@@ -249,8 +249,12 @@ def validate_station_mcp(self, station_id: str, variable: str = "wind", n: int =
         MONTH_ID = ['', 'Jan', 'Feb', 'Mar', 'Apr', 'Mei', 'Jun',
                     'Jul', 'Agu', 'Sep', 'Okt', 'Nov', 'Des']
 
+        # Konversi ke WIB (UTC+7) sebelum ambil tanggal — ESP32 menyimpan waktu WIB
+        # sehingga MIN/MAX harus dibaca dalam WIB, bukan UTC (mencegah off-by-one hari)
         cur.execute(
-            "SELECT MIN(measured_at), MAX(measured_at) FROM measurements WHERE station_id = %s",
+            "SELECT MIN(measured_at AT TIME ZONE 'Asia/Jakarta'),"
+            "       MAX(measured_at AT TIME ZONE 'Asia/Jakarta')"
+            " FROM measurements WHERE station_id = %s",
             (station_id,),
         )
         row_dates = cur.fetchone()

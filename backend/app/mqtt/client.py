@@ -24,6 +24,11 @@ from datetime import datetime, timezone, timedelta
 # WIB = UTC+7 — zona waktu DS3231 RTC pada ESP32 (disetel ke waktu lokal Indonesia)
 _WIB = timezone(timedelta(hours=7))
 
+# Serializes concurrent inserts to prevent duplicate-row race conditions.
+# ESP32 mengirim 60 record sekaligus (1 jam buffer) — tanpa lock, coroutine
+# yang berjalan bersamaan bisa lolos cek dedup sebelum salah satunya commit.
+_store_lock = asyncio.Lock()
+
 import paho.mqtt.client as mqtt
 from sqlalchemy import select, text
 
@@ -88,57 +93,58 @@ def _parse_payload(topic: str, raw: str) -> dict | None:
 def _store_measurement(record: dict) -> None:
     """Fire-and-forget coroutine to insert a measurement row."""
     async def _do() -> None:
-        async with AsyncSessionLocal() as session:
-            # Deduplicate: skip if same station_id + measured_at already exists
-            dup = await session.execute(
-                select(Measurement.id).where(
-                    Measurement.station_id == record["station_id"],
-                    Measurement.measured_at == record["measured_at"],
-                ).limit(1)
-            )
-            if dup.scalar() is not None:
-                logger.debug(
-                    "MQTT: duplicate skipped station=%s at=%s",
-                    record["station_id"],
-                    record["measured_at"].isoformat(),
+        async with _store_lock:   # serialisasi insert untuk cegah race-condition dedup
+            async with AsyncSessionLocal() as session:
+                # Deduplicate: skip if same station_id + measured_at already exists
+                dup = await session.execute(
+                    select(Measurement.id).where(
+                        Measurement.station_id == record["station_id"],
+                        Measurement.measured_at == record["measured_at"],
+                    ).limit(1)
                 )
-                return
+                if dup.scalar() is not None:
+                    logger.debug(
+                        "MQTT: duplicate skipped station=%s at=%s",
+                        record["station_id"],
+                        record["measured_at"].isoformat(),
+                    )
+                    return
 
-            obj = Measurement(
-                station_id=record["station_id"],
-                measured_at=record["measured_at"],
-                wind_speed=record.get("wind_speed"),
-                wind_dir=record.get("wind_dir"),
-                ghi=record.get("ghi"),
-                dni=record.get("dni"),
-                temperature=record.get("temperature"),
-                humidity=record.get("humidity"),
-                pressure=record.get("pressure"),
+                obj = Measurement(
+                    station_id=record["station_id"],
+                    measured_at=record["measured_at"],
+                    wind_speed=record.get("wind_speed"),
+                    wind_dir=record.get("wind_dir"),
+                    ghi=record.get("ghi"),
+                    dni=record.get("dni"),
+                    temperature=record.get("temperature"),
+                    humidity=record.get("humidity"),
+                    pressure=record.get("pressure"),
+                )
+                session.add(obj)
+
+                # Also update stations.last_update (and current sensor values) so
+                # the peta/analisis pages show live data without running full analysis.
+                set_parts = ["last_update = NOW()"]
+                params: dict = {"station_id": record["station_id"]}
+                if record.get("wind_speed") is not None:
+                    set_parts.append("wind_speed = :wind_speed")
+                    params["wind_speed"] = record["wind_speed"]
+                if record.get("ghi") is not None:
+                    # Convert instantaneous W/m² to kWh/m²/day (24h equivalent)
+                    set_parts.append("irradiation = :irradiation")
+                    params["irradiation"] = round(record["ghi"] * 24 / 1000, 2)
+                await session.execute(
+                    text(f"UPDATE stations SET {', '.join(set_parts)} WHERE id = :station_id"),
+                    params,
+                )
+
+                await session.commit()
+            logger.info(
+                "MQTT stored: station=%s at=%s",
+                record["station_id"],
+                record["measured_at"].isoformat(),
             )
-            session.add(obj)
-
-            # Also update stations.last_update (and current sensor values) so
-            # the peta/analisis pages show live data without running full analysis.
-            set_parts = ["last_update = NOW()"]
-            params: dict = {"station_id": record["station_id"]}
-            if record.get("wind_speed") is not None:
-                set_parts.append("wind_speed = :wind_speed")
-                params["wind_speed"] = record["wind_speed"]
-            if record.get("ghi") is not None:
-                # Convert instantaneous W/m² to kWh/m²/day (24h equivalent)
-                set_parts.append("irradiation = :irradiation")
-                params["irradiation"] = round(record["ghi"] * 24 / 1000, 2)
-            await session.execute(
-                text(f"UPDATE stations SET {', '.join(set_parts)} WHERE id = :station_id"),
-                params,
-            )
-
-            await session.commit()
-        logger.info(
-            "MQTT stored: station=%s at=%s",
-            record["station_id"],
-            record["measured_at"].isoformat(),
-        )
 
     # Run the coroutine in the FastAPI event loop (set at startup).
     # Paho callbacks run in a dedicated thread, so we cannot call
