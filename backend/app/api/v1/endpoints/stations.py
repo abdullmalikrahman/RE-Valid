@@ -32,15 +32,27 @@ def _haversine_km(lat1: float, lon1: float, lat2: float, lon2: float) -> float:
     return R * 2 * math.asin(math.sqrt(a))
 
 
+# Overpass instances — dicoba berurutan sampai ada yang responsif
+_OVERPASS_INSTANCES = [
+    "https://overpass.kumi.systems/api/interpreter",
+    "https://lz4.overpass-api.de/api/interpreter",
+    "https://overpass-api.de/api/interpreter",
+]
+
+_OVERPASS_HEADERS = {
+    "User-Agent": "RE-Valid/1.0 (renewable energy site validation; contact: admin@revalid.my.id)",
+    "Accept": "application/json",
+}
+
+
 async def _overpass_nearest_km(
     lat: float, lon: float, osm_filter: str, max_km: int = 100
 ) -> float | None:
     """
     Cari fitur OSM terdekat via Overpass API dengan pencarian radius bertahap.
-    Mengembalikan jarak minimum (km) ke centroid way terdekat, atau None jika
-    Overpass tidak responsif atau tidak ada fitur ditemukan dalam max_km.
+    Mencoba beberapa Overpass instance secara berurutan.
+    Mengembalikan jarak minimum (km) ke centroid way terdekat, atau None.
     """
-    url = "https://overpass-api.de/api/interpreter"
     radii = [r for r in [5_000, 20_000, 50_000, max_km * 1_000] if r <= max_km * 1_000]
     for radius_m in radii:
         query = (
@@ -48,24 +60,29 @@ async def _overpass_nearest_km(
             f"(way{osm_filter}(around:{radius_m},{lat},{lon}););\n"
             f"out center;"
         )
-        try:
-            async with httpx.AsyncClient(timeout=25.0) as client:
-                resp = await client.post(url, data={"data": query})
-            if resp.status_code != 200:
-                continue
-            elements = resp.json().get("elements", [])
-            if not elements:
-                continue
-            # Hitung jarak ke centroid setiap way — ambil minimum
-            dists = [
-                _haversine_km(lat, lon, el["center"]["lat"], el["center"]["lon"])
-                for el in elements
-                if "center" in el
-            ]
-            if dists:
-                return round(min(dists), 2)
-        except Exception:
-            continue
+        for instance_url in _OVERPASS_INSTANCES:
+            try:
+                async with httpx.AsyncClient(timeout=25.0) as client:
+                    resp = await client.post(
+                        instance_url,
+                        data={"data": query},
+                        headers=_OVERPASS_HEADERS,
+                    )
+                if resp.status_code != 200:
+                    continue
+                elements = resp.json().get("elements", [])
+                if not elements:
+                    break  # radius ini kosong, coba radius lebih besar
+                # Hitung jarak ke centroid setiap way — ambil minimum
+                dists = [
+                    _haversine_km(lat, lon, el["center"]["lat"], el["center"]["lon"])
+                    for el in elements
+                    if "center" in el
+                ]
+                if dists:
+                    return round(min(dists), 2)
+            except Exception:
+                continue  # coba instance berikutnya
     return None
 
 

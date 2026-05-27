@@ -1357,7 +1357,7 @@ function LaporanContent() {
                     <span className="material-symbols-outlined text-[12px] animate-spin">progress_activity</span>
                     Mengambil data koordinat dari OSM…
                   </span>
-                ) : gisMcda ? (
+                ) : gisMcda && (gisMcda.road_dist_km !== null || gisMcda.power_dist_km !== null) ? (
                   <span className="inline-flex items-center gap-1.5 text-[10px] font-medium px-2 py-0.5 rounded-full bg-emerald-500/10 border border-emerald-500/30 text-emerald-400">
                     <span className="material-symbols-outlined text-[12px]">gps_fixed</span>
                     Berbasis koordinat nyata · {gisMcda.data_source}
@@ -1365,7 +1365,7 @@ function LaporanContent() {
                 ) : (
                   <span className="inline-flex items-center gap-1.5 text-[10px] font-medium px-2 py-0.5 rounded-full bg-amber-500/10 border border-amber-500/30 text-amber-400">
                     <span className="material-symbols-outlined text-[12px]">warning</span>
-                    Estimasi tier-altitude (Overpass tidak tersedia)
+                    Estimasi tier-altitude (Overpass tidak responsif)
                   </span>
                 )}
               </div>
