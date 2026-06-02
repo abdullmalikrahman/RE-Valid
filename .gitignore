@@ -48,6 +48,10 @@ nginx/certbot/
 
 # Atlas GeoTIFF — file besar, jangan di-commit (download manual, lihat DOWNLOAD_INSTRUCTIONS.txt)
 *.tif
+
+# Temporary Chrome export folders (profil browser, cookie, cache — jangan di-commit)
+.tmp_chrome_export/
+.tmp_chrome_export2/
 *.tiff
 
 # Celery beat — file state runtime, dibuat otomatis saat scheduler berjalan
