@@ -738,24 +738,6 @@ function AnalisisContent() {
           </div>
         </div>
 
-        {/* Peringatan data terlalu pendek */}
-        {isDataShort && (
-          <div className="flex items-start gap-3 bg-amber-500/10 border border-amber-500/30 rounded-xl px-5 py-4 mb-4">
-            <span className="material-symbols-outlined text-amber-400 text-[22px] mt-0.5">warning</span>
-            <div>
-              <p className="text-sm font-bold text-amber-400">
-                Data Observasi Terlalu Pendek — Hasil Analisis Belum Representatif
-              </p>
-              <p className="text-xs text-slate-400 mt-1">
-                Durasi data yang dipilih: <span className="text-amber-300 font-semibold">{obsDurationDays} hari</span>.{' '}
-                {isWind
-                  ? 'Analisis MCP memerlukan minimal 90 hari data (IEC 61400-12 merekomendasikan 12 bulan). Metrik R², Bias, RMSE, dan AEP belum valid secara statistik.'
-                  : 'Validasi GHI memerlukan minimal 30 hari data. GHI harian dan Clearness Index (Kt) akan akurat setelah data mencakup hari kalender penuh (≥ 12 jam/hari termasuk malam).'}
-              </p>
-            </div>
-          </div>
-        )}
-
         {/* Stats cards */}
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-3 mb-4">
           {isWind ? (
