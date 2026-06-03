@@ -1,7 +1,7 @@
 """add station_daily_baselines table
 
-Revision ID: d4e5f6a7b8c9
-Revises: c3d4e5f6a7b8
+Revision ID: e5f6a7b8c9d0
+Revises: d4e5f6a7b8c9
 Create Date: 2026-06-03 00:00:00.000000
 
 Menambah tabel station_daily_baselines untuk menyimpan
@@ -19,8 +19,8 @@ from typing import Sequence, Union
 import sqlalchemy as sa
 from alembic import op
 
-revision: str = 'd4e5f6a7b8c9'
-down_revision: Union[str, Sequence[str], None] = 'c3d4e5f6a7b8'
+revision: str = 'e5f6a7b8c9d0'
+down_revision: Union[str, Sequence[str], None] = 'd4e5f6a7b8c9'
 branch_labels: Union[str, Sequence[str], None] = None
 depends_on: Union[str, Sequence[str], None] = None
 

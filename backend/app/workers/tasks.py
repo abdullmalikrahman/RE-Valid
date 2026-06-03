@@ -88,35 +88,28 @@ def _bias_pct(obs: list[float], baseline: list[float]) -> float:
 
 
 def _r2(obs: list[float], baseline: list[float]) -> float:
-    """Skill score berbasis bias relatif untuk baseline konstan (atlas climatology).
+    """Skill score berbasis akurasi level (bias relatif) terhadap baseline referensi.
 
-    Bila baseline adalah konstanta atlas (ERA5/GWA/GSA), tidak ada variasi
-    temporal pada referensi sehingga korelasi Pearson tidak terdefinisi.
-    Gunakan skill score: R² = 1 - |bias_relatif|, di mana:
-      R² = 1.0 : rata-rata obs sama persis dengan atlas (tidak ada bias sistematis)
-      R² = 0.8 : rata-rata obs menyimpang 20% dari atlas
-      R² = 0.0 : bias ≥ 100% (obs jauh dari atlas)
-    Bila baseline bervariasi (misal ERA5 time-series), gunakan R² Pearson standar.
+    Digunakan untuk semua tipe baseline (atlas LTA konstan maupun ERA5 per-DOY harian).
+    Formula: R² = max(0, 1 - |mean(obs) - mean(baseline)| / mean(baseline))
 
-    CATATAN: Jangan gunakan `ss_tot == 0` untuk deteksi baseline konstan karena
-    floating point arithmetic menyebabkan sum([2.67]*90)/90 != 2.67 (presisi ~1e-16),
-    sehingga ss_tot menjadi ~1e-29 (bukan 0) dan pembagian menghasilkan R² = -inf → 0.
-    Gunakan range (max-min) sebagai indikator konstanta yang robust.
+    Interpretasi:
+      R² = 1.00 : rata-rata obs sama persis dengan baseline (nol bias sistematis)
+      R² = 0.80 : rata-rata obs menyimpang 20% dari baseline
+      R² = 0.00 : bias ≥ 100% (obs jauh dari baseline)
+
+    KENAPA tidak gunakan Pearson R²:
+      Untuk ERA5 per-DOY, variasi baseline dalam 10-14 hari berurutan di musim yang
+      sama sangat kecil (~0.05-0.3 unit), sehingga ss_tot (variasi baseline) jauh
+      lebih kecil dari ss_res → R² = 1 - ss_res/ss_tot = sangat negatif → di-clamp 0.
+      Pearson R² tidak bermakna untuk periode pendek di musim yang sama.
     """
-    # Deteksi baseline konstan secara robust (tahan floating point error)
-    if max(baseline) - min(baseline) < 1e-9:
-        # Baseline konstan — hitung skill score berbasis bias relatif
-        mean_b = sum(baseline) / len(baseline)
-        if mean_b == 0:
-            return 0.0
-        mean_obs = sum(obs) / len(obs)
-        norm_bias = abs(mean_obs - mean_b) / mean_b
-        return max(0.0, 1.0 - norm_bias)
-    # Baseline bervariasi — gunakan R² Pearson standar
     mean_b = sum(baseline) / len(baseline)
-    ss_tot = sum((b - mean_b) ** 2 for b in baseline)
-    ss_res = sum((o - b) ** 2 for o, b in zip(obs, baseline))
-    return 1.0 - ss_res / ss_tot
+    if mean_b == 0:
+        return 0.0
+    mean_obs = sum(obs) / len(obs)
+    norm_bias = abs(mean_obs - mean_b) / mean_b
+    return max(0.0, 1.0 - norm_bias)
 
 
 @celery_app.task(name="validate_station_mcp", bind=True)

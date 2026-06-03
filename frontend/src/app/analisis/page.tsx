@@ -444,9 +444,10 @@ function AnalisisContent() {
   const atlasBaseline = isWind ? windBaselineVal : ghiBaseline;
   const hasDailyBaseline = dailyBaseline.size >= 300;
 
-  // Helper: hitung DOY (1–366) dari ISO date string
+  // Helper: hitung DOY (1–366) dari ISO date string (date-only atau full ISO timestamp)
   function getDoy(isoDate: string): number {
-    const d = new Date(isoDate + 'T12:00:00');  // tengah hari untuk hindari DST edge
+    const dateOnly = isoDate.slice(0, 10); // ambil "YYYY-MM-DD" dari format apapun
+    const d = new Date(dateOnly + 'T12:00:00');  // tengah hari untuk hindari DST edge
     const start = new Date(d.getFullYear(), 0, 0);
     const diff = d.getTime() - start.getTime();
     return Math.floor(diff / 86_400_000);
@@ -898,8 +899,8 @@ function AnalisisContent() {
                 <h3 className="text-sm font-bold text-slate-900 dark:text-white">Visualisasi Perbandingan Data</h3>
                 <p className="text-xs text-slate-500 dark:text-text-secondary">
                   {isWind
-                    ? `Deret Waktu (${chartGranularityLabel}): Kec. Angin Obs vs GWA 3.0 — ${station.name}`
-                    : `Deret Waktu (${chartGranularityLabel}): GHI Obs vs GSA/Solargis — ${station.name}`}
+                    ? `Deret Waktu (${chartGranularityLabel}): Kec. Angin Obs vs ${hasDailyBaseline ? 'ERA5 Harian (DOY)' : 'GWA 3.0'} — ${station.name}`
+                    : `Deret Waktu (${chartGranularityLabel}): GHI Obs vs ${hasDailyBaseline ? 'ERA5 Harian (DOY)' : 'GSA/Solargis'} — ${station.name}`}
                 </p>
               </div>
               <div className="flex items-center gap-3 text-xs font-medium">
@@ -909,7 +910,7 @@ function AnalisisContent() {
                 </div>
                 <div className="flex items-center gap-1.5">
                   <span className="w-2.5 h-2.5 rounded-full bg-slate-400" />
-                  <span className="text-slate-600 dark:text-slate-300">{isWind ? 'GWA 3.0' : 'GSA (Solargis)'}</span>
+                  <span className="text-slate-600 dark:text-slate-300">{hasDailyBaseline ? 'ERA5 Harian (DOY)' : isWind ? 'GWA 3.0' : 'GSA (Solargis)'}</span>
                 </div>
               </div>
             </div>
@@ -947,7 +948,7 @@ function AnalisisContent() {
             <div className="mb-3">
               <h3 className="text-sm font-bold text-slate-900 dark:text-white">Analisis Korelasi</h3>
               <p className="text-xs text-slate-500 dark:text-text-secondary">
-                Deviasi obs dari referensi atlas {isWind ? 'GWA 3.0' : 'GSA/Solargis'} (Y = obs − atlas)
+                Deviasi obs dari referensi {hasDailyBaseline ? 'ERA5 Harian (DOY)' : isWind ? 'atlas GWA 3.0' : 'atlas GSA/Solargis'} (Y = obs − atlas)
               </p>
             </div>
             <div className="w-full bg-gray-50 dark:bg-input-bg-dark rounded-lg border border-gray-200 dark:border-gray-800 mb-3" style={{ flex: '1 1 0', minHeight: '320px' }}>
@@ -994,11 +995,13 @@ function AnalisisContent() {
             </div>
             <div className="bg-gray-50 dark:bg-[#111a22] rounded-lg p-3 text-xs text-slate-500 dark:text-slate-400">
               <div className="flex justify-between mb-1.5">
-                <span>Baseline atlas:</span>
+                <span>Baseline {hasDailyBaseline ? 'ERA5 (DOY)' : 'atlas'}:</span>
                 <span className="font-mono">
-                {isWind
-                  ? `${windLongTerm} m/s (${station.windBaselineGwa != null ? 'GWA 3.0' : 'ERA5 (ECMWF)'})`
-                  : `${ghiBaseline} kWh/m²/hari (${station.ghiBaselineGsa != null ? 'GSA Solargis' : 'ERA5 (ECMWF)'})`}
+                {hasDailyBaseline
+                  ? (isWind ? `ERA5 per-DOY (${dailyBaseline.size} hari)` : `ERA5 per-DOY (${dailyBaseline.size} hari)`)
+                  : isWind
+                    ? `${windLongTerm} m/s (${station.windBaselineGwa != null ? 'GWA 3.0' : 'ERA5 (ECMWF)'})`
+                    : `${ghiBaseline} kWh/m²/hari (${station.ghiBaselineGsa != null ? 'GSA Solargis' : 'ERA5 (ECMWF)'})`}
               </span>
               </div>
               <div className={`flex justify-between items-center font-bold ${isWind ? windR2Color : solarR2Color}`}>
