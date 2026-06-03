@@ -164,3 +164,109 @@ async def fetch_era5_baseline(lat: float, lon: float) -> dict:
         logger.warning("Gagal mengambil data ERA5 dari Open-Meteo: %s", exc)
         return {"wind": None, "ghi": None}
 
+
+# ─── ERA5 : daily climatology per DOY (1–366) ────────────────────────────────
+
+async def fetch_era5_daily_climatology(lat: float, lon: float) -> dict[int, dict]:
+    """Ambil daily climatology ERA5 per DOY (1–366) dari Open-Meteo ERA5 Archive.
+
+    Strategi:
+      - Query Open-Meteo daily endpoint: shortwave_radiation_sum (MJ/m²) dan
+        wind_speed_10m_max (m/s), periode 2014-01-01 s/d 2025-12-31.
+      - Untuk wind 100m: digunakan hourly wind_speed_100m lalu di-aggregate per hari.
+        Open-Meteo daily tidak punya wind_100m_mean, jadi kita rata-rata per hari dari hourly.
+      - Group by DOY, rata-rata semua tahun → 366 nilai (DOY 366 hanya tahun kabisat).
+
+    Returns:
+        dict[doy: int, {"ghi": float|None, "wind": float|None}]
+        doy 1..366; ghi dalam kWh/m²/hari; wind dalam m/s.
+        DOY 366 bisa None jika tidak ada data (tahun tidak kabisat).
+    """
+    url = "https://archive-api.open-meteo.com/v1/era5"
+
+    # Step 1: ambil data daily untuk GHI (shortwave_radiation_sum dalam MJ/m²)
+    # Step 2: ambil data hourly untuk wind 100m, lalu aggregate per hari
+    # Keduanya dalam satu request dengan "daily" + "hourly"
+
+    params = {
+        "latitude": lat,
+        "longitude": lon,
+        "start_date": "2014-01-01",
+        "end_date": "2025-12-31",
+        "daily": "shortwave_radiation_sum",
+        "hourly": "wind_speed_100m",
+        "wind_speed_unit": "ms",
+        "timezone": "UTC",
+    }
+
+    try:
+        async with httpx.AsyncClient(timeout=120.0) as client:
+            r = await client.get(url, params=params)
+            r.raise_for_status()
+            data = r.json()
+
+        daily_section = data.get("daily", {})
+        hourly_section = data.get("hourly", {})
+
+        dates_daily = daily_section.get("time", [])
+        ghi_daily_vals = daily_section.get("shortwave_radiation_sum", [])
+
+        dates_hourly = hourly_section.get("time", [])
+        wind_hourly_vals = hourly_section.get("wind_speed_100m", [])
+
+        # ── Hitung DOY → mean GHI ──────────────────────────────────────────
+        # shortwave_radiation_sum dari Open-Meteo daily = MJ/m² → bagi 3.6 → kWh/m²
+        from collections import defaultdict
+
+        ghi_by_doy: dict[int, list[float]] = defaultdict(list)
+        for date_str, ghi_val in zip(dates_daily, ghi_daily_vals):
+            if ghi_val is None:
+                continue
+            # date_str format: "YYYY-MM-DD"
+            from datetime import date as date_t
+            d = date_t.fromisoformat(date_str)
+            doy = d.timetuple().tm_yday
+            ghi_kwh = float(ghi_val) / 3.6  # MJ/m² → kWh/m²
+            if 0.0 <= ghi_kwh <= 15.0:      # sanity: max ~10 di tropis, 15 = safety margin
+                ghi_by_doy[doy].append(ghi_kwh)
+
+        # ── Hitung wind 100m per hari → DOY → mean ────────────────────────
+        # Hourly timestamps: "YYYY-MM-DDTHH:MM"
+        wind_by_doy: dict[int, list[float]] = defaultdict(list)
+        day_wind_acc: dict[str, list[float]] = defaultdict(list)
+
+        for ts, w_val in zip(dates_hourly, wind_hourly_vals):
+            if w_val is None:
+                continue
+            date_str = ts[:10]           # ambil "YYYY-MM-DD"
+            w = float(w_val)
+            if 0.0 <= w <= 50.0:
+                day_wind_acc[date_str].append(w)
+
+        for date_str, winds in day_wind_acc.items():
+            from datetime import date as date_t
+            d = date_t.fromisoformat(date_str)
+            doy = d.timetuple().tm_yday
+            wind_by_doy[doy].append(sum(winds) / len(winds))
+
+        # ── Build hasil dict[doy] ──────────────────────────────────────────
+        result: dict[int, dict] = {}
+        for doy in range(1, 367):
+            ghi_list = ghi_by_doy.get(doy, [])
+            wind_list = wind_by_doy.get(doy, [])
+
+            ghi_mean = round(sum(ghi_list) / len(ghi_list), 3) if ghi_list else None
+            wind_mean = round(sum(wind_list) / len(wind_list), 3) if wind_list else None
+
+            result[doy] = {"ghi": ghi_mean, "wind": wind_mean}
+
+        logger.info(
+            "ERA5 daily climatology berhasil untuk (%.4f, %.4f): %d DOY terisi",
+            lat, lon, sum(1 for v in result.values() if v["ghi"] is not None),
+        )
+        return result
+
+    except Exception as exc:
+        logger.warning("Gagal mengambil ERA5 daily climatology: %s", exc)
+        return {}
+

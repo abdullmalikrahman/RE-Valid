@@ -205,7 +205,12 @@ async def fetch_atlas_baseline(
       · ERA5 → wind_baseline_nasa + ghi_baseline_nasa  (dari Open-Meteo ERA5 Archive, ECMWF)
     Nilai wind_baseline dan ghi_baseline diisi dengan sumber terbaik yang tersedia.
     """
-    from app.workers.atlas_reader import fetch_era5_baseline, fetch_gsa_ghi, read_gwa_wind
+    from app.workers.atlas_reader import (
+        fetch_era5_baseline,
+        fetch_era5_daily_climatology,
+        fetch_gsa_ghi,
+        read_gwa_wind,
+    )
 
     station = await get_station_by_id(db, station_id)
     if not station:
@@ -225,6 +230,33 @@ async def fetch_atlas_baseline(
     era5 = await fetch_era5_baseline(lat, lon)
     era5_wind: float | None = era5.get("wind")
     era5_ghi:  float | None = era5.get("ghi")
+
+    # ── 4. ERA5 Daily Climatology: DOY 1–366 ──────────────────────────────────
+    # Fetch dan simpan ke station_daily_baselines (UPSERT 366 baris)
+    daily_clim = await fetch_era5_daily_climatology(lat, lon)
+    if daily_clim:
+        from sqlalchemy.dialects.postgresql import insert as pg_insert
+        from app.models.daily_baseline import StationDailyBaseline
+
+        rows = [
+            {
+                "station_id": station_id,
+                "doy": doy,
+                "ghi_era5": vals["ghi"],
+                "wind_era5": vals["wind"],
+            }
+            for doy, vals in daily_clim.items()
+        ]
+        stmt = pg_insert(StationDailyBaseline).values(rows)
+        stmt = stmt.on_conflict_do_update(
+            index_elements=["station_id", "doy"],
+            set_={
+                "ghi_era5": stmt.excluded.ghi_era5,
+                "wind_era5": stmt.excluded.wind_era5,
+            },
+        )
+        await db.execute(stmt)
+        await db.commit()
 
     # ── Tentukan nilai terbaik ─────────────────────────────────────────────────
     best_wind = gwa_wind if gwa_wind is not None else era5_wind
@@ -344,3 +376,43 @@ async def get_gis_mcda(station_id: str, db: AsyncSession = Depends(get_db)):
 
     _GIS_CACHE[station_id] = (time.time(), result)
     return result
+
+
+# ---------------------------------------------------------------------------
+# Endpoint: ambil daily climatology ERA5 per DOY untuk satu stasiun
+# ---------------------------------------------------------------------------
+
+@router.get("/{station_id}/daily-baseline")
+async def get_daily_baseline(
+    station_id: str,
+    db: AsyncSession = Depends(get_db),
+):
+    """
+    Kembalikan daily climatology ERA5 per DOY (1–366) untuk satu stasiun.
+
+    Response: list of {doy, ghi_era5, wind_era5}
+    Digunakan oleh halaman Analisis untuk garis baseline per-hari di chart.
+    """
+    from sqlalchemy import select
+    from app.models.daily_baseline import StationDailyBaseline
+
+    stmt = (
+        select(
+            StationDailyBaseline.doy,
+            StationDailyBaseline.ghi_era5,
+            StationDailyBaseline.wind_era5,
+        )
+        .where(StationDailyBaseline.station_id == station_id)
+        .order_by(StationDailyBaseline.doy)
+    )
+    result = await db.execute(stmt)
+    rows = result.fetchall()
+
+    return [
+        {
+            "doy": row.doy,
+            "ghi_era5": float(row.ghi_era5) if row.ghi_era5 is not None else None,
+            "wind_era5": float(row.wind_era5) if row.wind_era5 is not None else None,
+        }
+        for row in rows
+    ]

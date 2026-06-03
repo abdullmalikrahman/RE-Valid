@@ -73,6 +73,22 @@ function AnalisisContent() {
 
   const [exportingXlsx, setExportingXlsx] = useState(false);
 
+  // ─── Daily Climatology Baseline (ERA5 per DOY) ───────────────────────────
+  type DailyBaselineRow = { doy: number; ghi_era5: number | null; wind_era5: number | null };
+  const [dailyBaseline, setDailyBaseline] = useState<Map<number, DailyBaselineRow>>(new Map());
+
+  useEffect(() => {
+    if (!station?.id) return;
+    apiFetch(`/api/v1/stations/${station.id}/daily-baseline`)
+      .then((r) => (r.ok ? r.json() : []))
+      .then((rows: DailyBaselineRow[]) => {
+        const map = new Map<number, DailyBaselineRow>();
+        rows.forEach((row) => map.set(row.doy, row));
+        setDailyBaseline(map);
+      })
+      .catch(() => setDailyBaseline(new Map()));
+  }, [station?.id]);
+
   // Reset task feedback whenever the user switches station or energy type
   useEffect(() => {
     setTaskState('idle');
@@ -423,14 +439,32 @@ function AnalisisContent() {
     }
   }
 
-  // Per-day values — baseline adalah konstanta atlas (ERA5/ECMWF) per stasiun
-  // Bukan fungsi dari obs (menghindari self-referential baseline)
+  // Per-day values — gunakan daily climatology ERA5 per DOY jika tersedia,
+  // fallback ke LTA konstan atlas (ERA5/ECMWF) jika belum ada.
   const atlasBaseline = isWind ? windBaselineVal : ghiBaseline;
+  const hasDailyBaseline = dailyBaseline.size >= 300;
+
+  // Helper: hitung DOY (1–366) dari ISO date string
+  function getDoy(isoDate: string): number {
+    const d = new Date(isoDate + 'T12:00:00');  // tengah hari untuk hindari DST edge
+    const start = new Date(d.getFullYear(), 0, 0);
+    const diff = d.getTime() - start.getTime();
+    return Math.floor(diff / 86_400_000);
+  }
+
   const dailyValues = measurements.map((m) => {
     const obs = isWind
       ? parseFloat((m.wind_speed ?? 0).toString())
       : parseFloat(((m.ghi ?? 0) * 24 / 1000).toFixed(2));
-    return { obs, baseline: atlasBaseline };
+    // Gunakan DOY-matched baseline jika tersedia
+    let baseline = atlasBaseline;
+    if (hasDailyBaseline) {
+      const doy = getDoy(m.measured_at);
+      const row = dailyBaseline.get(doy);
+      const doyVal = isWind ? row?.wind_era5 : row?.ghi_era5;
+      if (doyVal != null && doyVal > 0) baseline = doyVal;
+    }
+    return { obs, baseline };
   });
 
   // Granularitas adaptif: harian (≤31 hari), mingguan (≤180 hari), bulanan (>180 hari)
@@ -480,11 +514,11 @@ function AnalisisContent() {
     }));
   })();
 
-  // Scatter: obs (X) vs deviasi dari atlas baseline (Y) — lebih informatif dari obs vs konstanta
-  // Y > 0 = obs di atas atlas; Y < 0 = obs di bawah atlas; Y = 0 = cocok sempurna
+  // Scatter: obs (X) vs deviasi dari baseline (Y) — DOY-matched jika tersedia
+  // Y > 0 = obs di atas baseline; Y < 0 = obs di bawah baseline; Y = 0 = cocok sempurna
   const scatterDataAll = dailyValues.map((d) => ({
     obs: d.obs,
-    dev: parseFloat((d.obs - atlasBaseline).toFixed(3)),
+    dev: parseFloat((d.obs - d.baseline).toFixed(3)),
   }));
   // Downsample ke maks 400 titik — render 14.400 SVG dot sangat berat untuk browser
   const scatterStep = scatterDataAll.length > 400 ? Math.ceil(scatterDataAll.length / 400) : 1;
@@ -901,7 +935,7 @@ function AnalisisContent() {
                       labelStyle={{ color: tooltipLabel }}
                     />
                     <Line type="monotone" dataKey="obs" name="Terukur (Obs)" stroke={isWind ? '#137fec' : '#f59e0b'} dot={{ r: 4, fill: isWind ? '#137fec' : '#f59e0b' }} strokeWidth={2.5} activeDot={{ r: 6 }} />
-                    <Line type="monotone" dataKey="baseline" name={isWind ? 'GWA 3.0' : 'GSA (Solargis)'} stroke="#94a3b8" strokeDasharray="5 3" dot={{ r: 3, fill: '#94a3b8' }} strokeWidth={2} activeDot={{ r: 5 }} />
+                    <Line type="monotone" dataKey="baseline" name={hasDailyBaseline ? 'ERA5 Harian (DOY)' : isWind ? 'ERA5/GWA (LTA)' : 'ERA5/GSA (LTA)'} stroke="#94a3b8" strokeDasharray="5 3" dot={{ r: 3, fill: '#94a3b8' }} strokeWidth={2} activeDot={{ r: 5 }} />
                   </LineChart>
                 </ResponsiveContainer>
               )}

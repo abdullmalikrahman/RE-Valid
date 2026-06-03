@@ -149,14 +149,73 @@ def validate_station_mcp(self, station_id: str, variable: str = "wind", n: int =
         )
         conn.commit()
 
+        # ── Muat daily climatology baseline (DOY 1–366) dari DB ─────────────
+        cur.execute(
+            "SELECT doy, ghi_era5, wind_era5 FROM station_daily_baselines"
+            " WHERE station_id = %s ORDER BY doy",
+            (station_id,),
+        )
+        doy_rows = cur.fetchall()
+        # doy_baseline[doy] = {"ghi": float|None, "wind": float|None}
+        doy_baseline: dict[int, dict] = {
+            int(r[0]): {
+                "ghi":  float(r[1]) if r[1] is not None else None,
+                "wind": float(r[2]) if r[2] is not None else None,
+            }
+            for r in doy_rows
+        }
+        has_daily_baseline = len(doy_baseline) >= 300  # anggap valid jika ≥ 300 DOY terisi
+
         # Fetch recent non-null measurements — explicit queries (no f-string interpolation)
         if variable == "wind":
+            # Aggregate per hari WIB untuk dapat DOY matching
             cur.execute(
-                "SELECT wind_speed FROM measurements"
-                " WHERE station_id = %s AND wind_speed IS NOT NULL"
-                " ORDER BY measured_at DESC LIMIT %s",
-                (station_id, n),
+                """
+                SELECT
+                    DATE(measured_at AT TIME ZONE 'Asia/Jakarta') AS obs_day,
+                    COUNT(*) AS n_obs,
+                    AVG(wind_speed::float) AS daily_avg_ms,
+                    EXTRACT(DOY FROM DATE(measured_at AT TIME ZONE 'Asia/Jakarta'))::int AS doy
+                FROM measurements
+                WHERE station_id = %s AND wind_speed IS NOT NULL
+                GROUP BY obs_day
+                ORDER BY obs_day DESC
+                LIMIT 365
+                """,
+                (station_id,),
             )
+            wind_day_agg = cur.fetchall()
+            # Pakai semua hari dengan ≥ 360 pembacaan (6 jam, sensor aktif)
+            wind_day_rows = [
+                (float(r[2]), int(r[3]))
+                for r in wind_day_agg if int(r[1]) >= 360
+            ]
+            if not wind_day_rows:
+                # Fallback: gunakan semua hari jika tidak ada yang cukup
+                wind_day_rows = [
+                    (float(r[2]), int(r[3])) for r in wind_day_agg if r[2] is not None
+                ]
+            obs = [v for v, _ in wind_day_rows]
+
+            # Bangun DOY-matched baseline untuk wind
+            if has_daily_baseline and wind_day_rows:
+                baseline = []
+                filtered_obs = []
+                for ws_val, doy in wind_day_rows:
+                    b = doy_baseline.get(doy, {}).get("wind")
+                    if b is not None and b > 0:
+                        baseline.append(b)
+                        filtered_obs.append(ws_val)
+                if len(filtered_obs) >= 5:
+                    obs = filtered_obs
+                    logger.info(
+                        "validate_station_mcp: wind %s — menggunakan daily climatology baseline "
+                        "(%d hari dengan DOY match).", station_id, len(obs),
+                    )
+                else:
+                    baseline = None  # fallback ke LTA
+            else:
+                baseline = None  # daily baseline belum tersedia → fallback ke LTA
         else:
             cur.execute(
                 "SELECT ghi FROM measurements"
@@ -164,21 +223,35 @@ def validate_station_mcp(self, station_id: str, variable: str = "wind", n: int =
                 " ORDER BY measured_at DESC LIMIT %s",
                 (station_id, n),
             )
-        rows = cur.fetchall()
+        rows = cur.fetchall() if variable != "wind" else []
 
-        if len(rows) < 10:
-            logger.warning("validate_station_mcp: not enough data for %s (%d rows)", station_id, len(rows))
-            # Reset mcp_status so it doesn't stay stuck at 'berjalan'
-            cur.execute(
-                "UPDATE stations SET mcp_status = 'pending' WHERE id = %s",
-                (station_id,),
-            )
-            conn.commit()
-            cur.close()
-            conn.close()
-            return {"station_id": station_id, "status": "insufficient_data", "count": len(rows)}
-
-        obs = [float(r[0]) for r in rows]
+        # Untuk wind: obs sudah di-set di atas (per-hari aggregate)
+        # Untuk solar: obs akan di-set di blok solar di bawah
+        if variable == "wind":
+            if len(obs) < 5:
+                logger.warning("validate_station_mcp: not enough wind data for %s (%d days)", station_id, len(obs))
+                cur.execute(
+                    "UPDATE stations SET mcp_status = 'pending' WHERE id = %s",
+                    (station_id,),
+                )
+                conn.commit()
+                cur.close()
+                conn.close()
+                return {"station_id": station_id, "status": "insufficient_data", "count": len(obs)}
+        else:
+            if len(rows) < 10:
+                logger.warning("validate_station_mcp: not enough data for %s (%d rows)", station_id, len(rows))
+                cur.execute(
+                    "UPDATE stations SET mcp_status = 'pending' WHERE id = %s",
+                    (station_id,),
+                )
+                conn.commit()
+                cur.close()
+                conn.close()
+                return {"station_id": station_id, "status": "insufficient_data", "count": len(rows)}
+            # obs dan baseline akan di-set oleh blok solar di bawah
+            obs = []
+            baseline = None
 
         # Untuk solar: konversi GHI dari W/m² ke kWh/m²/hari menggunakan integrasi per hari kalender.
         # Formula mean(GHI) × 24/1000 hanya valid jika data mencakup 24 jam penuh (termasuk malam).
@@ -192,7 +265,8 @@ def validate_station_mcp(self, station_id: str, variable: str = "wind", n: int =
                 SELECT
                     DATE(measured_at AT TIME ZONE 'Asia/Jakarta') AS obs_day,
                     COUNT(*) AS n_obs,
-                    SUM(ghi::float) / 60000.0 AS daily_kwh_m2
+                    SUM(ghi::float) / 60000.0 AS daily_kwh_m2,
+                    EXTRACT(DOY FROM DATE(measured_at AT TIME ZONE 'Asia/Jakarta'))::int AS doy
                 FROM measurements
                 WHERE station_id = %s AND ghi IS NOT NULL
                 GROUP BY obs_day
@@ -205,19 +279,17 @@ def validate_station_mcp(self, station_id: str, variable: str = "wind", n: int =
             # Hari "lengkap" = ≥ 720 pembacaan (12 jam × 60 menit pada interval 1 menit).
             # Threshold 12 jam memastikan pengukuran malam (GHI ≈ 0) sudah tercakup sehingga
             # integrasi harian tidak overestimate karena hanya berisi jam siang hari.
-            # Hari "lengkap" = ≥ 720 pembacaan (12 jam × 60 menit).
-            daily_totals = [float(r[2]) for r in day_agg if int(r[1]) >= 720]
+            daily_rows  = [(float(r[2]), int(r[3])) for r in day_agg if int(r[1]) >= 720]
             # Data parsial = ≥ 360 pembacaan (6 jam minimum daylight).
             # SUM/60000 tetap valid secara fisika untuk data parsial siang hari:
             # sebagian besar energi surya harian terpusat pada jam 9–15, sehingga
             # 6 jam data siang ≈ 80–90 % energi harian penuh.
-            partial_totals = [float(r[2]) for r in day_agg if int(r[1]) >= 360]
-            if daily_totals:
-                obs = daily_totals
-            elif partial_totals:
-                # Data parsial (6–12 jam/hari): gunakan SUM/60000 — JANGAN kalikan 24/1000
-                # per-pembacaan karena itu menghasilkan overestimate 3–4×.
-                obs = partial_totals
+            partial_rows = [(float(r[2]), int(r[3])) for r in day_agg if int(r[1]) >= 360]
+
+            if daily_rows:
+                obs_with_doy = daily_rows
+            elif partial_rows:
+                obs_with_doy = partial_rows
                 logger.warning(
                     "validate_station_mcp: solar %s — menggunakan data parsial (≥ 6 jam/hari). "
                     "Hasil mungkin sedikit underestimate karena hari belum penuh.",
@@ -240,7 +312,29 @@ def validate_station_mcp(self, station_id: str, variable: str = "wind", n: int =
                 return {"station_id": station_id, "status": "insufficient_solar_data",
                         "message": "Data < 6 jam/hari. Ulangi setelah sensor berjalan ≥ 6 jam."}
 
-        # Ambil nilai baseline atlas dari kolom stations
+            obs = [v for v, _ in obs_with_doy]
+
+            # Bangun DOY-matched baseline: setiap hari obs vs ERA5 hari yang sama
+            if has_daily_baseline:
+                baseline = []
+                filtered_obs = []
+                for ghi_val, doy in obs_with_doy:
+                    b = doy_baseline.get(doy, {}).get("ghi")
+                    if b is not None and b > 0:
+                        baseline.append(b)
+                        filtered_obs.append(ghi_val)
+                if len(filtered_obs) >= 5:
+                    obs = filtered_obs
+                    logger.info(
+                        "validate_station_mcp: solar %s — menggunakan daily climatology baseline "
+                        "(%d hari dengan DOY match).", station_id, len(obs),
+                    )
+                else:
+                    baseline = None  # fallback ke LTA
+            else:
+                baseline = None  # daily baseline belum tersedia → fallback ke LTA
+
+        # Ambil nilai baseline atlas LTA dari kolom stations (selalu dibutuhkan untuk AEP/score)
         if variable == "wind":
             cur.execute("SELECT wind_baseline FROM stations WHERE id = %s", (station_id,))
         else:
@@ -270,9 +364,15 @@ def validate_station_mcp(self, station_id: str, variable: str = "wind", n: int =
                            "belum diisi. Gunakan tombol 'Ambil dari Atlas' atau isi manual di halaman admin.",
             }
 
-        # Baseline = konstanta atlas per-stasiun (referensi iklim jangka panjang)
-        # Dibandingkan dengan distribusi observasi harian untuk menghitung deviasi
-        baseline = [atlas_value] * len(obs)
+        # Gunakan daily climatology baseline jika tersedia (lebih akurat secara temporal),
+        # fallback ke LTA konstan jika belum ada (misal fetch-atlas belum dijalankan ulang).
+        if baseline is None:
+            baseline = [atlas_value] * len(obs)
+            logger.info(
+                "validate_station_mcp: %s %s — menggunakan LTA baseline konstan (%.3f). "
+                "Jalankan /fetch-atlas ulang untuk mengaktifkan daily climatology.",
+                variable, station_id, atlas_value,
+            )
 
         rmse = round(_rmse(obs, baseline), 3)
         bias = round(_bias_pct(obs, baseline), 2)
