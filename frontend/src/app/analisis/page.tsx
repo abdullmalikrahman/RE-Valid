@@ -517,31 +517,20 @@ function AnalisisContent() {
     }));
   })();
 
-  // Scatter: obs (X) vs deviasi dari baseline (Y) — DOY-matched jika tersedia
-  // Y > 0 = obs di atas baseline; Y < 0 = obs di bawah baseline; Y = 0 = cocok sempurna
-  //
-  // Angin: per-menit wind_speed (m/s) vs baseline (m/s) — unit sama, langsung bisa dibanding
-  // Surya: HARUS pakai nilai harian (kWh/m²/hari) dari chartData, bukan per-menit * 24/1000.
-  //   Formula (m.ghi * 24/1000) per menit salah: GHI tengah hari 800 W/m² → 800*24/1000 = 19.2
-  //   seolah 1 menit = seluruh hari. Scatter akan menampilkan X sampai 36 kWh/m² yang tidak valid.
-  //   chartData sudah menggunakan SUM(rawGhi)/60000 per hari → nilai fisik yang benar (0–8 kWh/m²/hari).
-  const scatterDataAll = isWind
-    ? dailyValues.map((d) => ({
-        obs: d.obs,
-        dev: parseFloat((d.obs - d.baseline).toFixed(3)),
-      }))
-    : chartData.map((d) => ({
-        obs: d.obs,
-        dev: parseFloat((d.obs - d.baseline).toFixed(3)),
-      }));
-  // Angin: downsample ke maks 400 titik (per-menit = 14.400 titik/10hari, berat untuk browser SVG)
-  // Surya: sudah per-hari (≤365 titik), tidak perlu downsample
-  const scatterStep = scatterDataAll.length > 400 ? Math.ceil(scatterDataAll.length / 400) : 1;
-  const scatterData = scatterStep === 1 ? scatterDataAll : scatterDataAll.filter((_, i) => i % scatterStep === 0);
+  // Scatter: 1 titik per hari untuk kedua tipe energi — dari chartData (nilai teragregasi harian)
+  // Angin: rata-rata harian m/s vs DOY baseline → ~9 titik/10-hari
+  // Surya: kWh/m²/hari (SUM/60000) vs DOY baseline → ~9 titik/10-hari
+  // Tidak ada downsampling — data sudah per-hari, ringan di browser.
+  const scatterData = chartData.map((d) => ({
+    obs: d.obs,
+    dev: parseFloat((d.obs - d.baseline).toFixed(3)),
+  }));
 
-  // Reference line — gunakan reduce bukan spread (...) untuk hindari stack overflow pada array besar
-  const scatterMin = scatterDataAll.length ? scatterDataAll.reduce((mn, d) => d.obs < mn ? d.obs : mn, Infinity) : 0;
-  const scatterMax = scatterDataAll.length ? scatterDataAll.reduce((mx, d) => d.obs > mx ? d.obs : mx, -Infinity) : 10;
+  // Kec. angin obs dihitung dari rata-rata chartData (nilai harian campaign)
+  // Tidak pakai station.windSpeed karena MQTT menimpa kolom itu setiap menit dengan pembacaan sesaat
+  const obsWindMean = isWind && chartData.length > 0
+    ? parseFloat((chartData.reduce((s, d) => s + d.obs, 0) / chartData.length).toFixed(2))
+    : (station.windSpeed ?? 0);
 
   // ─── Meteorological chart data (temperature, humidity, pressure, wind_dir) ─────
   function makeMeteoChartData(
@@ -595,10 +584,9 @@ function AnalisisContent() {
     return ['U', 'TL', 'T', 'TG', 'S', 'BD', 'B', 'BL'][Math.round(deg / 45) % 8];
   }
 
-  // MAE computed from real measurement data (mean absolute error obs vs baseline)
-  // Returns null when no measurement data is available (avoids showing a fake fallback value)
-  const mae = dailyValues.length > 0
-    ? parseFloat((dailyValues.reduce((s, d) => s + Math.abs(d.obs - d.baseline), 0) / dailyValues.length).toFixed(2))
+  // MAE (Mean Absolute Error) per hari dari chartData (nilai teragregasi harian)
+  const mae = chartData.length > 0
+    ? parseFloat((chartData.reduce((s, d) => s + Math.abs(d.obs - d.baseline), 0) / chartData.length).toFixed(2))
     : null;
 
   // ─── Availability from actual measurements ──────────────────────────────────────
@@ -797,10 +785,10 @@ function AnalisisContent() {
                   <span className="material-symbols-outlined text-primary text-[20px]">air</span>
                 </div>
                 <div className="flex items-baseline gap-2">
-                  <h3 className="text-2xl font-bold text-slate-900 dark:text-white">{station.windSpeed}</h3>
+                  <h3 className="text-2xl font-bold text-slate-900 dark:text-white">{obsWindMean.toFixed(2)}</h3>
                   <span className="text-sm text-slate-500 dark:text-slate-400">m/s</span>
-                  <span className={`ml-auto text-xs font-bold px-2 py-0.5 rounded ${station.windSpeed >= 5 ? 'bg-green-500/10 text-green-500' : 'bg-amber-500/10 text-amber-400'}`}>
-                    {station.windSpeed >= 5 ? 'Kuat' : 'Moderat'}
+                  <span className={`ml-auto text-xs font-bold px-2 py-0.5 rounded ${obsWindMean >= 5 ? 'bg-green-500/10 text-green-500' : 'bg-amber-500/10 text-amber-400'}`}>
+                    {obsWindMean >= 5 ? 'Kuat' : 'Moderat'}
                   </span>
                 </div>
                 <p className="text-[10px] text-slate-400 mt-1">vs baseline GWA 3.0 · ERA5 (ECMWF)</p>
@@ -987,7 +975,8 @@ function AnalisisContent() {
                   />
                   <YAxis
                     dataKey="dev" name={isWind ? 'Deviasi (m/s)' : 'Deviasi (kWh/m²)'} type="number"
-                    domain={['auto', 'auto']} tick={{ fontSize: 9, fill: '#64748b' }} tickLine={false} axisLine={false}
+                    domain={['auto', (dataMax: number) => Math.max(dataMax + 0.5, 0.5)]}
+                    tick={{ fontSize: 9, fill: '#64748b' }} tickLine={false} axisLine={false}
                     label={{ value: isWind ? 'Deviasi (m/s)' : 'Deviasi (kWh/m²)', angle: -90, position: 'insideLeft', offset: 10, fill: '#64748b', fontSize: 9 }}
                   />
                   <Tooltip
