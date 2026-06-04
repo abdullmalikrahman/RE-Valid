@@ -10,8 +10,7 @@ import {
 import Navbar from '@/components/Navbar';
 import Footer from '@/components/Footer';
 import { useStations } from '@/hooks/useStations';
-import { useMeasurements } from '@/hooks/useMeasurements';
-import type { Measurement } from '@/hooks/useMeasurements';
+import { useMeasurements, type Measurement } from '@/hooks/useMeasurements';
 import { apiFetch } from '@/lib/api';
 
 const mcpStatusLabel: Record<string, Record<string, string>> = {
@@ -221,6 +220,8 @@ function AnalisisContent() {
   const { measurements, isLoading: measLoading } = useMeasurements(station?.id ?? '', startDate, endDate);
 
   // ─── Memoized computations (HARUS sebelum early return — Rules of Hooks) ──────
+  // isWind harus dideklarasikan sebelum useMemo yang menggunakannya
+  const isWind = energyType === 'wind';
   // Baseline dihitung inline dengan null-safe station access karena station bisa undefined di sini.
   const hasDailyBaseline = dailyBaseline.size >= 300;
 
@@ -376,8 +377,6 @@ function AnalisisContent() {
   const aepSolarRef = Math.round(aepSolar10mwp / 10);   // MWh per 1 MWp
   const aepSolarP90 = Math.round(aepSolarRef * 0.90);
 
-  const isWind = energyType === 'wind';
-
   // ─── XLSX Export ───────────────────────────────────────────────────────────
   async function exportXlsx() {
     setExportingXlsx(true);
@@ -505,8 +504,8 @@ function AnalisisContent() {
           addColHeaders(['Tanggal/Waktu', 'Kec. Angin Obs (m/s)', 'Baseline Atlas (m/s)', 'Deviasi (m/s)']);
           measurements.forEach((m, i) => {
             const obs = m.wind_speed ?? 0;
-            const dev = parseFloat((obs - atlasBaseline).toFixed(4));
-            addDataRow([m.measured_at, obs, parseFloat(atlasBaseline.toFixed(4)), dev], i);
+            const dev = parseFloat((obs - windBaselineVal).toFixed(4));
+            addDataRow([m.measured_at, obs, parseFloat(windBaselineVal.toFixed(4)), dev], i);
           });
         } else {
           // Untuk solar: agregasi per hari kalender — bandingkan total GHI harian vs atlas
@@ -521,8 +520,8 @@ function AnalisisContent() {
           addColHeaders(['Tanggal', 'Total GHI Harian (kWh/m²/hari)', 'Baseline Atlas (kWh/m²/hari)', 'Deviasi (kWh/m²/hari)']);
           [...dayGhiMap.entries()].sort(([a], [b]) => a.localeCompare(b)).forEach(([day, ghiArr], i) => {
             const dailyTotal = parseFloat((ghiArr.reduce((a, b) => a + b, 0) / 60000).toFixed(2));
-            const dev = parseFloat((dailyTotal - atlasBaseline).toFixed(2));
-            addDataRow([day, dailyTotal, parseFloat(atlasBaseline.toFixed(2)), dev], i);
+            const dev = parseFloat((dailyTotal - ghiBaseline).toFixed(2));
+            addDataRow([day, dailyTotal, parseFloat(ghiBaseline.toFixed(2)), dev], i);
           });
         }
       }
