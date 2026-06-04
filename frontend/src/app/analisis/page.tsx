@@ -31,6 +31,7 @@ const mcpIcon: Record<string, string> = {
 
 // Fungsi murni — dideklarasikan di luar komponen agar tidak di-recreate tiap render
 const DISPLAY_TIME_ZONE = 'Asia/Jakarta';
+const EXPECTED_SAMPLES_PER_DAY = 1440;
 const jakartaDateFormatter = new Intl.DateTimeFormat('en-CA', {
   timeZone: DISPLAY_TIME_ZONE,
   year: 'numeric',
@@ -89,6 +90,22 @@ function average(values: number[]): number | null {
 
 function roundNumber(value: number, digits = 2): number {
   return parseFloat(value.toFixed(digits));
+}
+
+function baselineSkillLabel(value: number): string {
+  return value >= 0.85 ? 'Tinggi' : value >= 0.70 ? 'Sedang' : 'Rendah';
+}
+
+function baselineSkillColor(value: number): string {
+  return value >= 0.85 ? 'text-green-500' : value >= 0.70 ? 'text-amber-400' : 'text-red-400';
+}
+
+function baselineSkillBg(value: number): string {
+  return value >= 0.85
+    ? 'bg-green-500/10 text-green-500'
+    : value >= 0.70
+      ? 'bg-amber-500/10 text-amber-400'
+      : 'bg-red-500/10 text-red-400';
 }
 
 function makeMeteoChartData(
@@ -246,7 +263,7 @@ function AnalisisContent() {
             setTaskMsg('Baseline atlas belum diisi. Admin perlu mengisi nilai wind_baseline / ghi_baseline di halaman Pengelolaan Lokasi (/admin) terlebih dahulu (gunakan tombol "Ambil dari Atlas" atau input manual).');
           } else {
             setTaskState('success');
-            setTaskMsg(`Selesai — RMSE: ${data.result?.rmse ?? '–'}  Bias: ${data.result?.bias ?? '–'}%  R²: ${data.result?.r2 ?? '–'}`);
+            setTaskMsg(`Selesai — RMSE: ${data.result?.rmse ?? '–'}  Bias: ${data.result?.bias ?? '–'}%  Skor: ${data.result?.r2 ?? '–'}`);
             mutate();
           }
         } else if (data.status === 'failed') {
@@ -282,6 +299,12 @@ function AnalisisContent() {
     const doys = new Set<number>();
     measurements.forEach((m) => doys.add(getDoy(m.measured_at)));
     return [...doys].sort((a, b) => a - b);
+  }, [measurements]);
+
+  const measurementDateKeys = useMemo(() => {
+    const days = new Set<string>();
+    measurements.forEach((m) => days.add(getJakartaDateKey(m.measured_at)));
+    return [...days].sort();
   }, [measurements]);
 
   const dailyBaselineCoverage = useMemo(() => {
@@ -395,9 +418,15 @@ function AnalisisContent() {
     };
   }, [measurements]);
 
-  const availPct = useMemo(() => measurements.length > 0
-    ? Math.round(measurements.filter((m) => (isWind ? m.wind_speed : m.ghi) !== null).length / measurements.length * 100)
-    : null, [measurements, isWind]);
+  const availability = useMemo(() => {
+    if (measurements.length === 0 || measurementDateKeys.length === 0) {
+      return { pct: null as number | null, valid: 0, expected: 0, days: 0 };
+    }
+    const valid = measurements.filter((m) => (isWind ? m.wind_speed : m.ghi) !== null).length;
+    const expected = measurementDateKeys.length * EXPECTED_SAMPLES_PER_DAY;
+    const pct = expected > 0 ? Math.round((valid / expected) * 100) : null;
+    return { pct, valid, expected, days: measurementDateKeys.length };
+  }, [measurements, measurementDateKeys, isWind]);
 
   type Era5BaselineSummary = { value: number; mode: 'period' | 'annual'; count: number };
 
@@ -464,6 +493,11 @@ function AnalisisContent() {
   // Gunakan wind_baseline dari atlas (ERA5/GWA) jika tersedia; fallback ke aproksimasi
   const windBaselineVal = station.windBaseline ?? (station.windSpeed ?? 0) * 1.046;
   const windLongTerm = windBaselineVal.toFixed(1);
+  const windLtaSource = station.windBaselineGwa != null
+    ? 'GWA 3.0 LTA'
+    : station.windBaselineNasa != null
+      ? 'ERA5 LTA 2014–2025'
+      : 'Estimasi fallback';
   // Obs rata-rata selama periode pengukuran — lebih akurat dari station.windSpeed
   // (station.windSpeed ditimpa MQTT setiap menit dengan pembacaan sesaat, bisa = 0)
   const obsWindMean = chartData.length > 0
@@ -493,20 +527,25 @@ function AnalisisContent() {
   const aepNetP50 = Math.round(aepGross * 0.877);
   const aepNetP90 = Math.round(aepGross * 0.767);
   const biasDisplay = station.bias != null ? (station.bias > 0 ? '+' : '') + station.bias.toFixed(1) + '%' : '–';
-  // Wind-specific R² (from windR2 column, fallback to generic r2)
+  // Wind-specific baseline skill score (stored in windR2 column for backward compatibility)
   const windR2Val = station.windR2 ?? station.r2 ?? 0;
-  const windR2Quality = windR2Val >= 0.85 ? 'Tinggi' : windR2Val >= 0.70 ? 'Sedang' : 'Rendah';
-  const windR2Color = windR2Val >= 0.85 ? 'text-green-500' : windR2Val >= 0.70 ? 'text-amber-400' : 'text-red-400';
-  const windR2Bg = windR2Val >= 0.85 ? 'bg-green-500/10 text-green-500' : windR2Val >= 0.70 ? 'bg-amber-500/10 text-amber-400' : 'bg-red-500/10 text-red-400';
-  // Solar-specific R² (from solarR2 column, fallback to generic r2)
+  const windR2Quality = baselineSkillLabel(windR2Val);
+  const windR2Color = baselineSkillColor(windR2Val);
+  const windR2Bg = baselineSkillBg(windR2Val);
+  // Solar-specific baseline skill score (stored in solarR2 column for backward compatibility)
   const solarR2Val = station.solarR2 ?? station.r2 ?? 0;
-  const solarR2Quality = solarR2Val >= 0.85 ? 'Tinggi' : solarR2Val >= 0.70 ? 'Sedang' : 'Rendah';
-  const solarR2Color = solarR2Val >= 0.85 ? 'text-green-500' : solarR2Val >= 0.70 ? 'text-amber-400' : 'text-red-400';
-  const solarR2Bg = solarR2Val >= 0.85 ? 'bg-green-500/10 text-green-500' : solarR2Val >= 0.70 ? 'bg-amber-500/10 text-amber-400' : 'bg-red-500/10 text-red-400';
+  const solarR2Quality = baselineSkillLabel(solarR2Val);
+  const solarR2Color = baselineSkillColor(solarR2Val);
+  const solarR2Bg = baselineSkillBg(solarR2Val);
 
   // ─── Solar derived ─────────────────────────────────────────────────────────
   // GHI baseline dari atlas (ERA5/GSA) jika tersedia; fallback ke aproksimasi
   const ghiBaseline = parseFloat((station.ghiBaseline ?? (station.irradiation ?? 0) * 0.958).toFixed(2));
+  const ghiLtaSource = station.ghiBaselineGsa != null
+    ? 'GSA/Solargis LTA'
+    : station.ghiBaselineNasa != null
+      ? 'ERA5 LTA 2014–2025'
+      : 'Estimasi fallback';
   const ghiDiff = ghiBaseline > 0 ? parseFloat((((obsGhiMean - ghiBaseline) / ghiBaseline) * 100).toFixed(1)) : 0;
   const ghiDiffGsa = (station.ghiBaselineGsa != null && station.ghiBaselineGsa > 0)
     ? parseFloat((((obsGhiMean - station.ghiBaselineGsa) / station.ghiBaselineGsa) * 100).toFixed(1))
@@ -664,7 +703,7 @@ function AnalisisContent() {
       if (measurements.length > 0) {
         if (isWind) {
           addSection('DATA PENGUKURAN');
-          addColHeaders(['Tanggal/Waktu', 'Kec. Angin Obs (m/s)', 'Baseline Atlas (m/s)', 'Deviasi (m/s)']);
+          addColHeaders(['Tanggal/Waktu', 'Kec. Angin Obs (m/s)', 'Baseline Validasi (m/s)', 'Deviasi (m/s)']);
           measurements.forEach((m, i) => {
             const obs = m.wind_speed ?? 0;
             const baseline = baselineForDoy(getDoy(m.measured_at), 'wind');
@@ -681,7 +720,7 @@ function AnalisisContent() {
             dayGhiMap.get(day)!.sum += m.ghi ?? 0;
           });
           addSection('DATA GHI HARIAN (Agregasi per Hari Kalender)');
-          addColHeaders(['Tanggal', 'Total GHI Harian (kWh/m²/hari)', 'Baseline Atlas (kWh/m²/hari)', 'Deviasi (kWh/m²/hari)']);
+          addColHeaders(['Tanggal', 'Total GHI Harian (kWh/m²/hari)', 'Baseline Validasi (kWh/m²/hari)', 'Deviasi (kWh/m²/hari)']);
           [...dayGhiMap.entries()].sort(([a], [b]) => a.localeCompare(b)).forEach(([day, ghiData], i) => {
             const baseline = baselineForDoy(ghiData.doy, 'solar');
             const dailyTotal = parseFloat((ghiData.sum / 60000).toFixed(2));
@@ -755,33 +794,30 @@ function AnalisisContent() {
     : null;
 
   // ─── Availability from actual measurements ──────────────────────────────────────
-  const availDisplay = availPct !== null ? `${availPct}%` : '–';
+  const availDisplay = availability.pct !== null
+    ? `${availability.pct}% (${availability.valid}/${availability.expected})`
+    : '–';
 
   // ─── Data duration — used for validity warning when observasi period is too short ────
-  const obsDurationDays = measurements.length >= 2
-    ? Math.round((new Date(measurements[measurements.length - 1].measured_at).getTime() - new Date(measurements[0].measured_at).getTime()) / 86400000) + 1
-    : measurements.length === 1 ? 1 : 0;
-  const isDataShort = isWind ? obsDurationDays < 90 : obsDurationDays < 30;
-
   // ─── Validation rows (computed after measurements) ──────────────────────────────
   const windRmseForRow = station.windRmse ?? (station.rmse > 0 ? station.rmse : null);
   const windValidationRows: { metric: string; value: string; target: string; pass: boolean | null }[] = [
     { metric: 'RMSE (m/s)', value: windRmseForRow != null ? windRmseForRow.toFixed(2) : '–', target: '< 2.0', pass: windRmseForRow != null ? windRmseForRow < 2.0 : null },
     { metric: 'MAE (m/s)', value: mae !== null ? mae.toFixed(2) : '–', target: '< 1.5', pass: mae !== null ? mae < 1.5 : null },
-    { metric: 'Korelasi Atlas (R²)', value: windR2Val > 0 ? windR2Val.toFixed(2) : '–', target: '> 0.70', pass: windR2Val > 0 ? windR2Val > 0.70 : null },
+    { metric: 'Skor Kesesuaian Baseline', value: windR2Val > 0 ? windR2Val.toFixed(2) : '–', target: '> 0.70', pass: windR2Val > 0 ? windR2Val > 0.70 : null },
     { metric: 'Bias vs GWA (%)', value: windDiffGwa !== null ? (windDiffGwa >= 0 ? '+' : '') + windDiffGwa + '%' : '–', target: '± 5%', pass: windDiffGwa !== null ? Math.abs(windDiffGwa) <= 5 : null },
     { metric: 'Bias vs ERA5/ECMWF (%)', value: windDiffNasa !== null ? (windDiffNasa >= 0 ? '+' : '') + windDiffNasa + '%' : '–', target: '± 5%', pass: windDiffNasa !== null ? Math.abs(windDiffNasa) <= 5 : null },
-    { metric: 'Ketersediaan Data', value: availDisplay, target: '> 90%', pass: availPct !== null ? availPct > 90 : null },
+    { metric: 'Kelengkapan Sampel 1 Menit', value: availDisplay, target: '>= 90%', pass: availability.pct !== null ? availability.pct >= 90 : null },
   ];
   const solarRmseVal = station.solarRmse ?? null;
   const solarValidationRows: { metric: string; value: string; target: string; pass: boolean | null }[] = [
     { metric: 'RMSE (kWh/m²/hari)', value: solarRmseVal !== null ? solarRmseVal.toFixed(2) : '–', target: '< 1.5', pass: solarRmseVal !== null ? solarRmseVal < 1.5 : null },
     { metric: 'MAE (kWh/m²/hari)', value: mae !== null ? mae.toFixed(2) : '–', target: '< 1.0', pass: mae !== null ? mae < 1.0 : null },
-    { metric: 'Korelasi Atlas (R²)', value: solarR2Val > 0 ? solarR2Val.toFixed(2) : '–', target: '> 0.70', pass: solarR2Val > 0 ? solarR2Val > 0.70 : null },
+    { metric: 'Skor Kesesuaian Baseline', value: solarR2Val > 0 ? solarR2Val.toFixed(2) : '–', target: '> 0.70', pass: solarR2Val > 0 ? solarR2Val > 0.70 : null },
     { metric: 'Bias vs GSA (%)', value: ghiDiffGsa !== null ? (ghiDiffGsa >= 0 ? '+' : '') + ghiDiffGsa + '%' : '–', target: '± 5%', pass: ghiDiffGsa !== null ? Math.abs(ghiDiffGsa) <= 5 : null },
     { metric: 'Bias vs ERA5/ECMWF (%)', value: ghiDiffNasa !== null ? (ghiDiffNasa >= 0 ? '+' : '') + ghiDiffNasa + '%' : '–', target: '± 5%', pass: ghiDiffNasa !== null ? Math.abs(ghiDiffNasa) <= 5 : null },
     { metric: 'Clearness Index (Kt)', value: ktIndex.toFixed(2), target: '0.40–0.65', pass: ktIndex >= 0.40 && ktIndex <= 0.65 },
-    { metric: 'Ketersediaan Data', value: availDisplay, target: '> 90%', pass: availPct !== null ? availPct > 90 : null },
+    { metric: 'Kelengkapan Sampel 1 Menit', value: availDisplay, target: '>= 90%', pass: availability.pct !== null ? availability.pct >= 90 : null },
   ];
 
   return (
@@ -798,7 +834,7 @@ function AnalisisContent() {
               </h1>
               <p className="text-slate-600 dark:text-text-secondary text-sm font-normal leading-normal">
                 {isWind
-                  ? 'Validasi kecepatan angin observasi vs GWA 3.0/ERA5, korelasi atlas, dan proyeksi MCP jangka panjang.'
+                  ? 'Validasi kecepatan angin observasi vs GWA 3.0/ERA5, skor kesesuaian baseline, dan proyeksi MCP jangka panjang.'
                   : 'Validasi iradiasi surya observasi vs GSA/ERA5, Clearness Index (Kt), dan estimasi AEP PLTS.'}
               </p>
             </div>
@@ -957,14 +993,14 @@ function AnalisisContent() {
               </div>
               <div className="bg-white dark:bg-card-dark rounded-xl p-4 border border-gray-200 dark:border-border-dark">
                 <div className="flex justify-between items-start mb-1.5">
-                  <p className="text-xs text-slate-500 dark:text-text-secondary font-semibold">Korelasi Atlas (R²)</p>
+                  <p className="text-xs text-slate-500 dark:text-text-secondary font-semibold">Skor Kesesuaian Baseline</p>
                   <span className="material-symbols-outlined text-primary text-[20px]">ssid_chart</span>
                 </div>
                 <div className="flex items-baseline gap-2">
                   <h3 className={`text-2xl font-bold ${windR2Color}`}>{windR2Val.toFixed(2)}</h3>
                   <span className={`ml-auto text-xs font-bold px-2 py-0.5 rounded ${windR2Bg}`}>{windR2Quality}</span>
                 </div>
-                <p className="text-[10px] text-slate-400 mt-1">Korelasi Pearson obs vs atlas</p>
+                <p className="text-[10px] text-slate-400 mt-1">Skor kedekatan rata-rata obs vs baseline</p>
               </div>
               <div className="bg-white dark:bg-card-dark rounded-xl p-4 border border-gray-200 dark:border-border-dark">
                 <div className="flex justify-between items-start mb-1.5">
@@ -1012,14 +1048,14 @@ function AnalisisContent() {
               </div>
               <div className="bg-white dark:bg-card-dark rounded-xl p-4 border border-gray-200 dark:border-border-dark">
                 <div className="flex justify-between items-start mb-1.5">
-                  <p className="text-xs text-slate-500 dark:text-text-secondary font-semibold">Korelasi Atlas (R²)</p>
+                  <p className="text-xs text-slate-500 dark:text-text-secondary font-semibold">Skor Kesesuaian Baseline</p>
                   <span className="material-symbols-outlined text-amber-400 text-[20px]">ssid_chart</span>
                 </div>
                 <div className="flex items-baseline gap-2">
                   <h3 className={`text-2xl font-bold ${solarR2Color}`}>{solarR2Val.toFixed(2)}</h3>
                   <span className={`ml-auto text-xs font-bold px-2 py-0.5 rounded ${solarR2Bg}`}>{solarR2Quality}</span>
                 </div>
-                <p className="text-[10px] text-slate-400 mt-1">Korelasi obs GHI vs GSA baseline</p>
+                <p className="text-[10px] text-slate-400 mt-1">Skor kedekatan rata-rata obs vs baseline</p>
               </div>
               <div className="bg-white dark:bg-card-dark rounded-xl p-4 border border-gray-200 dark:border-border-dark">
                 <div className="flex justify-between items-start mb-1.5">
@@ -1118,9 +1154,9 @@ function AnalisisContent() {
           {/* Scatter plot */}
           <div className="xl:col-span-2 bg-white dark:bg-card-dark rounded-xl border border-gray-200 dark:border-border-dark p-4 flex flex-col" style={{ minHeight: '420px' }}>
             <div className="mb-3">
-              <h3 className="text-sm font-bold text-slate-900 dark:text-white">Analisis Korelasi</h3>
+              <h3 className="text-sm font-bold text-slate-900 dark:text-white">Analisis Deviasi</h3>
               <p className="text-xs text-slate-500 dark:text-text-secondary">
-                Deviasi obs dari referensi {hasDailyBaseline ? 'ERA5 Harian (DOY)' : isWind ? 'atlas GWA 3.0' : 'atlas GSA/Solargis'} (Y = obs − atlas)
+                Deviasi obs dari referensi {hasDailyBaseline ? 'ERA5 Harian (DOY)' : isWind ? 'atlas GWA 3.0' : 'atlas GSA/Solargis'} (Y = obs − baseline)
               </p>
             </div>
             <div className="w-full bg-gray-50 dark:bg-input-bg-dark rounded-lg border border-gray-200 dark:border-gray-800 mb-3" style={{ flex: '1 1 0', minHeight: '320px' }}>
@@ -1160,7 +1196,7 @@ function AnalisisContent() {
                     stroke="#e2e8f0"
                     strokeDasharray="5 3"
                     strokeWidth={1.5}
-                    label={{ value: 'obs = atlas', position: 'insideTopLeft', fill: '#94a3b8', fontSize: 9 }}
+                    label={{ value: 'obs = baseline', position: 'insideTopLeft', fill: '#94a3b8', fontSize: 9 }}
                   />
                 </ScatterChart>
               </ResponsiveContainer>
@@ -1178,7 +1214,7 @@ function AnalisisContent() {
               </span>
               </div>
               <div className={`flex justify-between items-center font-bold ${isWind ? windR2Color : solarR2Color}`}>
-                <span>R² =</span>
+                <span>Skor =</span>
                 <span className="text-lg">{isWind ? windR2Val.toFixed(2) : solarR2Val.toFixed(2)}</span>
               </div>
             </div>
@@ -1250,14 +1286,14 @@ function AnalisisContent() {
                     <p className="text-[10px] text-slate-400 mt-0.5">Periode obs lapangan</p>
                   </div>
                   <div className="bg-primary/5 dark:bg-primary/10 p-3 rounded-lg border border-primary/20">
-                    <p className="text-[10px] uppercase text-primary font-bold mb-1">Baseline Atlas</p>
+                    <p className="text-[10px] uppercase text-primary font-bold mb-1">Baseline LTA AEP</p>
                     <div className="flex items-center gap-1.5">
                       <p className="text-base font-bold text-slate-900 dark:text-white">{windLongTerm} m/s</p>
                       <span className={`text-[10px] font-bold ${parseFloat(windDiff) >= 0 ? 'text-green-500' : 'text-red-400'}`}>
                         {parseFloat(windDiff) >= 0 ? '↑' : '↓'} {Math.abs(parseFloat(windDiff))}%
                       </span>
                     </div>
-                    <p className="text-[10px] text-slate-400 mt-0.5">ERA5 (ECMWF, 2014–2025)</p>
+                    <p className="text-[10px] text-slate-400 mt-0.5">{windLtaSource}</p>
                   </div>
                 </div>
                 <div>
@@ -1272,7 +1308,7 @@ function AnalisisContent() {
                   {!hasWindObs && (
                     <p className="text-[10px] text-amber-400/80 mb-2 flex items-center gap-1">
                       <span className="material-symbols-outlined text-[11px]">info</span>
-                      Belum ada data observasi angin. Nilai berdasarkan baseline GWA 3.0 ({station.windBaselineGwa ?? station.windBaseline ?? '—'} m/s).
+                      Belum ada data observasi angin. Nilai berdasarkan baseline LTA ({windLtaSource}: {station.windBaselineGwa ?? station.windBaseline ?? '—'} m/s).
                     </p>
                   )}
                   <div className="flex flex-col gap-2">
@@ -1318,14 +1354,14 @@ function AnalisisContent() {
                     <p className="text-[10px] text-slate-400 mt-0.5">kWh/m²/hari (lapangan)</p>
                   </div>
                   <div className="bg-amber-500/5 dark:bg-amber-500/10 p-3 rounded-lg border border-amber-500/20">
-                    <p className="text-[10px] uppercase text-amber-500 font-bold mb-1">Baseline GSA</p>
+                    <p className="text-[10px] uppercase text-amber-500 font-bold mb-1">Baseline LTA GSA</p>
                     <div className="flex items-center gap-1.5">
                       <p className="text-base font-bold text-slate-900 dark:text-white">{ghiBaseline}</p>
                       <span className={`text-[10px] font-bold ${ghiDiff >= 0 ? 'text-green-500' : 'text-red-400'}`}>
                         {ghiDiff >= 0 ? '+' : ''}{ghiDiff}%
                       </span>
                     </div>
-                    <p className="text-[10px] text-slate-400 mt-0.5">kWh/m²/hari (GSA/ERA5)</p>
+                    <p className="text-[10px] text-slate-400 mt-0.5">kWh/m²/hari ({ghiLtaSource})</p>
                   </div>
                 </div>
                 <div className="bg-gray-50 dark:bg-[#111a22] p-3 rounded-lg flex items-center justify-between">

@@ -10,8 +10,8 @@ import {
 import Navbar from '@/components/Navbar';
 import Footer from '@/components/Footer';
 import { useStations } from '@/hooks/useStations';
-import { useMeasurements } from '@/hooks/useMeasurements';
-import { fetchGisMcda, type GisMcdaData } from '@/lib/api';
+import { useMeasurements, type Measurement } from '@/hooks/useMeasurements';
+import { apiFetch, fetchGisMcda, type GisMcdaData } from '@/lib/api';
 
 const statusLabel: Record<string, string> = {
   prioritas: 'Prioritas',
@@ -37,6 +37,77 @@ const mcpBadge: Record<string, string> = {
   pending: 'bg-slate-500/10 border-slate-500/30 text-slate-400',
 };
 
+const DISPLAY_TIME_ZONE = 'Asia/Jakarta';
+const jakartaDateFormatter = new Intl.DateTimeFormat('en-CA', {
+  timeZone: DISPLAY_TIME_ZONE,
+  year: 'numeric',
+  month: '2-digit',
+  day: '2-digit',
+});
+
+type DailyBaselineRow = { doy: number; ghi_era5: number | null; wind_era5: number | null };
+type ChartPoint = { date: string; obs: number; baseline: number };
+type DeviationPoint = { obs: number; dev: number };
+type Era5BaselineSummary = { value: number; mode: 'period' | 'annual'; count: number };
+
+function getJakartaDateKey(isoDate: string): string {
+  const parts = jakartaDateFormatter.formatToParts(new Date(isoDate));
+  const part = (type: string) => parts.find((p) => p.type === type)?.value ?? '00';
+  return `${part('year')}-${part('month')}-${part('day')}`;
+}
+
+function dateKeyToUtcDate(dateKey: string): Date {
+  const [year, month, day] = dateKey.split('-').map(Number);
+  return new Date(Date.UTC(year, month - 1, day, 12));
+}
+
+function getDoyFromDateKey(dateKey: string): number {
+  const [year, month, day] = dateKey.split('-').map(Number);
+  const date = Date.UTC(year, month - 1, day);
+  const start = Date.UTC(year, 0, 0);
+  return Math.floor((date - start) / 86_400_000);
+}
+
+function getDoy(isoDate: string): number {
+  return getDoyFromDateKey(getJakartaDateKey(isoDate));
+}
+
+function getWeekStartDateKey(dateKey: string): string {
+  const d = dateKeyToUtcDate(dateKey);
+  d.setUTCDate(d.getUTCDate() - d.getUTCDay());
+  return d.toISOString().slice(0, 10);
+}
+
+function formatDateKeyLabel(dateKey: string): string {
+  return dateKeyToUtcDate(dateKey).toLocaleDateString('id-ID', {
+    day: 'numeric',
+    month: 'short',
+    timeZone: 'UTC',
+  });
+}
+
+function formatMonthKeyLabel(monthKey: string): string {
+  const [year, month] = monthKey.split('-').map(Number);
+  return new Date(Date.UTC(year, month - 1, 1, 12)).toLocaleDateString('id-ID', {
+    month: 'short',
+    year: '2-digit',
+    timeZone: 'UTC',
+  });
+}
+
+function average(values: number[]): number | null {
+  return values.length > 0 ? values.reduce((a, b) => a + b, 0) / values.length : null;
+}
+
+function roundNumber(value: number, digits = 2): number {
+  return parseFloat(value.toFixed(digits));
+}
+
+function baselineSkillColor(value: number | null | undefined): string {
+  const score = value ?? 0;
+  return score >= 0.85 ? 'text-green-400' : score >= 0.70 ? 'text-amber-400' : 'text-red-400';
+}
+
 function LaporanContent() {
   const { stations } = useStations();
   const searchParams = useSearchParams();
@@ -49,6 +120,19 @@ function LaporanContent() {
   const backLabel = fromPage === 'analisis' ? 'Kembali ke Analisis Lokasi' : fromPage === 'kalkulator' ? 'Kembali ke Kalkulator' : 'Kembali ke Peta';
 
   const { measurements } = useMeasurements(stationId);
+
+  const [dailyBaseline, setDailyBaseline] = useState<Map<number, DailyBaselineRow>>(new Map());
+  useEffect(() => {
+    if (!stationId) return;
+    apiFetch(`/api/v1/stations/${stationId}/daily-baseline?ensure=true`)
+      .then((r) => (r.ok ? r.json() : []))
+      .then((rows: DailyBaselineRow[]) => {
+        const map = new Map<number, DailyBaselineRow>();
+        rows.forEach((row) => map.set(row.doy, row));
+        setDailyBaseline(map);
+      })
+      .catch(() => setDailyBaseline(new Map()));
+  }, [stationId]);
 
   // ── GIS-MCDA: fetch dari backend (Overpass API / OSM) ─────────────────────
   const [gisMcda, setGisMcda] = useState<GisMcdaData | null>(null);
@@ -67,109 +151,160 @@ function LaporanContent() {
   const windBaselineVal = station?.windBaseline ?? (station?.windSpeed ?? 0) * 1.046;
   const ghiBaselineVal = station?.ghiBaseline ?? (station?.irradiation ?? 0) * 0.958;
 
+  const measurementDoys = useMemo(() => {
+    const doys = new Set<number>();
+    measurements.forEach((m) => doys.add(getDoy(m.measured_at)));
+    return [...doys].sort((a, b) => a - b);
+  }, [measurements]);
+
+  const era5WindSummary = useMemo<Era5BaselineSummary | null>(() => {
+    const periodVals = measurementDoys
+      .map((doy) => dailyBaseline.get(doy)?.wind_era5)
+      .filter((v): v is number => v != null && v > 0);
+    if (periodVals.length > 0) {
+      return { value: roundNumber(average(periodVals) ?? 0, 2), mode: 'period', count: periodVals.length };
+    }
+    const annualVals = [...dailyBaseline.values()]
+      .map((row) => row.wind_era5)
+      .filter((v): v is number => v != null && v > 0);
+    return annualVals.length > 0
+      ? { value: roundNumber(average(annualVals) ?? 0, 2), mode: 'annual', count: annualVals.length }
+      : null;
+  }, [dailyBaseline, measurementDoys]);
+
+  const era5GhiSummary = useMemo<Era5BaselineSummary | null>(() => {
+    const periodVals = measurementDoys
+      .map((doy) => dailyBaseline.get(doy)?.ghi_era5)
+      .filter((v): v is number => v != null && v > 0);
+    if (periodVals.length > 0) {
+      return { value: roundNumber(average(periodVals) ?? 0, 2), mode: 'period', count: periodVals.length };
+    }
+    const annualVals = [...dailyBaseline.values()]
+      .map((row) => row.ghi_era5)
+      .filter((v): v is number => v != null && v > 0);
+    return annualVals.length > 0
+      ? { value: roundNumber(average(annualVals) ?? 0, 2), mode: 'annual', count: annualVals.length }
+      : null;
+  }, [dailyBaseline, measurementDoys]);
+
+  const windEra5ComparisonBaseline = era5WindSummary?.value ?? station?.windBaselineNasa ?? null;
+  const ghiEra5ComparisonBaseline = era5GhiSummary?.value ?? station?.ghiBaselineNasa ?? null;
+  const windEra5Label = era5WindSummary
+    ? era5WindSummary.mode === 'period'
+      ? `ERA5 per-DOY (${era5WindSummary.count} hari periode)`
+      : `ERA5 per-DOY (${era5WindSummary.count} DOY tahunan)`
+    : 'ERA5 LTA';
+  const ghiEra5Label = era5GhiSummary
+    ? era5GhiSummary.mode === 'period'
+      ? `ERA5 per-DOY (${era5GhiSummary.count} hari periode)`
+      : `ERA5 per-DOY (${era5GhiSummary.count} DOY tahunan)`
+    : 'ERA5 LTA';
+
   // Selalu tampilkan per hari — laporan menampilkan seluruh data validasi per titik harian
   const chartGranularity = 'daily' as const;
 
+  const baselineForDoy = (doy: number, variable: 'wind' | 'solar') => {
+    const row = dailyBaseline.get(doy);
+    const doyValue = variable === 'wind' ? row?.wind_era5 : row?.ghi_era5;
+    if (doyValue != null && doyValue > 0) return doyValue;
+    return variable === 'wind' ? windBaselineVal : ghiBaselineVal;
+  };
+
   function makeChartData(
-    meas: typeof measurements,
-    getValue: (m: (typeof measurements)[number]) => number,
-    baseline: number,
+    meas: Measurement[],
+    getValue: (m: Measurement) => number | null,
+    getBaseline: (doy: number) => number,
     granularity: 'daily' | 'weekly' | 'monthly',
-    sumNotMean = false,
-  ) {
-    const getGroupKey = (date: Date): { key: string; label: string } => {
-      if (granularity === 'daily') {
-        return {
-          key: date.toISOString().slice(0, 10),
-          label: date.toLocaleDateString('id-ID', { day: 'numeric', month: 'short' }),
-        };
-      } else if (granularity === 'weekly') {
-        const d = new Date(date);
-        const day = d.getDay();
-        const diff = d.getDate() - day + (day === 0 ? -6 : 1);
-        d.setDate(diff);
-        return {
-          key: d.toISOString().slice(0, 10),
-          label: `Mgg ${d.toLocaleDateString('id-ID', { day: 'numeric', month: 'short' })}`,
-        };
-      } else {
-        return {
-          key: date.toISOString().slice(0, 7),
-          label: date.toLocaleDateString('id-ID', { month: 'short', year: '2-digit' }),
-        };
-      }
-    };
-    const groups = new Map<string, { label: string; values: number[] }>();
+    sumToKwhPerDay = false,
+  ): ChartPoint[] {
+    const groups = new Map<string, { label: string; values: number[]; baselinesByDoy: Map<number, number> }>();
     meas.forEach((m) => {
-      const { key, label } = getGroupKey(new Date(m.measured_at));
-      if (!groups.has(key)) groups.set(key, { label, values: [] });
-      const v = getValue(m);
-      if (v > 0) groups.get(key)!.values.push(v);
+      const dateKey = getJakartaDateKey(m.measured_at);
+      const doy = getDoyFromDateKey(dateKey);
+      let key: string;
+      let label: string;
+      if (granularity === 'daily') {
+        key = dateKey;
+        label = formatDateKeyLabel(dateKey);
+      } else if (granularity === 'weekly') {
+        key = getWeekStartDateKey(dateKey);
+        label = `Mgg ${formatDateKeyLabel(key)}`;
+      } else {
+        key = dateKey.slice(0, 7);
+        label = formatMonthKeyLabel(key);
+      }
+      if (!groups.has(key)) groups.set(key, { label, values: [], baselinesByDoy: new Map() });
+      const group = groups.get(key)!;
+      const baseline = getBaseline(doy);
+      if (baseline > 0) group.baselinesByDoy.set(doy, baseline);
+      const value = getValue(m);
+      if (value != null && Number.isFinite(value)) group.values.push(value);
     });
+
     return [...groups.entries()]
       .sort(([a], [b]) => a.localeCompare(b))
       .filter(([, { values }]) => values.length > 0)
-      .map(([, { label, values }]) => ({
-        date: label,
-        obs: sumNotMean
-          ? parseFloat(values.reduce((a, b) => a + b, 0).toFixed(2))
-          : parseFloat((values.reduce((a, b) => a + b, 0) / values.length).toFixed(2)),
-        baseline,
-      }));
+      .map(([, { label, values, baselinesByDoy }]) => {
+        const baselineMean = average([...baselinesByDoy.values()]) ?? 0;
+        return {
+          date: label,
+          obs: sumToKwhPerDay
+            ? roundNumber(values.reduce((a, b) => a + b, 0) / 60000, 2)
+            : roundNumber(average(values) ?? 0, 2),
+          baseline: roundNumber(baselineMean, 3),
+        };
+      });
   }
 
   const windChartData = useMemo(
-    () => makeChartData(measurements, (m) => parseFloat((m.wind_speed ?? 0).toString()), windBaselineVal, chartGranularity),
+    () => makeChartData(
+      measurements,
+      (m) => (m.wind_speed != null ? Number(m.wind_speed) : null),
+      (doy) => baselineForDoy(doy, 'wind'),
+      chartGranularity,
+    ),
     // eslint-disable-next-line react-hooks/exhaustive-deps
-    [measurements, windBaselineVal, chartGranularity],
+    [measurements, dailyBaseline, windBaselineVal, chartGranularity],
   );
   const ghiChartData = useMemo(
     // GHI harian (kWh/m²/hari) = SUM(GHI_i W/m²) / 60_000 (interval 1 menit, sumNotMean=true)
-    () => makeChartData(measurements, (m) => (m.ghi ?? 0) / 60000, ghiBaselineVal, chartGranularity, true),
+    () => makeChartData(
+      measurements,
+      (m) => (m.ghi != null ? Number(m.ghi) : null),
+      (doy) => baselineForDoy(doy, 'solar'),
+      chartGranularity,
+      true,
+    ),
     // eslint-disable-next-line react-hooks/exhaustive-deps
-    [measurements, ghiBaselineVal, chartGranularity],
+    [measurements, dailyBaseline, ghiBaselineVal, chartGranularity],
   );
   const windScatterData = useMemo(() => {
-    const all = measurements.map((m) => ({ obs: parseFloat((m.wind_speed ?? 0).toString()), baseline: windBaselineVal })).filter((p) => p.obs > 0);
-    // Downsample ke maks 400 titik — render 14.400 SVG dot sangat berat untuk browser
+    const all = windChartData.map((d) => ({ obs: d.obs, dev: roundNumber(d.obs - d.baseline, 3) }));
+    // Downsample ke maks 400 titik.
     const step = all.length > 400 ? Math.ceil(all.length / 400) : 1;
     return step === 1 ? all : all.filter((_, i) => i % step === 0);
-  }, [measurements, windBaselineVal]);
+  }, [windChartData]);
   const ghiScatterData = useMemo(() => {
-    // Agregasi per hari kalender: scatter menampilkan total GHI harian vs atlas (apple-to-apple)
-    const dayMap = new Map<string, number[]>();
-    measurements.forEach((m) => {
-      const day = new Date(m.measured_at).toISOString().slice(0, 10);
-      if (!dayMap.has(day)) dayMap.set(day, []);
-      dayMap.get(day)!.push(m.ghi ?? 0);
-    });
-    const all = [...dayMap.entries()].map(([, ghiArr]) => ({
-      obs: parseFloat((ghiArr.reduce((a, b) => a + b, 0) / 60000).toFixed(2)),
-      baseline: ghiBaselineVal,
-    })).filter((p) => p.obs > 0);
+    const all = ghiChartData.map((d) => ({ obs: d.obs, dev: roundNumber(d.obs - d.baseline, 3) }));
     const step = all.length > 400 ? Math.ceil(all.length / 400) : 1;
     return step === 1 ? all : all.filter((_, i) => i % step === 0);
-  }, [measurements, ghiBaselineVal]);
+  }, [ghiChartData]);
 
   // ─── Meteorological chart data ────────────────────────────────────────────
   const tempChartData = useMemo(
-    () => makeChartData(measurements, (m) => (m.temperature !== null ? m.temperature : -1), 0, chartGranularity).filter((d) => d.obs >= 0),
-    // eslint-disable-next-line react-hooks/exhaustive-deps
+    () => makeChartData(measurements, (m) => (m.temperature !== null ? m.temperature : -1), () => 0, chartGranularity).filter((d) => d.obs >= 0),
     [measurements, chartGranularity],
   );
   const humChartData = useMemo(
-    () => makeChartData(measurements, (m) => (m.humidity !== null ? m.humidity : -1), 0, chartGranularity).filter((d) => d.obs >= 0),
-    // eslint-disable-next-line react-hooks/exhaustive-deps
+    () => makeChartData(measurements, (m) => (m.humidity !== null ? m.humidity : -1), () => 0, chartGranularity).filter((d) => d.obs >= 0),
     [measurements, chartGranularity],
   );
   const presChartData = useMemo(
-    () => makeChartData(measurements, (m) => (m.pressure !== null ? m.pressure : -1), 0, chartGranularity).filter((d) => d.obs > 0),
-    // eslint-disable-next-line react-hooks/exhaustive-deps
+    () => makeChartData(measurements, (m) => (m.pressure !== null ? m.pressure : -1), () => 0, chartGranularity).filter((d) => d.obs > 0),
     [measurements, chartGranularity],
   );
   const windDirChartData = useMemo(
-    () => makeChartData(measurements, (m) => (m.wind_dir !== null ? m.wind_dir : -1), 0, chartGranularity).filter((d) => d.obs >= 0),
-    // eslint-disable-next-line react-hooks/exhaustive-deps
+    () => makeChartData(measurements, (m) => (m.wind_dir !== null ? m.wind_dir : -1), () => 0, chartGranularity).filter((d) => d.obs >= 0),
     [measurements, chartGranularity],
   );
   const meteoHasData = [tempChartData, humChartData, presChartData, windDirChartData].some((d) => d.length > 0);
@@ -207,7 +342,13 @@ function LaporanContent() {
     || station.variables.toLowerCase().includes('surya')
     || station.variables.toLowerCase().includes('ghi');
   const solarBiasVal = station.solarBias ?? station.bias;
-  const ktVal = (station.irradiation ?? 0) / 8.5;
+  const obsWindMean = windChartData.length > 0
+    ? roundNumber(average(windChartData.map((d) => d.obs)) ?? 0, 2)
+    : (station.windSpeed ?? 0);
+  const obsGhiMean = ghiChartData.length > 0
+    ? roundNumber(average(ghiChartData.map((d) => d.obs)) ?? 0, 2)
+    : (station.irradiation ?? 0);
+  const ktVal = obsGhiMean / 8.5;
   const granularityLabel = chartGranularity === 'daily' ? 'Rata-rata Harian' : chartGranularity === 'weekly' ? 'Rata-rata Mingguan' : 'Rata-rata Bulanan';
   const gridColor = isDark ? '#2d3b4a' : '#e2e8f0';
   const tooltipBg = isDark ? '#1c2630' : '#ffffff';
@@ -302,40 +443,40 @@ function LaporanContent() {
       y += 3;
 
       // Metrik Validasi Angin
-      sectionTitle('Metrik Validasi Angin (ERA5 vs Observasi)');
-      row('Kecepatan Angin Rata-rata (Obs)', `${station.windSpeed ?? '–'} m/s`);
+      sectionTitle('Metrik Validasi Angin (ERA5 DOY vs Observasi)');
+      row('Kecepatan Angin Rata-rata Periode (Obs)', `${obsWindMean.toFixed(2)} m/s`);
       row('RMSE', (station.windRmse ?? station.rmse) != null ? `${(station.windRmse ?? station.rmse)!.toFixed(2)} m/s` : '–');
       row('Bias MBE vs ERA5', (station.windBias ?? station.bias) != null ? `${(station.windBias ?? station.bias)! > 0 ? '+' : ''}${(station.windBias ?? station.bias)!.toFixed(1)} %` : '–');
-      row('R² (Korelasi Atlas)', (station.windR2 ?? station.r2) != null ? (station.windR2 ?? station.r2)!.toFixed(2) : '–');
+      row('Skor Kesesuaian Baseline', (station.windR2 ?? station.r2) != null ? (station.windR2 ?? station.r2)!.toFixed(2) : '–');
       row('AEP PLTB P50 (Bersih)', station.aep != null ? `${Math.round(station.aep * 0.877).toLocaleString('id')} MWh/thn` : '–');
       row('AEP PLTB P90 (Bersih)', station.aep != null ? `${Math.round(station.aep * 0.767).toLocaleString('id')} MWh/thn` : '–');
       row('Skor GIS-MCDA', `${station.score} / 100`);
       y += 3;
 
       // Validasi Surya
-      sectionTitle('Validasi Surya — GHI (ERA5/GSA vs Observasi)');
-      row('GHI Observasi', `${(station.irradiation ?? 0).toFixed(1)} kWh/m²/hari`);
+      sectionTitle('Validasi Surya — GHI (ERA5 DOY/GSA vs Observasi)');
+      row('GHI Observasi Rata-rata Periode', `${obsGhiMean.toFixed(2)} kWh/m²/hari`);
       row('GHI Baseline GSA (Solargis)', station.ghiBaselineGsa != null ? `${station.ghiBaselineGsa.toFixed(2)} kWh/m²/hari` : '—');
-      row('GHI Baseline ERA5 (ECMWF)', station.ghiBaselineNasa != null ? `${station.ghiBaselineNasa.toFixed(2)} kWh/m²/hari` : '—');
+      row(`GHI Baseline ${ghiEra5Label}`, ghiEra5ComparisonBaseline != null ? `${ghiEra5ComparisonBaseline.toFixed(2)} kWh/m²/hari` : '—');
       row('GHI Best-Value', `${(station.ghiBaseline ?? (station.irradiation ?? 0) * 0.958).toFixed(2)} kWh/m²/hari`);
       row('RMSE', station.solarRmse != null ? `${station.solarRmse.toFixed(2)} kWh/m²/hari` : '–');
       row('Bias MBE vs ERA5', solarBiasVal != null ? `${solarBiasVal > 0 ? '+' : ''}${solarBiasVal.toFixed(1)} %` : '–');
-      row('R² (Korelasi Atlas)', (station.solarR2 ?? station.r2) != null ? (station.solarR2 ?? station.r2)!.toFixed(2) : '–');
+      row('Skor Kesesuaian Baseline', (station.solarR2 ?? station.r2) != null ? (station.solarR2 ?? station.r2)!.toFixed(2) : '–');
       row('Clearness Index (Kt)', ktVal.toFixed(2));
       y += 3;
 
       // Perbandingan Sumber Angin
       sectionTitle('Perbandingan Sumber Baseline Angin');
-      row('Obs Lapangan', station.windSpeed != null ? `${station.windSpeed} m/s` : '—');
+      row('Obs Lapangan (rata-rata periode)', `${obsWindMean.toFixed(2)} m/s`);
       row('GWA 3.0 (GeoTIFF 250m)', station.windBaselineGwa != null ? `${station.windBaselineGwa} m/s` : '— (belum tersedia)');
-      row('ERA5 (ECMWF)', station.windBaselineNasa != null ? `${station.windBaselineNasa} m/s` : '— (belum tersedia)');
+      row(windEra5Label, windEra5ComparisonBaseline != null ? `${windEra5ComparisonBaseline.toFixed(2)} m/s` : '— (belum tersedia)');
       row('Best-Value (dipakai MCP)', `${(station.windBaseline ?? station.windSpeed ?? 0).toFixed(2)} m/s`);
       y += 3;
 
       // Potensi Energi
       sectionTitle('Potensi Energi');
-      row('Kecepatan Angin Rata-rata (GWA/ERA5)', `${windBaselineVal.toFixed(2)} m/s`);
-      row('Iradiasi Matahari GHI (GSA/ERA5)', `${ghiBaselineVal.toFixed(2)} kWh/m²/hari`);
+      row('Kecepatan Angin LTA untuk AEP (GWA/ERA5)', `${windBaselineVal.toFixed(2)} m/s`);
+      row('Iradiasi GHI LTA untuk AEP (GSA/ERA5)', `${ghiBaselineVal.toFixed(2)} kWh/m²/hari`);
       row('AEP PLTB P50 Net (\u00d70.877)', station.aep != null ? `${Math.round(station.aep * 0.877).toLocaleString('id')} MWh/thn` : '–');
       row('AEP PLTB P90 Net (\u00d70.767)', station.aep != null ? `${Math.round(station.aep * 0.767).toLocaleString('id')} MWh/thn` : '–');
       row('AEP PLTS 10 MWp (PR=78%)', station.solarAep != null ? `${Math.round(station.solarAep).toLocaleString('id')} MWh/thn` : `${Math.round(ghiBaselineVal * 365 * 10 * 0.78).toLocaleString('id')} MWh/thn`);
@@ -393,71 +534,13 @@ function LaporanContent() {
       pdf.text(`${station.name} (${station.id})`, W - 10, 9.5, { align: 'right' });
 
       // ── Helpers: build chart data ─────────────────────────────────────────
-      function buildChartData(
-        meas: typeof measurements,
-        getValue: (m: (typeof measurements)[number]) => number,
-        baseline: number,
-        sumNotMean = false,
-      ): { date: string; obs: number; baseline: number }[] {
-        // Adaptive granularity: daily ≤31 days, weekly ≤180, monthly otherwise
-        const times = meas.map((m) => new Date(m.measured_at).getTime());
-        const spanDays = times.length >= 2 ? (Math.max(...times) - Math.min(...times)) / 86_400_000 : 0;
-        const granularity = spanDays <= 31 ? 'daily' : spanDays <= 180 ? 'weekly' : 'monthly';
-
-        const getGroupKey = (date: Date): { key: string; label: string } => {
-          if (granularity === 'daily') {
-            return {
-              key: date.toISOString().slice(0, 10),
-              label: date.toLocaleDateString('id-ID', { day: 'numeric', month: 'short' }),
-            };
-          } else if (granularity === 'weekly') {
-            const d = new Date(date);
-            const day = d.getDay();
-            d.setDate(d.getDate() - day + (day === 0 ? -6 : 1));
-            return {
-              key: d.toISOString().slice(0, 10),
-              label: `Mgg ${d.toLocaleDateString('id-ID', { day: 'numeric', month: 'short' })}`,
-            };
-          } else {
-            return {
-              key: date.toISOString().slice(0, 7),
-              label: date.toLocaleDateString('id-ID', { month: 'short', year: '2-digit' }),
-            };
-          }
-        };
-        const groups = new Map<string, { label: string; values: number[] }>();
-        meas.forEach((m) => {
-          const { key, label } = getGroupKey(new Date(m.measured_at));
-          if (!groups.has(key)) groups.set(key, { label, values: [] });
-          const v = getValue(m);
-          if (v > 0) groups.get(key)!.values.push(v);
-        });
-        return [...groups.entries()]
-          .sort(([a], [b]) => a.localeCompare(b))
-          .filter(([, { values }]) => values.length > 0)
-          .map(([, { label, values }]) => ({
-            date: label,
-            obs: sumNotMean
-              ? parseFloat(values.reduce((a, b) => a + b, 0).toFixed(2))
-              : parseFloat((values.reduce((a, b) => a + b, 0) / values.length).toFixed(2)),
-            baseline,
-          }));
-      }
-
-      function buildScatter(
-        meas: typeof measurements,
-        getValue: (m: (typeof measurements)[number]) => number,
-        baseline: number,
-      ): { obs: number; baseline: number }[] {
-        return meas.map((m) => ({ obs: getValue(m), baseline })).filter((p) => p.obs > 0);
-      }
-
       // ── Helpers: draw charts onto offscreen canvas ────────────────────────
       function drawLineChart(
         data: { date: string; obs: number; baseline: number }[],
         obsColor: string,
         obsLabel: string,
         unit: string,
+        baselineLabel: string,
       ): HTMLCanvasElement {
         const CW = 1100, CH = 340;
         const cvs = document.createElement('canvas');
@@ -490,11 +573,17 @@ function LaporanContent() {
         data.forEach((d, i) => { if (i % step === 0) c.fillText(d.date, xS(i), MT + PH + 30); });
         c.strokeStyle = '#94a3b8'; c.lineWidth = 2; c.setLineDash([7, 4]);
         c.beginPath();
-        data.forEach((d, i) => { i === 0 ? c.moveTo(xS(i), yS(d.baseline)) : c.lineTo(xS(i), yS(d.baseline)); });
+        data.forEach((d, i) => {
+          if (i === 0) c.moveTo(xS(i), yS(d.baseline));
+          else c.lineTo(xS(i), yS(d.baseline));
+        });
         c.stroke(); c.setLineDash([]);
         c.strokeStyle = obsColor; c.lineWidth = 2.5;
         c.beginPath();
-        data.forEach((d, i) => { i === 0 ? c.moveTo(xS(i), yS(d.obs)) : c.lineTo(xS(i), yS(d.obs)); });
+        data.forEach((d, i) => {
+          if (i === 0) c.moveTo(xS(i), yS(d.obs));
+          else c.lineTo(xS(i), yS(d.obs));
+        });
         c.stroke();
         c.fillStyle = obsColor;
         data.forEach((d, i) => { c.beginPath(); c.arc(xS(i), yS(d.obs), 4, 0, Math.PI * 2); c.fill(); });
@@ -507,7 +596,7 @@ function LaporanContent() {
         c.fillText(obsLabel, lx + 30, ly + 5);
         c.strokeStyle = '#94a3b8'; c.lineWidth = 2; c.setLineDash([7, 4]);
         c.beginPath(); c.moveTo(lx, ly + 22); c.lineTo(lx + 25, ly + 22); c.stroke();
-        c.setLineDash([]); c.fillStyle = '#374151'; c.fillText('Baseline Atlas', lx + 30, ly + 27);
+        c.setLineDash([]); c.fillStyle = '#374151'; c.fillText(baselineLabel, lx + 30, ly + 27);
         c.save(); c.translate(14, MT + PH / 2); c.rotate(-Math.PI / 2);
         c.fillStyle = '#94a3b8'; c.font = '15px sans-serif'; c.textAlign = 'center';
         c.fillText(unit, 0, 0); c.restore();
@@ -515,10 +604,9 @@ function LaporanContent() {
       }
 
       function drawScatterChart(
-        data: { obs: number; baseline: number }[],
+        data: DeviationPoint[],
         pointColor: string,
         unit: string,
-        refLine: number,
       ): HTMLCanvasElement {
         const CW = 1100, CH = 300;
         const cvs = document.createElement('canvas');
@@ -532,7 +620,7 @@ function LaporanContent() {
           c.fillStyle = '#94a3b8'; c.font = '22px sans-serif'; c.textAlign = 'center';
           c.fillText('Belum ada data', CW / 2, CH / 2); return cvs;
         }
-        const xVals = data.map((d) => d.baseline), yVals = data.map((d) => d.obs);
+        const xVals = data.map((d) => d.obs), yVals = data.map((d) => d.dev);
         const xPad = (Math.max(...xVals) - Math.min(...xVals) || 1) * 0.2;
         const yPad = (Math.max(...yVals) - Math.min(...yVals) || 1) * 0.2;
         const xl = Math.min(...xVals) - xPad, xh = Math.max(...xVals) + xPad;
@@ -548,20 +636,20 @@ function LaporanContent() {
           c.textAlign = 'right'; c.fillText((yh - (i / 5) * (yh - yl)).toFixed(1), ML - 7, yp + 5);
           c.textAlign = 'center'; c.fillText((xl + (i / 5) * (xh - xl)).toFixed(1), xp, MT + PH + 22);
         }
-        if (refLine >= yl && refLine <= yh) {
+        if (yl <= 0 && yh >= 0) {
           c.strokeStyle = '#94a3b8'; c.lineWidth = 1.5; c.setLineDash([6, 3]);
-          c.beginPath(); c.moveTo(ML, yS(refLine)); c.lineTo(ML + PW, yS(refLine)); c.stroke();
+          c.beginPath(); c.moveTo(ML, yS(0)); c.lineTo(ML + PW, yS(0)); c.stroke();
           c.setLineDash([]); c.fillStyle = '#94a3b8'; c.font = '15px sans-serif'; c.textAlign = 'left';
-          c.fillText('baseline', ML + 6, yS(refLine) - 5);
+          c.fillText('obs = baseline', ML + 6, yS(0) - 5);
         }
         c.fillStyle = pointColor + 'bb';
-        data.forEach((d) => { c.beginPath(); c.arc(xS(d.baseline), yS(d.obs), 5, 0, Math.PI * 2); c.fill(); });
+        data.forEach((d) => { c.beginPath(); c.arc(xS(d.obs), yS(d.dev), 5, 0, Math.PI * 2); c.fill(); });
         c.strokeStyle = '#cbd5e1'; c.lineWidth = 1; c.setLineDash([]);
         c.beginPath(); c.moveTo(ML, MT); c.lineTo(ML, MT + PH); c.lineTo(ML + PW, MT + PH); c.stroke();
         c.fillStyle = '#6b7280'; c.font = '17px sans-serif'; c.textAlign = 'center';
-        c.fillText(`Baseline Atlas (${unit})`, ML + PW / 2, CH - 5);
+        c.fillText(`Observasi (${unit})`, ML + PW / 2, CH - 5);
         c.save(); c.translate(16, MT + PH / 2); c.rotate(-Math.PI / 2);
-        c.fillText(`Observasi (${unit})`, 0, 0); c.restore();
+        c.fillText(`Deviasi (${unit})`, 0, 0); c.restore();
         // info jumlah data
         c.fillStyle = '#94a3b8'; c.font = '15px sans-serif'; c.textAlign = 'right';
         c.fillText(`n = ${data.length} titik data`, ML + PW - 4, MT + 18);
@@ -585,7 +673,7 @@ function LaporanContent() {
         pdf.addImage(lineCanv.toDataURL('image/png'), 'PNG', 10, y, W - 20, lH);
         y += lH + 4;
         pdf.setFontSize(8); pdf.setFont('helvetica', 'bold'); pdf.setTextColor(60, 60, 60);
-        pdf.text('Analisis Korelasi (Distribusi Observasi vs Baseline)', 10, y); y += 4;
+        pdf.text('Analisis Deviasi (Y = observasi - baseline)', 10, y); y += 4;
         pdf.addImage(scatCanv.toDataURL('image/png'), 'PNG', 10, y, W - 20, sH);
         y += sH + 8;
       }
@@ -595,31 +683,24 @@ function LaporanContent() {
       const hasSolar = station.variables.toLowerCase().includes('iradiasi')
         || station.variables.toLowerCase().includes('surya')
         || station.variables.toLowerCase().includes('ghi');
-      const windBaseline = station.windBaseline ?? (station.windSpeed ?? 0) * 1.046;
-      const solarBaseline = station.ghiBaseline ?? (station.irradiation ?? 0) * 0.958;
-
       if (!hasWind && !hasSolar) {
         pdf.setFontSize(9); pdf.setFont('helvetica', 'italic'); pdf.setTextColor(150, 150, 150);
         pdf.text('Tidak ada data grafik tersedia untuk stasiun ini.', W / 2, 150, { align: 'center' });
       } else {
         if (hasWind) {
-          const wMon = buildChartData(measurements, (m) => parseFloat((m.wind_speed ?? 0).toString()), windBaseline);
-          const wSca = buildScatter(measurements, (m) => parseFloat((m.wind_speed ?? 0).toString()), windBaseline);
           addChartSection(
-            'Kecepatan Angin — Baseline Atlas vs Observasi',
-            `GWA/ERA5 Baseline: ${windBaseline.toFixed(2)} m/s  ·  RMSE: ${(station.windRmse ?? station.rmse) != null ? (station.windRmse ?? station.rmse)!.toFixed(2) : '–'} m/s  ·  Bias: ${(station.windBias ?? station.bias) != null ? `${(station.windBias ?? station.bias)! > 0 ? '+' : ''}${(station.windBias ?? station.bias)!.toFixed(1)}` : '–'}%  ·  R²: ${(station.windR2 ?? station.r2) != null ? (station.windR2 ?? station.r2)!.toFixed(2) : '–'}`,
-            drawLineChart(wMon, '#137fec', 'Terukur (Obs)', 'm/s'),
-            drawScatterChart(wSca, '#137fec', 'm/s', windBaseline),
+            'Kecepatan Angin — ERA5 Harian (DOY) vs Observasi',
+            `${windEra5Label}: ${windEra5ComparisonBaseline != null ? windEra5ComparisonBaseline.toFixed(2) : '–'} m/s  ·  RMSE: ${(station.windRmse ?? station.rmse) != null ? (station.windRmse ?? station.rmse)!.toFixed(2) : '–'} m/s  ·  Bias: ${(station.windBias ?? station.bias) != null ? `${(station.windBias ?? station.bias)! > 0 ? '+' : ''}${(station.windBias ?? station.bias)!.toFixed(1)}` : '–'}%  ·  Skor: ${(station.windR2 ?? station.r2) != null ? (station.windR2 ?? station.r2)!.toFixed(2) : '–'}`,
+            drawLineChart(windChartData, '#137fec', 'Terukur (Obs)', 'm/s', 'ERA5 DOY'),
+            drawScatterChart(windScatterData, '#137fec', 'm/s'),
           );
         }
         if (hasSolar) {
-          const sMon = buildChartData(measurements, (m) => (m.ghi ?? 0) / 60000, solarBaseline, true);
-          const sSca = buildScatter(measurements, (m) => (m.ghi ?? 0) / 60000, solarBaseline);
           addChartSection(
-            'Iradiasi Matahari (GHI) — Baseline Atlas vs Observasi',
-            `GSA/ERA5 Baseline: ${solarBaseline.toFixed(2)} kWh/m²/hari  ·  RMSE: ${station.solarRmse != null ? station.solarRmse.toFixed(2) : '–'} kWh/m²/hari  ·  Kt: ${ktVal.toFixed(2)}`,
-            drawLineChart(sMon, '#f59e0b', 'GHI Terukur (Obs)', 'kWh/m²/hari'),
-            drawScatterChart(sSca, '#f59e0b', 'kWh/m²/hari', solarBaseline),
+            'Iradiasi Matahari (GHI) — ERA5 Harian (DOY) vs Observasi',
+            `${ghiEra5Label}: ${ghiEra5ComparisonBaseline != null ? ghiEra5ComparisonBaseline.toFixed(2) : '–'} kWh/m²/hari  ·  RMSE: ${station.solarRmse != null ? station.solarRmse.toFixed(2) : '–'} kWh/m²/hari  ·  Kt: ${ktVal.toFixed(2)}`,
+            drawLineChart(ghiChartData, '#f59e0b', 'GHI Terukur (Obs)', 'kWh/m²/hari', 'ERA5 DOY'),
+            drawScatterChart(ghiScatterData, '#f59e0b', 'kWh/m²/hari'),
           );
         }
       }
@@ -718,44 +799,44 @@ function LaporanContent() {
         ['Variabel', station.variables],
       ].forEach((pair, i) => addRow2(pair[0], pair[1], i));
 
-      addSection('METRIK VALIDASI ANGIN (ERA5 vs Observasi)');
+      addSection('METRIK VALIDASI ANGIN (ERA5 DOY vs Observasi)');
       const wBias = station.windBias ?? station.bias;
       const wR2 = station.windR2 ?? station.r2;
       [
-        ['Kecepatan Angin Rata-rata (Obs)', station.windSpeed != null ? `${station.windSpeed} m/s` : '\u2013'],
+        ['Kecepatan Angin Rata-rata Periode (Obs)', `${obsWindMean.toFixed(2)} m/s`],
         ['RMSE Angin (m/s)', (station.windRmse ?? station.rmse) != null ? `${(station.windRmse ?? station.rmse)!.toFixed(2)} m/s` : '\u2013'],
         ['Bias MBE vs ERA5 (%)', wBias != null ? `${wBias > 0 ? '+' : ''}${wBias.toFixed(1)} %` : '\u2013'],
-        ['R\u00b2 Korelasi Atlas', wR2 != null ? wR2.toFixed(2) : '\u2013'],
+        ['Skor Kesesuaian Baseline', wR2 != null ? wR2.toFixed(2) : '\u2013'],
         ['AEP PLTB P50 Net (MWh/thn)', station.aep != null ? Math.round(station.aep * 0.877).toLocaleString('id') : '\u2013'],
         ['AEP PLTB P90 Net (MWh/thn)', station.aep != null ? Math.round(station.aep * 0.767).toLocaleString('id') : '\u2013'],
         ['Skor GIS-MCDA (/100)', `${station.score} / 100`],
       ].forEach((pair, i) => addRow2(pair[0], pair[1], i));
 
-      addSection('VALIDASI SURYA \u2014 GHI (ERA5/GSA vs Observasi)');
+      addSection('VALIDASI SURYA \u2014 GHI (ERA5 DOY/GSA vs Observasi)');
       const sR2 = station.solarR2 ?? station.r2;
       [
-        ['GHI Observasi (kWh/m\u00b2/hari)', station.irradiation != null ? `${station.irradiation.toFixed(1)} kWh/m\u00b2/hari` : '\u2013'],
+        ['GHI Observasi Rata-rata Periode (kWh/m\u00b2/hari)', `${obsGhiMean.toFixed(2)} kWh/m\u00b2/hari`],
         ['GHI Baseline GSA/Solargis', station.ghiBaselineGsa != null ? `${station.ghiBaselineGsa.toFixed(2)} kWh/m\u00b2/hari` : '\u2014'],
-        ['GHI Baseline ERA5 ECMWF', station.ghiBaselineNasa != null ? `${station.ghiBaselineNasa.toFixed(2)} kWh/m\u00b2/hari` : '\u2014'],
+        [`GHI Baseline ${ghiEra5Label}`, ghiEra5ComparisonBaseline != null ? `${ghiEra5ComparisonBaseline.toFixed(2)} kWh/m\u00b2/hari` : '\u2014'],
         ['GHI Best-Value (dipakai)', `${ghiBaselineVal.toFixed(2)} kWh/m\u00b2/hari`],
         ['RMSE Surya (kWh/m\u00b2/hari)', station.solarRmse != null ? `${station.solarRmse.toFixed(2)} kWh/m\u00b2/hari` : '\u2013'],
         ['Bias MBE Surya vs ERA5 (%)', solarBiasVal != null ? `${solarBiasVal > 0 ? '+' : ''}${solarBiasVal.toFixed(1)} %` : '\u2013'],
-        ['R\u00b2 Korelasi Atlas', sR2 != null ? sR2.toFixed(2) : '\u2013'],
+        ['Skor Kesesuaian Baseline', sR2 != null ? sR2.toFixed(2) : '\u2013'],
         ['Clearness Index (Kt)', ktVal.toFixed(2)],
       ].forEach((pair, i) => addRow2(pair[0], pair[1], i));
 
       addSection('PERBANDINGAN BASELINE ANGIN');
       [
-        ['Observasi Lapangan', station.windSpeed != null ? `${station.windSpeed} m/s` : '\u2014'],
+        ['Observasi Lapangan (rata-rata periode)', `${obsWindMean.toFixed(2)} m/s`],
         ['GWA 3.0 (GeoTIFF 250m)', station.windBaselineGwa != null ? `${station.windBaselineGwa} m/s` : '\u2014'],
-        ['ERA5 ECMWF', station.windBaselineNasa != null ? `${station.windBaselineNasa} m/s` : '\u2014'],
+        [windEra5Label, windEra5ComparisonBaseline != null ? `${windEra5ComparisonBaseline.toFixed(2)} m/s` : '\u2014'],
         ['Best-Value (dipakai MCP)', `${windBaselineVal.toFixed(2)} m/s`],
       ].forEach((pair, i) => addRow2(pair[0], pair[1], i));
 
       addSection('POTENSI ENERGI');
       [
-        ['Kecepatan Angin Rata-rata (GWA/ERA5)', `${windBaselineVal.toFixed(2)} m/s`],
-        ['Iradiasi GHI Rata-rata (GSA/ERA5)', `${ghiBaselineVal.toFixed(2)} kWh/m\u00b2/hari`],
+        ['Kecepatan Angin LTA untuk AEP (GWA/ERA5)', `${windBaselineVal.toFixed(2)} m/s`],
+        ['Iradiasi GHI LTA untuk AEP (GSA/ERA5)', `${ghiBaselineVal.toFixed(2)} kWh/m\u00b2/hari`],
         ['AEP PLTB P50 Net (MWh/thn)', station.aep != null ? Math.round(station.aep * 0.877).toLocaleString('id') : '\u2013'],
         ['AEP PLTB P90 Net (MWh/thn)', station.aep != null ? Math.round(station.aep * 0.767).toLocaleString('id') : '\u2013'],
         ['AEP PLTS 10 MWp PR=78% (MWh/thn)', (station.solarAep != null ? Math.round(station.solarAep) : Math.round(ghiBaselineVal * 365 * 10 * 0.78)).toLocaleString('id')],
@@ -855,16 +936,16 @@ function LaporanContent() {
             altitude_m: station.altitude,
             status: station.status,
             score: station.score,
-            wind_speed_ms: station.windSpeed,
+            wind_speed_period_avg_ms: obsWindMean,
             wind_baseline_gwa_ms: station.windBaselineGwa ?? null,
-            wind_baseline_nasa_ms: station.windBaselineNasa ?? null,
+            wind_baseline_era5_period_ms: windEra5ComparisonBaseline,
             wind_baseline_best_ms: station.windBaseline ?? null,
             wind_rmse: station.windRmse ?? station.rmse,
             wind_bias_pct: station.windBias ?? station.bias,
             wind_r2: station.windR2 ?? station.r2,
-            ghi_kwh_m2_day: station.irradiation,
+            ghi_period_avg_kwh_m2_day: obsGhiMean,
             ghi_baseline_gsa_kwh: station.ghiBaselineGsa ?? null,
-            ghi_baseline_nasa_kwh: station.ghiBaselineNasa ?? null,
+            ghi_baseline_era5_period_kwh: ghiEra5ComparisonBaseline,
             ghi_baseline_best_kwh: station.ghiBaseline ?? null,
             solar_rmse: station.solarRmse ?? null,
             solar_bias_pct: station.solarBias ?? null,
@@ -1010,13 +1091,13 @@ function LaporanContent() {
               <div className="flex items-center gap-2 mb-4">
                 <span className="material-symbols-outlined text-primary text-[20px]">air</span>
                 <h4 className="text-sm font-bold text-slate-900 dark:text-white">Validasi Angin</h4>
-                <span className="ml-auto text-[11px] text-slate-400">ERA5 vs Observasi Lapangan</span>
+                <span className="ml-auto text-[11px] text-slate-400">ERA5 DOY vs Observasi Lapangan</span>
               </div>
               <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
                 {[
-                  { label: 'Kec. Angin (Obs)', value: station.windSpeed != null ? station.windSpeed.toFixed(2) : '–', unit: station.windSpeed != null ? 'm/s' : '', color: 'text-blue-400' },
+                  { label: 'Kec. Angin (Obs)', value: obsWindMean.toFixed(2), unit: 'm/s', color: 'text-blue-400' },
                   { label: 'RMSE', value: (station.windRmse ?? station.rmse) != null ? (station.windRmse ?? station.rmse)!.toFixed(2) : '–', unit: (station.windRmse ?? station.rmse) != null ? 'm/s' : '', color: 'text-slate-200' },
-                  { label: 'Korelasi Atlas (R²)', value: (station.windR2 ?? station.r2) != null ? (station.windR2 ?? station.r2)!.toFixed(2) : '–', unit: '', color: (station.windR2 ?? station.r2) != null && (station.windR2 ?? station.r2)! >= 0.85 ? 'text-green-400' : (station.windR2 ?? station.r2) != null && (station.windR2 ?? station.r2)! >= 0.70 ? 'text-amber-400' : 'text-red-400' },
+                  { label: 'Skor Baseline', value: (station.windR2 ?? station.r2) != null ? (station.windR2 ?? station.r2)!.toFixed(2) : '–', unit: '', color: baselineSkillColor(station.windR2 ?? station.r2) },
                   {
                     label: 'Bias MBE (ERA5)',
                     value: (station.windBias ?? station.bias) != null ? `${(station.windBias ?? station.bias)! > 0 ? '+' : ''}${(station.windBias ?? station.bias)!.toFixed(1)}` : '–',
@@ -1043,13 +1124,13 @@ function LaporanContent() {
               <div className="flex items-center gap-2 mb-4">
                 <span className="material-symbols-outlined text-amber-400 text-[20px]">wb_sunny</span>
                 <h4 className="text-sm font-bold text-slate-900 dark:text-white">Validasi Surya (GHI)</h4>
-                <span className="ml-auto text-[11px] text-slate-400">ERA5 vs Observasi Lapangan</span>
+                <span className="ml-auto text-[11px] text-slate-400">ERA5 DOY vs Observasi Lapangan</span>
               </div>
               <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
                 {[
-                  { label: 'GHI Observasi', value: (station.irradiation ?? 0).toFixed(1), unit: 'kWh/m²/hari', color: 'text-amber-400' },
+                  { label: 'GHI Observasi', value: obsGhiMean.toFixed(2), unit: 'kWh/m²/hari', color: 'text-amber-400' },
                   { label: 'RMSE', value: (station.solarRmse) != null ? station.solarRmse!.toFixed(2) : '–', unit: station.solarRmse != null ? 'kWh/m²' : '', color: 'text-slate-200' },
-                  { label: 'Korelasi Atlas (R²)', value: (station.solarR2 ?? station.r2) != null ? (station.solarR2 ?? station.r2)!.toFixed(2) : '–', unit: '', color: (station.solarR2 ?? station.r2) != null && (station.solarR2 ?? station.r2)! >= 0.85 ? 'text-green-400' : (station.solarR2 ?? station.r2) != null && (station.solarR2 ?? station.r2)! >= 0.70 ? 'text-amber-400' : 'text-red-400' },
+                  { label: 'Skor Baseline', value: (station.solarR2 ?? station.r2) != null ? (station.solarR2 ?? station.r2)!.toFixed(2) : '–', unit: '', color: baselineSkillColor(station.solarR2 ?? station.r2) },
                   {
                     label: 'Bias MBE (ERA5)',
                     value: solarBiasVal != null ? `${solarBiasVal > 0 ? '+' : ''}${solarBiasVal.toFixed(1)}` : '–',
@@ -1071,10 +1152,10 @@ function LaporanContent() {
               </div>
               <div className="mt-3 flex flex-wrap gap-2 text-[10px] text-slate-500">
                 <span className="font-mono px-2 py-0.5 rounded border bg-amber-500/10 border-amber-500/30 text-amber-400">
-                  GHI Obs: {(station.irradiation ?? 0).toFixed(2)} kWh/m²/hari
+                  GHI Obs: {obsGhiMean.toFixed(2)} kWh/m²/hari
                 </span>
                 <span className="font-mono px-2 py-0.5 rounded border bg-slate-500/10 border-slate-500/30 text-slate-400">
-                  Baseline ({station.ghiBaselineGsa != null ? 'GSA' : station.ghiBaselineNasa != null ? 'ERA5' : 'Est.'}): {ghiBaselineVal.toFixed(2)} kWh/m²/hari
+                  Baseline validasi ({ghiEra5Label}): {ghiEra5ComparisonBaseline != null ? ghiEra5ComparisonBaseline.toFixed(2) : '–'} kWh/m²/hari
                 </span>
                 <span className={`font-mono px-2 py-0.5 rounded border ${
                   ktVal >= 0.40 && ktVal <= 0.65
@@ -1094,7 +1175,7 @@ function LaporanContent() {
                 <span className="material-symbols-outlined text-primary text-[20px]">ssid_chart</span>
                 <h4 className="text-sm font-bold text-slate-900 dark:text-white">Grafik Validasi</h4>
                 <span className="ml-auto text-[11px] text-slate-400">
-                  {hasWind && hasSolar ? 'Angin & GHI — Obs vs Baseline Atlas' : hasWind ? 'Angin — Obs vs Baseline Atlas' : 'GHI — Obs vs Baseline Atlas'}
+                  {hasWind && hasSolar ? 'Angin & GHI — Obs vs ERA5 Harian (DOY)' : hasWind ? 'Angin — Obs vs ERA5 Harian (DOY)' : 'GHI — Obs vs ERA5 Harian (DOY)'}
                   {' '}({granularityLabel})
                 </span>
               </div>
@@ -1119,7 +1200,7 @@ function LaporanContent() {
                           <YAxis tick={{ fontSize: 9, fill: '#64748b' }} tickLine={false} axisLine={false} />
                           <Tooltip contentStyle={{ backgroundColor: tooltipBg, border: `1px solid ${tooltipBorder}`, borderRadius: '8px', fontSize: 11 }} labelStyle={{ color: tooltipLabel }} />
                           <Line type="monotone" dataKey="obs" name="Terukur (Obs)" stroke="#137fec" dot={{ r: 3 }} strokeWidth={2.5} />
-                          <Line type="monotone" dataKey="baseline" name="Baseline Atlas" stroke="#94a3b8" strokeDasharray="5 3" dot={false} strokeWidth={2} />
+                          <Line type="monotone" dataKey="baseline" name="ERA5 Harian (DOY)" stroke="#94a3b8" strokeDasharray="5 3" dot={false} strokeWidth={2} />
                         </LineChart>
                       </ResponsiveContainer>
                     )}
@@ -1133,14 +1214,14 @@ function LaporanContent() {
                       <ResponsiveContainer width="100%" height="100%">
                         <ScatterChart margin={{ top: 8, right: 10, bottom: 24, left: 15 }}>
                           <CartesianGrid strokeDasharray="3 3" stroke={gridColor} />
-                          <XAxis dataKey="baseline" name="Baseline" type="number" domain={['auto','auto']} tick={{ fontSize: 9, fill: '#64748b' }} tickLine={false}
-                            label={{ value: 'Baseline Atlas (m/s)', position: 'insideBottom', offset: -16, fill: '#64748b', fontSize: 9 }} />
-                          <YAxis dataKey="obs" name="Observasi" type="number" domain={['auto','auto']} tick={{ fontSize: 9, fill: '#64748b' }} tickLine={false} axisLine={false}
-                            label={{ value: 'Obs (m/s)', angle: -90, position: 'insideLeft', offset: 10, fill: '#64748b', fontSize: 9 }} />
+                          <XAxis dataKey="obs" name="Observasi" type="number" domain={['auto','auto']} tick={{ fontSize: 9, fill: '#64748b' }} tickLine={false}
+                            label={{ value: 'Obs (m/s)', position: 'insideBottom', offset: -16, fill: '#64748b', fontSize: 9 }} />
+                          <YAxis dataKey="dev" name="Deviasi" type="number" domain={['auto','auto']} tick={{ fontSize: 9, fill: '#64748b' }} tickLine={false} axisLine={false}
+                            label={{ value: 'Deviasi (m/s)', angle: -90, position: 'insideLeft', offset: 10, fill: '#64748b', fontSize: 9 }} />
                           <Tooltip contentStyle={{ backgroundColor: tooltipBg, border: `1px solid ${tooltipBorder}`, borderRadius: '8px', fontSize: 11 }} />
                           <Scatter data={windScatterData} fill="#137fec" opacity={0.5} />
-                          <ReferenceLine y={windBaselineVal} stroke="#e2e8f0" strokeDasharray="5 3" strokeWidth={1.5}
-                            label={{ value: `baseline (${windBaselineVal.toFixed(2)})`, position: 'insideTopLeft', fill: '#94a3b8', fontSize: 9 }} />
+                          <ReferenceLine y={0} stroke="#e2e8f0" strokeDasharray="5 3" strokeWidth={1.5}
+                            label={{ value: 'obs = baseline', position: 'insideTopLeft', fill: '#94a3b8', fontSize: 9 }} />
                         </ScatterChart>
                       </ResponsiveContainer>
                     )}
@@ -1171,7 +1252,7 @@ function LaporanContent() {
                           <YAxis tick={{ fontSize: 9, fill: '#64748b' }} tickLine={false} axisLine={false} />
                           <Tooltip contentStyle={{ backgroundColor: tooltipBg, border: `1px solid ${tooltipBorder}`, borderRadius: '8px', fontSize: 11 }} labelStyle={{ color: tooltipLabel }} />
                           <Line type="monotone" dataKey="obs" name="GHI Terukur (Obs)" stroke="#f59e0b" dot={{ r: 3 }} strokeWidth={2.5} />
-                          <Line type="monotone" dataKey="baseline" name="Baseline Atlas" stroke="#94a3b8" strokeDasharray="5 3" dot={false} strokeWidth={2} />
+                          <Line type="monotone" dataKey="baseline" name="ERA5 Harian (DOY)" stroke="#94a3b8" strokeDasharray="5 3" dot={false} strokeWidth={2} />
                         </LineChart>
                       </ResponsiveContainer>
                     )}
@@ -1185,14 +1266,14 @@ function LaporanContent() {
                       <ResponsiveContainer width="100%" height="100%">
                         <ScatterChart margin={{ top: 8, right: 10, bottom: 24, left: 15 }}>
                           <CartesianGrid strokeDasharray="3 3" stroke={gridColor} />
-                          <XAxis dataKey="baseline" name="Baseline" type="number" domain={['auto','auto']} tick={{ fontSize: 9, fill: '#64748b' }} tickLine={false}
-                            label={{ value: 'Baseline Atlas (kWh/m²/hari)', position: 'insideBottom', offset: -16, fill: '#64748b', fontSize: 9 }} />
-                          <YAxis dataKey="obs" name="Observasi" type="number" domain={['auto','auto']} tick={{ fontSize: 9, fill: '#64748b' }} tickLine={false} axisLine={false}
-                            label={{ value: 'Obs (kWh)', angle: -90, position: 'insideLeft', offset: 10, fill: '#64748b', fontSize: 9 }} />
+                          <XAxis dataKey="obs" name="Observasi" type="number" domain={['auto','auto']} tick={{ fontSize: 9, fill: '#64748b' }} tickLine={false}
+                            label={{ value: 'Obs (kWh/m²/hari)', position: 'insideBottom', offset: -16, fill: '#64748b', fontSize: 9 }} />
+                          <YAxis dataKey="dev" name="Deviasi" type="number" domain={['auto','auto']} tick={{ fontSize: 9, fill: '#64748b' }} tickLine={false} axisLine={false}
+                            label={{ value: 'Deviasi (kWh/m²/hari)', angle: -90, position: 'insideLeft', offset: 10, fill: '#64748b', fontSize: 9 }} />
                           <Tooltip contentStyle={{ backgroundColor: tooltipBg, border: `1px solid ${tooltipBorder}`, borderRadius: '8px', fontSize: 11 }} />
                           <Scatter data={ghiScatterData} fill="#f59e0b" opacity={0.5} />
-                          <ReferenceLine y={ghiBaselineVal} stroke="#e2e8f0" strokeDasharray="5 3" strokeWidth={1.5}
-                            label={{ value: `baseline (${ghiBaselineVal.toFixed(2)})`, position: 'insideTopLeft', fill: '#94a3b8', fontSize: 9 }} />
+                          <ReferenceLine y={0} stroke="#e2e8f0" strokeDasharray="5 3" strokeWidth={1.5}
+                            label={{ value: 'obs = baseline', position: 'insideTopLeft', fill: '#94a3b8', fontSize: 9 }} />
                         </ScatterChart>
                       </ResponsiveContainer>
                     )}
@@ -1223,9 +1304,9 @@ function LaporanContent() {
                   </p>
                   <div className="flex flex-col gap-2">
                     {[
-                      { label: 'Observasi Lapangan', value: station.windSpeed != null ? `${station.windSpeed} m/s` : '—', color: 'text-slate-900 dark:text-white', badge: null },
+                      { label: 'Observasi Lapangan', value: `${obsWindMean.toFixed(2)} m/s`, color: 'text-slate-900 dark:text-white', badge: null },
                       { label: 'GWA 3.0', value: station.windBaselineGwa != null ? `${station.windBaselineGwa} m/s` : '—', color: 'text-primary font-bold', badge: station.windBaselineGwa != null ? 'Aktif' : null },
-                      { label: 'ERA5 (ECMWF)', value: station.windBaselineNasa != null ? `${station.windBaselineNasa} m/s` : '—', color: 'text-slate-600 dark:text-slate-400', badge: station.windBaselineGwa == null && station.windBaselineNasa != null ? 'Fallback' : null },
+                      { label: windEra5Label, value: windEra5ComparisonBaseline != null ? `${windEra5ComparisonBaseline.toFixed(2)} m/s` : '—', color: 'text-slate-600 dark:text-slate-400', badge: station.windBaselineGwa == null && windEra5ComparisonBaseline != null ? 'Fallback' : null },
                     ].map((r) => (
                       <div key={r.label} className="flex items-center justify-between bg-slate-50 dark:bg-[#111a22] rounded-lg px-3 py-2 text-xs">
                         <span className="text-slate-500 dark:text-slate-400">{r.label}</span>
@@ -1244,9 +1325,9 @@ function LaporanContent() {
                   </p>
                   <div className="flex flex-col gap-2">
                     {[
-                      { label: 'Observasi Lapangan', value: station.irradiation != null ? `${station.irradiation.toFixed(2)} kWh/m²/hari` : '—', color: 'text-slate-900 dark:text-white', badge: null },
+                      { label: 'Observasi Lapangan', value: `${obsGhiMean.toFixed(2)} kWh/m²/hari`, color: 'text-slate-900 dark:text-white', badge: null },
                       { label: 'GSA Solargis', value: station.ghiBaselineGsa != null ? `${station.ghiBaselineGsa} kWh/m²/hari` : '—', color: 'text-amber-500 font-bold', badge: station.ghiBaselineGsa != null ? 'Aktif' : null },
-                      { label: 'ERA5 (ECMWF)', value: station.ghiBaselineNasa != null ? `${station.ghiBaselineNasa} kWh/m²/hari` : '—', color: 'text-slate-600 dark:text-slate-400', badge: station.ghiBaselineGsa == null && station.ghiBaselineNasa != null ? 'Fallback' : null },
+                      { label: ghiEra5Label, value: ghiEra5ComparisonBaseline != null ? `${ghiEra5ComparisonBaseline.toFixed(2)} kWh/m²/hari` : '—', color: 'text-slate-600 dark:text-slate-400', badge: station.ghiBaselineGsa == null && ghiEra5ComparisonBaseline != null ? 'Fallback' : null },
                     ].map((r) => (
                       <div key={r.label} className="flex items-center justify-between bg-slate-50 dark:bg-[#111a22] rounded-lg px-3 py-2 text-xs">
                         <span className="text-slate-500 dark:text-slate-400">{r.label}</span>
@@ -1314,7 +1395,7 @@ function LaporanContent() {
               <div className="grid grid-cols-2 gap-4">
                 <div className="bg-blue-50 dark:bg-blue-900/10 border border-blue-100 dark:border-blue-800/30 rounded-xl p-4 text-center">
                   <span className="material-symbols-outlined text-blue-400 text-[24px] mb-1 block">air</span>
-                  <p className="text-[10px] text-slate-400 uppercase tracking-wide">Kec. Angin Rata-rata</p>
+                  <p className="text-[10px] text-slate-400 uppercase tracking-wide">Kec. Angin LTA AEP</p>
                   <p className="text-2xl font-bold text-blue-400">
                     {windBaselineVal.toFixed(2)}
                     <span className="text-sm font-medium text-slate-400 ml-1">m/s</span>
@@ -1325,7 +1406,7 @@ function LaporanContent() {
                 </div>
                 <div className="bg-yellow-50 dark:bg-yellow-900/10 border border-yellow-100 dark:border-yellow-800/30 rounded-xl p-4 text-center">
                   <span className="material-symbols-outlined text-yellow-400 text-[24px] mb-1 block">wb_sunny</span>
-                  <p className="text-[10px] text-slate-400 uppercase tracking-wide">Iradiasi Matahari (GHI)</p>
+                  <p className="text-[10px] text-slate-400 uppercase tracking-wide">GHI LTA AEP</p>
                   <p className="text-2xl font-bold text-yellow-400">
                     {ghiBaselineVal.toFixed(2)}
                     <span className="text-sm font-medium text-slate-400 ml-1">kWh/m²/hari</span>
