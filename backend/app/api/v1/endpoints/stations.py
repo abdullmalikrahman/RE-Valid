@@ -3,7 +3,7 @@ import math
 import time
 
 import httpx
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException, Query, status
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.database import get_db
@@ -385,6 +385,7 @@ async def get_gis_mcda(station_id: str, db: AsyncSession = Depends(get_db)):
 @router.get("/{station_id}/daily-baseline")
 async def get_daily_baseline(
     station_id: str,
+    ensure: bool = Query(False, description="Fetch and cache ERA5 DOY climatology if missing"),
     db: AsyncSession = Depends(get_db),
 ):
     """
@@ -394,19 +395,57 @@ async def get_daily_baseline(
     Digunakan oleh halaman Analisis untuk garis baseline per-hari di chart.
     """
     from sqlalchemy import select
+    from sqlalchemy.dialects.postgresql import insert as pg_insert
     from app.models.daily_baseline import StationDailyBaseline
 
-    stmt = (
-        select(
-            StationDailyBaseline.doy,
-            StationDailyBaseline.ghi_era5,
-            StationDailyBaseline.wind_era5,
+    station = await get_station_by_id(db, station_id)
+    if not station:
+        raise HTTPException(status_code=404, detail="Stasiun tidak ditemukan")
+
+    async def _load_rows():
+        stmt = (
+            select(
+                StationDailyBaseline.doy,
+                StationDailyBaseline.ghi_era5,
+                StationDailyBaseline.wind_era5,
+            )
+            .where(StationDailyBaseline.station_id == station_id)
+            .order_by(StationDailyBaseline.doy)
         )
-        .where(StationDailyBaseline.station_id == station_id)
-        .order_by(StationDailyBaseline.doy)
+        result = await db.execute(stmt)
+        return result.fetchall()
+
+    rows = await _load_rows()
+    valid_rows = sum(
+        1 for row in rows
+        if row.ghi_era5 is not None or row.wind_era5 is not None
     )
-    result = await db.execute(stmt)
-    rows = result.fetchall()
+
+    if ensure and valid_rows < 300:
+        from app.workers.atlas_reader import fetch_era5_daily_climatology
+
+        daily_clim = await fetch_era5_daily_climatology(float(station.lat), float(station.lon))
+        if daily_clim:
+            values = [
+                {
+                    "station_id": station_id,
+                    "doy": doy,
+                    "ghi_era5": vals.get("ghi"),
+                    "wind_era5": vals.get("wind"),
+                }
+                for doy, vals in daily_clim.items()
+            ]
+            stmt = pg_insert(StationDailyBaseline).values(values)
+            stmt = stmt.on_conflict_do_update(
+                index_elements=["station_id", "doy"],
+                set_={
+                    "ghi_era5": stmt.excluded.ghi_era5,
+                    "wind_era5": stmt.excluded.wind_era5,
+                },
+            )
+            await db.execute(stmt)
+            await db.commit()
+            rows = await _load_rows()
 
     return [
         {
