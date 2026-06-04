@@ -310,6 +310,34 @@ function AnalisisContent() {
     ? Math.round(measurements.filter((m) => (isWind ? m.wind_speed : m.ghi) !== null).length / measurements.length * 100)
     : null, [measurements, isWind]);
 
+  // ERA5 baseline rata-rata PERIODE pengukuran (avg DOY dari dailyBaseline)
+  // Lebih akurat daripada rata-rata tahunan (station.windBaselineNasa / ghiBaselineNasa)
+  const era5WindPeriodAvg = useMemo(() => {
+    if (!hasDailyBaseline) return null;
+    // Gunakan rata-rata PERIODE (DOY dari pengukuran aktual) jika tersedia
+    if (measurements.length > 0) {
+      const doys = [...new Set(measurements.map(m => getDoy(m.measured_at)))];
+      const vals = doys.map(d => dailyBaseline.get(d)?.wind_era5).filter((v): v is number => v != null && v > 0);
+      if (vals.length > 0) return parseFloat((vals.reduce((a, b) => a + b, 0) / vals.length).toFixed(2));
+    }
+    // Fallback: rata-rata tahunan semua DOY (jika belum ada pengukuran di rentang tanggal ini)
+    const allVals = [...dailyBaseline.values()].map(r => r.wind_era5).filter((v): v is number => v != null && v > 0);
+    return allVals.length > 0 ? parseFloat((allVals.reduce((a, b) => a + b, 0) / allVals.length).toFixed(2)) : null;
+  }, [measurements, dailyBaseline, hasDailyBaseline]);
+
+  const era5GhiPeriodAvg = useMemo(() => {
+    if (!hasDailyBaseline) return null;
+    // Gunakan rata-rata PERIODE (DOY dari pengukuran aktual) jika tersedia
+    if (measurements.length > 0) {
+      const doys = [...new Set(measurements.map(m => getDoy(m.measured_at)))];
+      const vals = doys.map(d => dailyBaseline.get(d)?.ghi_era5).filter((v): v is number => v != null && v > 0);
+      if (vals.length > 0) return parseFloat((vals.reduce((a, b) => a + b, 0) / vals.length).toFixed(2));
+    }
+    // Fallback: rata-rata tahunan semua DOY (jika belum ada pengukuran di rentang tanggal ini)
+    const allVals = [...dailyBaseline.values()].map(r => r.ghi_era5).filter((v): v is number => v != null && v > 0);
+    return allVals.length > 0 ? parseFloat((allVals.reduce((a, b) => a + b, 0) / allVals.length).toFixed(2)) : null;
+  }, [measurements, dailyBaseline, hasDailyBaseline]);
+
   // Jika belum ada stasiun di DB, tampilkan empty state
   if (!station) {
     return (
@@ -328,14 +356,27 @@ function AnalisisContent() {
   // Gunakan wind_baseline dari atlas (ERA5/GWA) jika tersedia; fallback ke aproksimasi
   const windBaselineVal = station.windBaseline ?? (station.windSpeed ?? 0) * 1.046;
   const windLongTerm = windBaselineVal.toFixed(1);
-  const windDiff = windBaselineVal > 0 ? (((station.windSpeed - windBaselineVal) / windBaselineVal) * 100).toFixed(1) : '0.0';
-  // Per-source deviations
+  // Obs rata-rata selama periode pengukuran — lebih akurat dari station.windSpeed
+  // (station.windSpeed ditimpa MQTT setiap menit dengan pembacaan sesaat, bisa = 0)
+  const obsWindMean = chartData.length > 0
+    ? parseFloat((chartData.reduce((s, d) => s + d.obs, 0) / chartData.length).toFixed(2))
+    : (station.windSpeed ?? 0);
+  // Obs GHI rata-rata selama periode pengukuran
+  const obsGhiMean = chartData.length > 0
+    ? parseFloat((chartData.reduce((s, d) => s + d.obs, 0) / chartData.length).toFixed(2))
+    : (station.irradiation ?? 0);
+  const windDiff = windBaselineVal > 0 ? (((obsWindMean - windBaselineVal) / windBaselineVal) * 100).toFixed(1) : '0.0';
+  // Per-source deviations (menggunakan obsWindMean, bukan station.windSpeed)
   const windDiffGwa = (station.windBaselineGwa != null && station.windBaselineGwa > 0)
-    ? parseFloat((((station.windSpeed - station.windBaselineGwa) / station.windBaselineGwa) * 100).toFixed(1))
-    : null
-  const windDiffNasa = (station.windBaselineNasa != null && station.windBaselineNasa > 0)
-    ? parseFloat((((station.windSpeed - station.windBaselineNasa) / station.windBaselineNasa) * 100).toFixed(1))
+    ? parseFloat((((obsWindMean - station.windBaselineGwa) / station.windBaselineGwa) * 100).toFixed(1))
     : null;
+  const windDiffNasa = (station.windBaselineNasa != null && station.windBaselineNasa > 0)
+    ? parseFloat((((obsWindMean - station.windBaselineNasa) / station.windBaselineNasa) * 100).toFixed(1))
+    : null;
+  // Deviasi ERA5 berbasis baseline PERIODE (era5WindPeriodAvg) — lebih akurat untuk periode pendek
+  const windDiffEra5Period = (era5WindPeriodAvg != null && era5WindPeriodAvg > 0)
+    ? parseFloat((((obsWindMean - era5WindPeriodAvg) / era5WindPeriodAvg) * 100).toFixed(1))
+    : windDiffNasa;
   // hasWindObs: apakah ada data observasi angin yang valid (bukan 0 dari ketiadaan sensor)
   const hasWindObs = (station.aep ?? 0) > 0;
   // Jika tidak ada observasi angin, gunakan windAep (atlas GWA 3.0 estimate) sebagai fallback
@@ -357,15 +398,20 @@ function AnalisisContent() {
   // ─── Solar derived ─────────────────────────────────────────────────────────
   // GHI baseline dari atlas (ERA5/GSA) jika tersedia; fallback ke aproksimasi
   const ghiBaseline = parseFloat((station.ghiBaseline ?? (station.irradiation ?? 0) * 0.958).toFixed(2));
-  const ghiDiff = ghiBaseline > 0 ? parseFloat((((station.irradiation - ghiBaseline) / ghiBaseline) * 100).toFixed(1)) : 0;
+  const ghiDiff = ghiBaseline > 0 ? parseFloat((((obsGhiMean - ghiBaseline) / ghiBaseline) * 100).toFixed(1)) : 0;
   const ghiDiffGsa = (station.ghiBaselineGsa != null && station.ghiBaselineGsa > 0)
-    ? parseFloat((((station.irradiation - station.ghiBaselineGsa) / station.ghiBaselineGsa) * 100).toFixed(1))
+    ? parseFloat((((obsGhiMean - station.ghiBaselineGsa) / station.ghiBaselineGsa) * 100).toFixed(1))
     : null;
   const ghiDiffNasa = (station.ghiBaselineNasa != null && station.ghiBaselineNasa > 0)
-    ? parseFloat((((station.irradiation - station.ghiBaselineNasa) / station.ghiBaselineNasa) * 100).toFixed(1))
+    ? parseFloat((((obsGhiMean - station.ghiBaselineNasa) / station.ghiBaselineNasa) * 100).toFixed(1))
     : null;
+  // Deviasi ERA5 berbasis baseline PERIODE (era5GhiPeriodAvg)
+  const ghiDiffEra5Period = (era5GhiPeriodAvg != null && era5GhiPeriodAvg > 0)
+    ? parseFloat((((obsGhiMean - era5GhiPeriodAvg) / era5GhiPeriodAvg) * 100).toFixed(1))
+    : ghiDiffNasa;
   // Clearness Index: Kt = GHI_obs / GHI_extraterrestrial (≈ 8.5 kWh/m²/hari at 7°S lat)
-  const ktIndex = parseFloat(((station.irradiation ?? 0) / 8.5).toFixed(2));
+  // Gunakan obsGhiMean (rata-rata periode aktif) bukan station.irradiation (DB stale)
+  const ktIndex = parseFloat((obsGhiMean / 8.5).toFixed(2));
   const ktLabel = ktIndex >= 0.55 ? 'Cerah' : ktIndex >= 0.40 ? 'Campuran' : 'Berawan';
   const ktColor = ktIndex >= 0.55 ? 'text-amber-400' : ktIndex >= 0.40 ? 'text-blue-400' : 'text-slate-400';
   const ktBg = ktIndex >= 0.55 ? 'bg-amber-500/10 text-amber-400' : ktIndex >= 0.40 ? 'bg-blue-500/10 text-blue-400' : 'bg-slate-500/10 text-slate-400';
@@ -578,12 +624,6 @@ function AnalisisContent() {
     obs: d.obs,
     dev: parseFloat((d.obs - d.baseline).toFixed(3)),
   }));
-
-  // Kec. angin obs dihitung dari rata-rata chartData (nilai harian campaign)
-  // Tidak pakai station.windSpeed karena MQTT menimpa kolom itu setiap menit dengan pembacaan sesaat
-  const obsWindMean = isWind && chartData.length > 0
-    ? parseFloat((chartData.reduce((s, d) => s + d.obs, 0) / chartData.length).toFixed(2))
-    : (station.windSpeed ?? 0);
 
   const meteoHasData = [tempChartData, humChartData, presChartData, windDirChartData].some((d) => d.length > 0);
   function compassDir(deg: number): string {
@@ -846,7 +886,7 @@ function AnalisisContent() {
                   <span className="material-symbols-outlined text-amber-400 text-[20px]">wb_sunny</span>
                 </div>
                 <div className="flex items-baseline gap-2">
-                  <h3 className="text-2xl font-bold text-slate-900 dark:text-white">{(station.irradiation ?? 0).toFixed(1)}</h3>
+                  <h3 className="text-2xl font-bold text-slate-900 dark:text-white">{obsGhiMean.toFixed(2)}</h3>
                   <span className="text-sm text-slate-500 dark:text-slate-400">kWh/m²/hari</span>
                 </div>
                 <p className="text-[10px] text-slate-400 mt-1">GHI lapangan vs baseline GSA: <span className="text-amber-400 font-semibold">{ghiBaseline}</span></p>
@@ -1079,7 +1119,7 @@ function AnalisisContent() {
                 <div className="grid grid-cols-2 gap-3">
                   <div className="bg-gray-50 dark:bg-[#111a22] p-3 rounded-lg border border-gray-100 dark:border-gray-800">
                     <p className="text-[10px] uppercase text-slate-500 font-bold mb-1">Jangka Pendek (Obs)</p>
-                    <p className="text-base font-bold text-slate-900 dark:text-white">{station.windSpeed} m/s</p>
+                    <p className="text-base font-bold text-slate-900 dark:text-white">{obsWindMean.toFixed(2)} m/s</p>
                     <p className="text-[10px] text-slate-400 mt-0.5">Periode obs lapangan</p>
                   </div>
                   <div className="bg-primary/5 dark:bg-primary/10 p-3 rounded-lg border border-primary/20">
@@ -1147,7 +1187,7 @@ function AnalisisContent() {
                 <div className="grid grid-cols-2 gap-3">
                   <div className="bg-gray-50 dark:bg-[#111a22] p-3 rounded-lg border border-gray-100 dark:border-gray-800">
                     <p className="text-[10px] uppercase text-slate-500 font-bold mb-1">GHI Observasi</p>
-                    <p className="text-base font-bold text-slate-900 dark:text-white">{(station.irradiation ?? 0).toFixed(2)}</p>
+                    <p className="text-base font-bold text-slate-900 dark:text-white">{obsGhiMean.toFixed(2)}</p>
                     <p className="text-[10px] text-slate-400 mt-0.5">kWh/m²/hari (lapangan)</p>
                   </div>
                   <div className="bg-amber-500/5 dark:bg-amber-500/10 p-3 rounded-lg border border-amber-500/20">
@@ -1230,13 +1270,13 @@ function AnalisisContent() {
                         <div className="flex items-center gap-2">
                           <span className="w-2 h-2 rounded-full bg-primary shrink-0" />
                           <span className="font-semibold text-slate-900 dark:text-white">GWA 3.0</span>
-                          <span className="text-[10px] text-slate-400">GeoTIFF 250m · 100m hub</span>
+                          <span className="text-[10px] text-slate-400">GeoTIFF 250m · 100m hub · LTA</span>
                         </div>
                       </td>
                       <td className="px-4 py-3 text-right font-mono text-slate-700 dark:text-slate-300">
                         {station.windBaselineGwa != null ? `${station.windBaselineGwa} m/s` : <span className="text-slate-400">–</span>}
                       </td>
-                      <td className="px-4 py-3 text-right font-mono text-slate-700 dark:text-slate-300">{station.windSpeed} m/s</td>
+                      <td className="px-4 py-3 text-right font-mono text-slate-700 dark:text-slate-300">{obsWindMean.toFixed(2)} m/s</td>
                       <td className="px-4 py-3 text-right font-mono">
                         {windDiffGwa !== null
                           ? <span className={windDiffGwa >= 0 ? 'text-green-500 font-bold' : 'text-red-400 font-bold'}>{windDiffGwa >= 0 ? '+' : ''}{windDiffGwa}%</span>
@@ -1253,16 +1293,18 @@ function AnalisisContent() {
                         <div className="flex items-center gap-2">
                           <span className="w-2 h-2 rounded-full bg-slate-400 shrink-0" />
                           <span className="font-semibold text-slate-900 dark:text-white">ERA5 (ECMWF)</span>
-                          <span className="text-[10px] text-slate-400">Open-Meteo · 2014–2025</span>
+                          <span className="text-[10px] text-slate-400">{era5WindPeriodAvg != null ? (measurements.length > 0 ? 'ERA5 per-DOY · Rata-rata Periode' : 'ERA5 per-DOY · Rata-rata Tahunan') : 'Open-Meteo · 2014–2025 · LTA'}</span>
                         </div>
                       </td>
                       <td className="px-4 py-3 text-right font-mono text-slate-700 dark:text-slate-300">
-                        {station.windBaselineNasa != null ? `${station.windBaselineNasa} m/s` : <span className="text-slate-400">–</span>}
+                        {(era5WindPeriodAvg ?? station.windBaselineNasa) != null
+                          ? `${era5WindPeriodAvg ?? station.windBaselineNasa} m/s`
+                          : <span className="text-slate-400">–</span>}
                       </td>
-                      <td className="px-4 py-3 text-right font-mono text-slate-700 dark:text-slate-300">{station.windSpeed} m/s</td>
+                      <td className="px-4 py-3 text-right font-mono text-slate-700 dark:text-slate-300">{obsWindMean.toFixed(2)} m/s</td>
                       <td className="px-4 py-3 text-right font-mono">
-                        {windDiffNasa !== null
-                          ? <span className={windDiffNasa >= 0 ? 'text-green-500 font-bold' : 'text-red-400 font-bold'}>{windDiffNasa >= 0 ? '+' : ''}{windDiffNasa}%</span>
+                        {windDiffEra5Period !== null
+                          ? <span className={windDiffEra5Period >= 0 ? 'text-green-500 font-bold' : 'text-red-400 font-bold'}>{windDiffEra5Period >= 0 ? '+' : ''}{windDiffEra5Period}%</span>
                           : <span className="text-slate-400">–</span>}
                       </td>
                       <td className="px-4 py-3 text-center">
@@ -1283,13 +1325,13 @@ function AnalisisContent() {
                         <div className="flex items-center gap-2">
                           <span className="w-2 h-2 rounded-full bg-amber-400 shrink-0" />
                           <span className="font-semibold text-slate-900 dark:text-white">GSA (Solargis)</span>
-                          <span className="text-[10px] text-slate-400">REST API · resolusi 1km</span>
+                          <span className="text-[10px] text-slate-400">REST API · resolusi 1km · LTA</span>
                         </div>
                       </td>
                       <td className="px-4 py-3 text-right font-mono text-slate-700 dark:text-slate-300">
                         {station.ghiBaselineGsa != null ? `${station.ghiBaselineGsa} kWh/m²/hari` : <span className="text-slate-400">–</span>}
                       </td>
-                      <td className="px-4 py-3 text-right font-mono text-slate-700 dark:text-slate-300">{station.irradiation != null ? station.irradiation.toFixed(2) : '–'} kWh/m²/hari</td>
+                      <td className="px-4 py-3 text-right font-mono text-slate-700 dark:text-slate-300">{obsGhiMean.toFixed(2)} kWh/m²/hari</td>
                       <td className="px-4 py-3 text-right font-mono">
                         {ghiDiffGsa !== null
                           ? <span className={ghiDiffGsa >= 0 ? 'text-green-500 font-bold' : 'text-red-400 font-bold'}>{ghiDiffGsa >= 0 ? '+' : ''}{ghiDiffGsa}%</span>
@@ -1306,16 +1348,18 @@ function AnalisisContent() {
                         <div className="flex items-center gap-2">
                           <span className="w-2 h-2 rounded-full bg-slate-400 shrink-0" />
                           <span className="font-semibold text-slate-900 dark:text-white">ERA5 (ECMWF)</span>
-                          <span className="text-[10px] text-slate-400">Open-Meteo · 2014–2025</span>
+                          <span className="text-[10px] text-slate-400">{era5GhiPeriodAvg != null ? (measurements.length > 0 ? 'ERA5 per-DOY · Rata-rata Periode' : 'ERA5 per-DOY · Rata-rata Tahunan') : 'Open-Meteo · 2014–2025 · LTA'}</span>
                         </div>
                       </td>
                       <td className="px-4 py-3 text-right font-mono text-slate-700 dark:text-slate-300">
-                        {station.ghiBaselineNasa != null ? `${station.ghiBaselineNasa} kWh/m²/hari` : <span className="text-slate-400">–</span>}
+                        {(era5GhiPeriodAvg ?? station.ghiBaselineNasa) != null
+                          ? `${era5GhiPeriodAvg ?? station.ghiBaselineNasa} kWh/m²/hari`
+                          : <span className="text-slate-400">–</span>}
                       </td>
-                      <td className="px-4 py-3 text-right font-mono text-slate-700 dark:text-slate-300">{station.irradiation != null ? station.irradiation.toFixed(2) : '–'} kWh/m²/hari</td>
+                      <td className="px-4 py-3 text-right font-mono text-slate-700 dark:text-slate-300">{obsGhiMean.toFixed(2)} kWh/m²/hari</td>
                       <td className="px-4 py-3 text-right font-mono">
-                        {ghiDiffNasa !== null
-                          ? <span className={ghiDiffNasa >= 0 ? 'text-green-500 font-bold' : 'text-red-400 font-bold'}>{ghiDiffNasa >= 0 ? '+' : ''}{ghiDiffNasa}%</span>
+                        {ghiDiffEra5Period !== null
+                          ? <span className={ghiDiffEra5Period >= 0 ? 'text-green-500 font-bold' : 'text-red-400 font-bold'}>{ghiDiffEra5Period >= 0 ? '+' : ''}{ghiDiffEra5Period}%</span>
                           : <span className="text-slate-400">–</span>}
                       </td>
                       <td className="px-4 py-3 text-center">
