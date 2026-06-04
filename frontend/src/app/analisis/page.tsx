@@ -1,6 +1,6 @@
 'use client';
 
-import { Suspense, useState, useEffect, useRef } from 'react';
+import { Suspense, useState, useEffect, useRef, useMemo } from 'react';
 import { useSearchParams, useRouter } from 'next/navigation';
 import Link from 'next/link';
 import {
@@ -11,6 +11,7 @@ import Navbar from '@/components/Navbar';
 import Footer from '@/components/Footer';
 import { useStations } from '@/hooks/useStations';
 import { useMeasurements } from '@/hooks/useMeasurements';
+import type { Measurement } from '@/hooks/useMeasurements';
 import { apiFetch } from '@/lib/api';
 
 const mcpStatusLabel: Record<string, Record<string, string>> = {
@@ -28,6 +29,48 @@ const mcpIconColor: Record<string, string> = {
 const mcpIcon: Record<string, string> = {
   selesai: 'check_circle', berjalan: 'sync', pending: 'schedule',
 };
+
+// Fungsi murni — dideklarasikan di luar komponen agar tidak di-recreate tiap render
+function getDoy(isoDate: string): number {
+  const dateOnly = isoDate.slice(0, 10);
+  const d = new Date(dateOnly + 'T12:00:00');
+  const start = new Date(d.getFullYear(), 0, 0);
+  return Math.floor((d.getTime() - start.getTime()) / 86_400_000);
+}
+
+function makeMeteoChartData(
+  meas: Measurement[],
+  getValue: (m: Measurement) => number | null,
+  granularity: 'daily' | 'weekly' | 'monthly',
+) {
+  const groups = new Map<string, { label: string; values: number[] }>();
+  meas.forEach((m) => {
+    const v = getValue(m);
+    if (v === null) return;
+    const d = new Date(m.measured_at);
+    let key: string, label: string;
+    if (granularity === 'daily') {
+      key = d.toISOString().slice(0, 10);
+      label = d.toLocaleDateString('id-ID', { day: 'numeric', month: 'short' });
+    } else if (granularity === 'weekly') {
+      const w = new Date(d); w.setDate(d.getDate() - d.getDay());
+      key = w.toISOString().slice(0, 10);
+      label = w.toLocaleDateString('id-ID', { day: 'numeric', month: 'short' });
+    } else {
+      key = d.toISOString().slice(0, 7);
+      label = d.toLocaleDateString('id-ID', { month: 'short', year: '2-digit' });
+    }
+    if (!groups.has(key)) groups.set(key, { label, values: [] });
+    groups.get(key)!.values.push(v);
+  });
+  return [...groups.entries()]
+    .sort(([a], [b]) => a.localeCompare(b))
+    .filter(([, { values }]) => values.length > 0)
+    .map(([, { label, values }]) => ({
+      date: label,
+      obs: parseFloat((values.reduce((a, b) => a + b, 0) / values.length).toFixed(2)),
+    }));
+}
 
 function AnalisisContent() {
   const { stations, mutate } = useStations();
@@ -176,6 +219,95 @@ function AnalisisContent() {
 
   // ─── Hook: Measurements (harus dipanggil sebelum early return) ────────────
   const { measurements, isLoading: measLoading } = useMeasurements(station?.id ?? '', startDate, endDate);
+
+  // ─── Memoized computations (HARUS sebelum early return — Rules of Hooks) ──────
+  // Baseline dihitung inline dengan null-safe station access karena station bisa undefined di sini.
+  const hasDailyBaseline = dailyBaseline.size >= 300;
+
+  const dailyValues = useMemo(() => {
+    const _windBaseline = station?.windBaseline ?? (station?.windSpeed ?? 0) * 1.046;
+    const _ghiBaseline = parseFloat((station?.ghiBaseline ?? (station?.irradiation ?? 0) * 0.958).toFixed(2));
+    const _atlasBaseline = isWind ? _windBaseline : _ghiBaseline;
+    return measurements.map((m) => {
+      const obs = isWind ? parseFloat((m.wind_speed ?? 0).toString()) : 0;
+      let baseline = _atlasBaseline;
+      if (hasDailyBaseline) {
+        const doy = getDoy(m.measured_at);
+        const row = dailyBaseline.get(doy);
+        const doyVal = isWind ? row?.wind_era5 : row?.ghi_era5;
+        if (doyVal != null && doyVal > 0) baseline = doyVal;
+      }
+      return { obs, baseline };
+    });
+  }, [measurements, isWind, dailyBaseline, hasDailyBaseline, station?.windBaseline, station?.windSpeed, station?.ghiBaseline, station?.irradiation]);
+
+  const chartGranularity = useMemo(() => {
+    if (measurements.length < 2) return 'daily' as const;
+    const first = new Date(measurements[0].measured_at).getTime();
+    const last  = new Date(measurements[measurements.length - 1].measured_at).getTime();
+    const days  = (last - first) / 86_400_000;
+    return days <= 31 ? 'daily' as const : days <= 180 ? 'weekly' as const : 'monthly' as const;
+  }, [measurements]);
+  const chartGranularityLabel = chartGranularity === 'daily' ? 'Rata-rata Harian' : chartGranularity === 'weekly' ? 'Rata-rata Mingguan' : 'Rata-rata Bulanan';
+
+  const chartData = useMemo(() => {
+    const groups = new Map<string, { obs: number[]; rawGhi: number[]; baseline: number[]; label: string }>();
+    measurements.forEach((m, i) => {
+      const d = new Date(m.measured_at);
+      let groupKey: string;
+      let label: string;
+      if (chartGranularity === 'daily') {
+        groupKey = d.toISOString().slice(0, 10);
+        label = d.toLocaleDateString('id-ID', { day: 'numeric', month: 'short' });
+      } else if (chartGranularity === 'weekly') {
+        const weekStart = new Date(d);
+        weekStart.setDate(d.getDate() - d.getDay());
+        groupKey = weekStart.toISOString().slice(0, 10);
+        label = weekStart.toLocaleDateString('id-ID', { day: 'numeric', month: 'short' });
+      } else {
+        groupKey = d.toISOString().slice(0, 7);
+        label = d.toLocaleDateString('id-ID', { month: 'short', year: '2-digit' });
+      }
+      if (!groups.has(groupKey)) groups.set(groupKey, { obs: [], rawGhi: [], baseline: [], label });
+      const g = groups.get(groupKey)!;
+      g.obs.push(dailyValues[i].obs);
+      g.rawGhi.push(m.ghi ?? 0);
+      g.baseline.push(dailyValues[i].baseline);
+    });
+    return [...groups.values()].map(({ label, obs, rawGhi, baseline }) => ({
+      date: label,
+      obs: isWind
+        ? parseFloat((obs.reduce((a, b) => a + b, 0) / obs.length).toFixed(2))
+        : parseFloat((rawGhi.reduce((a, b) => a + b, 0) / 60000).toFixed(2)),
+      baseline: parseFloat((baseline.reduce((a, b) => a + b, 0) / baseline.length).toFixed(2)),
+    }));
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [measurements, dailyValues, isWind, chartGranularity]);
+
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  const [tempChartData, humChartData, presChartData, windDirChartData] = useMemo(() => [
+    makeMeteoChartData(measurements, (m) => m.temperature, chartGranularity),
+    makeMeteoChartData(measurements, (m) => m.humidity,    chartGranularity),
+    makeMeteoChartData(measurements, (m) => m.pressure,    chartGranularity),
+    makeMeteoChartData(measurements, (m) => m.wind_dir,    chartGranularity),
+  ], [measurements, chartGranularity]);
+
+  const { tempAvg, humAvg, presAvg, windDirAvg } = useMemo(() => {
+    const tv = measurements.map((m) => m.temperature).filter((v): v is number => v !== null);
+    const hv = measurements.map((m) => m.humidity).filter((v): v is number => v !== null);
+    const pv = measurements.map((m) => m.pressure).filter((v): v is number => v !== null);
+    const wv = measurements.map((m) => m.wind_dir).filter((v): v is number => v !== null);
+    return {
+      tempAvg:    tv.length > 0 ? tv.reduce((a, b) => a + b, 0) / tv.length : null,
+      humAvg:     hv.length > 0 ? hv.reduce((a, b) => a + b, 0) / hv.length : null,
+      presAvg:    pv.length > 0 ? pv.reduce((a, b) => a + b, 0) / pv.length : null,
+      windDirAvg: wv.length > 0 ? wv.reduce((a, b) => a + b, 0) / wv.length : null,
+    };
+  }, [measurements]);
+
+  const availPct = useMemo(() => measurements.length > 0
+    ? Math.round(measurements.filter((m) => (isWind ? m.wind_speed : m.ghi) !== null).length / measurements.length * 100)
+    : null, [measurements, isWind]);
 
   // Jika belum ada stasiun di DB, tampilkan empty state
   if (!station) {
@@ -439,84 +571,6 @@ function AnalisisContent() {
     }
   }
 
-  // Per-day values — gunakan daily climatology ERA5 per DOY jika tersedia,
-  // fallback ke LTA konstan atlas (ERA5/ECMWF) jika belum ada.
-  const atlasBaseline = isWind ? windBaselineVal : ghiBaseline;
-  const hasDailyBaseline = dailyBaseline.size >= 300;
-
-  // Helper: hitung DOY (1–366) dari ISO date string (date-only atau full ISO timestamp)
-  function getDoy(isoDate: string): number {
-    const dateOnly = isoDate.slice(0, 10); // ambil "YYYY-MM-DD" dari format apapun
-    const d = new Date(dateOnly + 'T12:00:00');  // tengah hari untuk hindari DST edge
-    const start = new Date(d.getFullYear(), 0, 0);
-    const diff = d.getTime() - start.getTime();
-    return Math.floor(diff / 86_400_000);
-  }
-
-  const dailyValues = measurements.map((m) => {
-    // obs hanya dipakai untuk: (1) wind chart (avg per hari), (2) wind scatter (per menit)
-    // Solar chart dan scatter tidak menggunakan dailyValues.obs — keduanya pakai chartData (SUM/60000)
-    const obs = isWind
-      ? parseFloat((m.wind_speed ?? 0).toString())
-      : 0; // solar obs tidak dipakai dari sini — placeholder saja
-    // Gunakan DOY-matched baseline jika tersedia
-    let baseline = atlasBaseline;
-    if (hasDailyBaseline) {
-      const doy = getDoy(m.measured_at);
-      const row = dailyBaseline.get(doy);
-      const doyVal = isWind ? row?.wind_era5 : row?.ghi_era5;
-      if (doyVal != null && doyVal > 0) baseline = doyVal;
-    }
-    return { obs, baseline };
-  });
-
-  // Granularitas adaptif: harian (≤31 hari), mingguan (≤180 hari), bulanan (>180 hari)
-  // Untuk kampanye 10 hari → setiap hari tampil sebagai 1 titik di grafik
-  const chartGranularity = (() => {
-    if (measurements.length < 2) return 'daily' as const;
-    const first = new Date(measurements[0].measured_at).getTime();
-    const last  = new Date(measurements[measurements.length - 1].measured_at).getTime();
-    const days  = (last - first) / 86_400_000;
-    return days <= 31 ? 'daily' as const : days <= 180 ? 'weekly' as const : 'monthly' as const;
-  })();
-  const chartGranularityLabel = chartGranularity === 'daily' ? 'Rata-rata Harian' : chartGranularity === 'weekly' ? 'Rata-rata Mingguan' : 'Rata-rata Bulanan';
-
-  const chartData = (() => {
-    const groups = new Map<string, { obs: number[]; rawGhi: number[]; baseline: number[]; label: string }>();
-    measurements.forEach((m, i) => {
-      const d = new Date(m.measured_at);
-      let groupKey: string;
-      let label: string;
-      if (chartGranularity === 'daily') {
-        groupKey = d.toISOString().slice(0, 10); // YYYY-MM-DD
-        label = d.toLocaleDateString('id-ID', { day: 'numeric', month: 'short' });
-      } else if (chartGranularity === 'weekly') {
-        const weekStart = new Date(d);
-        weekStart.setDate(d.getDate() - d.getDay()); // Minggu sebagai awal pekan
-        groupKey = weekStart.toISOString().slice(0, 10);
-        label = weekStart.toLocaleDateString('id-ID', { day: 'numeric', month: 'short' });
-      } else {
-        groupKey = d.toISOString().slice(0, 7); // YYYY-MM
-        label = d.toLocaleDateString('id-ID', { month: 'short', year: '2-digit' });
-      }
-      if (!groups.has(groupKey)) groups.set(groupKey, { obs: [], rawGhi: [], baseline: [], label });
-      const g = groups.get(groupKey)!;
-      g.obs.push(dailyValues[i].obs);
-      g.rawGhi.push(m.ghi ?? 0);
-      g.baseline.push(dailyValues[i].baseline);
-    });
-    // Map mempertahankan urutan insertion; measurements sudah diurutkan ASC dari backend
-    // Surya: GHI harian (kWh/m²/hari) = SUM(GHI_i W/m²) / 60_000 (interval 1 menit)
-    // Angin: rata-rata kecepatan angin (m/s)
-    return [...groups.values()].map(({ label, obs, rawGhi, baseline }) => ({
-      date: label,
-      obs: isWind
-        ? parseFloat((obs.reduce((a, b) => a + b, 0) / obs.length).toFixed(2))
-        : parseFloat((rawGhi.reduce((a, b) => a + b, 0) / 60000).toFixed(2)),
-      baseline: parseFloat((baseline.reduce((a, b) => a + b, 0) / baseline.length).toFixed(2)),
-    }));
-  })();
-
   // Scatter: 1 titik per hari untuk kedua tipe energi — dari chartData (nilai teragregasi harian)
   // Angin: rata-rata harian m/s vs DOY baseline → ~9 titik/10-hari
   // Surya: kWh/m²/hari (SUM/60000) vs DOY baseline → ~9 titik/10-hari
@@ -532,54 +586,7 @@ function AnalisisContent() {
     ? parseFloat((chartData.reduce((s, d) => s + d.obs, 0) / chartData.length).toFixed(2))
     : (station.windSpeed ?? 0);
 
-  // ─── Meteorological chart data (temperature, humidity, pressure, wind_dir) ─────
-  function makeMeteoChartData(
-    meas: typeof measurements,
-    getValue: (m: typeof measurements[number]) => number | null,
-    granularity: 'daily' | 'weekly' | 'monthly',
-  ) {
-    const groups = new Map<string, { label: string; values: number[] }>();
-    meas.forEach((m) => {
-      const v = getValue(m);
-      if (v === null) return;
-      const d = new Date(m.measured_at);
-      let key: string, label: string;
-      if (granularity === 'daily') {
-        key = d.toISOString().slice(0, 10);
-        label = d.toLocaleDateString('id-ID', { day: 'numeric', month: 'short' });
-      } else if (granularity === 'weekly') {
-        const w = new Date(d); w.setDate(d.getDate() - d.getDay());
-        key = w.toISOString().slice(0, 10);
-        label = w.toLocaleDateString('id-ID', { day: 'numeric', month: 'short' });
-      } else {
-        key = d.toISOString().slice(0, 7);
-        label = d.toLocaleDateString('id-ID', { month: 'short', year: '2-digit' });
-      }
-      if (!groups.has(key)) groups.set(key, { label, values: [] });
-      groups.get(key)!.values.push(v);
-    });
-    return [...groups.entries()]
-      .sort(([a], [b]) => a.localeCompare(b))
-      .filter(([, { values }]) => values.length > 0)
-      .map(([, { label, values }]) => ({
-        date: label,
-        obs: parseFloat((values.reduce((a, b) => a + b, 0) / values.length).toFixed(2)),
-      }));
-  }
-  const tempChartData    = makeMeteoChartData(measurements, (m) => m.temperature, chartGranularity);
-  const humChartData     = makeMeteoChartData(measurements, (m) => m.humidity,    chartGranularity);
-  const presChartData    = makeMeteoChartData(measurements, (m) => m.pressure,    chartGranularity);
-  const windDirChartData = makeMeteoChartData(measurements, (m) => m.wind_dir,    chartGranularity);
   const meteoHasData = [tempChartData, humChartData, presChartData, windDirChartData].some((d) => d.length > 0);
-
-  const tempValues    = measurements.map((m) => m.temperature).filter((v): v is number => v !== null);
-  const humValues     = measurements.map((m) => m.humidity).filter((v): v is number => v !== null);
-  const presValues    = measurements.map((m) => m.pressure).filter((v): v is number => v !== null);
-  const windDirValues = measurements.map((m) => m.wind_dir).filter((v): v is number => v !== null);
-  const tempAvg    = tempValues.length    > 0 ? tempValues.reduce((a, b) => a + b, 0)    / tempValues.length    : null;
-  const humAvg     = humValues.length     > 0 ? humValues.reduce((a, b) => a + b, 0)     / humValues.length     : null;
-  const presAvg    = presValues.length    > 0 ? presValues.reduce((a, b) => a + b, 0)    / presValues.length    : null;
-  const windDirAvg = windDirValues.length > 0 ? windDirValues.reduce((a, b) => a + b, 0) / windDirValues.length : null;
   function compassDir(deg: number): string {
     return ['U', 'TL', 'T', 'TG', 'S', 'BD', 'B', 'BL'][Math.round(deg / 45) % 8];
   }
@@ -590,9 +597,6 @@ function AnalisisContent() {
     : null;
 
   // ─── Availability from actual measurements ──────────────────────────────────────
-  const availPct = measurements.length > 0
-    ? Math.round(measurements.filter((m) => (isWind ? m.wind_speed : m.ghi) !== null).length / measurements.length * 100)
-    : null;
   const availDisplay = availPct !== null ? `${availPct}%` : '–';
 
   // ─── Data duration — used for validity warning when observasi period is too short ────
