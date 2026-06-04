@@ -454,9 +454,11 @@ function AnalisisContent() {
   }
 
   const dailyValues = measurements.map((m) => {
+    // obs hanya dipakai untuk: (1) wind chart (avg per hari), (2) wind scatter (per menit)
+    // Solar chart dan scatter tidak menggunakan dailyValues.obs — keduanya pakai chartData (SUM/60000)
     const obs = isWind
       ? parseFloat((m.wind_speed ?? 0).toString())
-      : parseFloat(((m.ghi ?? 0) * 24 / 1000).toFixed(2));
+      : 0; // solar obs tidak dipakai dari sini — placeholder saja
     // Gunakan DOY-matched baseline jika tersedia
     let baseline = atlasBaseline;
     if (hasDailyBaseline) {
@@ -517,11 +519,23 @@ function AnalisisContent() {
 
   // Scatter: obs (X) vs deviasi dari baseline (Y) — DOY-matched jika tersedia
   // Y > 0 = obs di atas baseline; Y < 0 = obs di bawah baseline; Y = 0 = cocok sempurna
-  const scatterDataAll = dailyValues.map((d) => ({
-    obs: d.obs,
-    dev: parseFloat((d.obs - d.baseline).toFixed(3)),
-  }));
-  // Downsample ke maks 400 titik — render 14.400 SVG dot sangat berat untuk browser
+  //
+  // Angin: per-menit wind_speed (m/s) vs baseline (m/s) — unit sama, langsung bisa dibanding
+  // Surya: HARUS pakai nilai harian (kWh/m²/hari) dari chartData, bukan per-menit * 24/1000.
+  //   Formula (m.ghi * 24/1000) per menit salah: GHI tengah hari 800 W/m² → 800*24/1000 = 19.2
+  //   seolah 1 menit = seluruh hari. Scatter akan menampilkan X sampai 36 kWh/m² yang tidak valid.
+  //   chartData sudah menggunakan SUM(rawGhi)/60000 per hari → nilai fisik yang benar (0–8 kWh/m²/hari).
+  const scatterDataAll = isWind
+    ? dailyValues.map((d) => ({
+        obs: d.obs,
+        dev: parseFloat((d.obs - d.baseline).toFixed(3)),
+      }))
+    : chartData.map((d) => ({
+        obs: d.obs,
+        dev: parseFloat((d.obs - d.baseline).toFixed(3)),
+      }));
+  // Angin: downsample ke maks 400 titik (per-menit = 14.400 titik/10hari, berat untuk browser SVG)
+  // Surya: sudah per-hari (≤365 titik), tidak perlu downsample
   const scatterStep = scatterDataAll.length > 400 ? Math.ceil(scatterDataAll.length / 400) : 1;
   const scatterData = scatterStep === 1 ? scatterDataAll : scatterDataAll.filter((_, i) => i % scatterStep === 0);
 
