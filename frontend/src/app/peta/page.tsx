@@ -65,7 +65,7 @@ function StationPanel({
   }, [onClose]);
 
   // Fetch latest measurement for this station (7-day window, lightweight)
-  const sevenDaysAgo = new Date(Date.now() - 7 * 86400000).toISOString().slice(0, 10);
+  const [sevenDaysAgo] = useState(() => new Date(Date.now() - 7 * 86400000).toISOString().slice(0, 10));
   const { measurements: recentMeasurements } = useMeasurements(station.id, sevenDaysAgo);
   const latestMeasurement = recentMeasurements.length > 0 ? recentMeasurements[recentMeasurements.length - 1] : null;
   const hasMeteoData = latestMeasurement !== null && (
@@ -165,7 +165,7 @@ function StationPanel({
                   {[
                     { k: 'RMSE', v: station.windRmse != null ? station.windRmse.toFixed(2) : '–' },
                   { k: 'Bias', v: station.windBias != null ? `${station.windBias > 0 ? '+' : ''}${station.windBias.toFixed(1)}%` : '\u2013' },
-                    { k: 'R\u00b2', v: station.windR2 != null ? station.windR2.toFixed(2) : '\u2013' },
+                    { k: 'Skor', v: station.windR2 != null ? station.windR2.toFixed(2) : '\u2013' },
                   ].map((m) => (
                     <div key={m.k} className="bg-slate-50 dark:bg-[#111a22] p-2.5 rounded-lg border border-slate-200 dark:border-[#233648] text-center">
                       <p className="text-[10px] text-slate-400 dark:text-text-secondary mb-0.5">{m.k}</p>
@@ -185,7 +185,7 @@ function StationPanel({
                   {[
                     { k: 'RMSE', v: station.solarRmse != null ? station.solarRmse.toFixed(2) : '–' },
                   { k: 'Bias', v: station.solarBias != null ? `${station.solarBias > 0 ? '+' : ''}${station.solarBias.toFixed(1)}%` : '\u2013' },
-                    { k: 'R\u00b2', v: station.solarR2 != null ? station.solarR2.toFixed(2) : '\u2013' },
+                    { k: 'Skor', v: station.solarR2 != null ? station.solarR2.toFixed(2) : '\u2013' },
                   ].map((m) => (
                     <div key={m.k} className="bg-slate-50 dark:bg-[#111a22] p-2.5 rounded-lg border border-slate-200 dark:border-[#233648] text-center">
                       <p className="text-[10px] text-slate-400 dark:text-text-secondary mb-0.5">{m.k}</p>
@@ -247,13 +247,13 @@ function StationPanel({
           <section>
             <h3 className="text-[13px] font-bold text-slate-900 dark:text-white mb-2 flex items-center gap-1.5">
               <span className="material-symbols-outlined text-cyan-400 text-[17px]">public</span>
-              Baseline Atlas
+              Baseline Atlas LTA
             </h3>
             <div className="bg-slate-50 dark:bg-[#111a22] rounded-lg border border-slate-200 dark:border-[#233648] divide-y divide-slate-100 dark:divide-[#1e2d3d] text-[12px]">
               {station.windBaselineGwa != null && (
                 <div className="flex justify-between items-center px-3 py-2">
                   <span className="text-slate-500 dark:text-text-secondary flex items-center gap-1">
-                    <span className="material-symbols-outlined text-[13px] text-blue-400">air</span> GWA 3.0
+                    <span className="material-symbols-outlined text-[13px] text-blue-400">air</span> GWA 3.0 LTA
                   </span>
                   <span className="font-semibold text-slate-800 dark:text-slate-200">{station.windBaselineGwa} m/s</span>
                 </div>
@@ -261,7 +261,7 @@ function StationPanel({
               {station.windBaselineNasa != null && (
                 <div className="flex justify-between items-center px-3 py-2">
                   <span className="text-slate-500 dark:text-text-secondary flex items-center gap-1">
-                    <span className="material-symbols-outlined text-[13px] text-blue-400">air</span> ERA5 (ECMWF)
+                    <span className="material-symbols-outlined text-[13px] text-blue-400">air</span> ERA5 LTA (ECMWF)
                   </span>
                   <span className="font-semibold text-slate-800 dark:text-slate-200">{station.windBaselineNasa} m/s</span>
                 </div>
@@ -269,7 +269,7 @@ function StationPanel({
               {station.ghiBaselineGsa != null && (
                 <div className="flex justify-between items-center px-3 py-2">
                   <span className="text-slate-500 dark:text-text-secondary flex items-center gap-1">
-                    <span className="material-symbols-outlined text-[13px] text-yellow-400">wb_sunny</span> GSA
+                    <span className="material-symbols-outlined text-[13px] text-yellow-400">wb_sunny</span> GSA LTA
                   </span>
                   <span className="font-semibold text-slate-800 dark:text-slate-200">{station.ghiBaselineGsa} kWh/m²/hari</span>
                 </div>
@@ -277,7 +277,7 @@ function StationPanel({
               {station.ghiBaselineNasa != null && (
                 <div className="flex justify-between items-center px-3 py-2">
                   <span className="text-slate-500 dark:text-text-secondary flex items-center gap-1">
-                    <span className="material-symbols-outlined text-[13px] text-yellow-400">wb_sunny</span> ERA5 (ECMWF)
+                    <span className="material-symbols-outlined text-[13px] text-yellow-400">wb_sunny</span> ERA5 LTA (ECMWF)
                   </span>
                   <span className="font-semibold text-slate-800 dark:text-slate-200">{station.ghiBaselineNasa} kWh/m²/hari</span>
                 </div>
@@ -393,7 +393,7 @@ function AnalisisModal({ onClose, stations }: { onClose: () => void; stations: S
           {!done ? (
             <>
               <p className="text-[13px] text-slate-500 dark:text-text-secondary">
-                Peringkat lokasi berdasarkan skor kesesuaian yang dihitung dari data validasi lapangan: kecepatan angin, iradiasi surya, RMSE, R², Bias, dan ketinggian stasiun.
+                Peringkat lokasi berdasarkan skor kesesuaian yang dihitung dari data validasi lapangan: kecepatan angin, iradiasi surya, RMSE, skor baseline, bias, dan ketinggian stasiun.
               </p>
               <div className="grid grid-cols-2 gap-3 text-[12px]">
                 {[
@@ -521,6 +521,7 @@ export default function PetaPage() {
   // Clear selected station if it is no longer in the filtered list
   useEffect(() => {
     if (selectedStation && !filteredStations.some((s) => s.id === selectedStation.id)) {
+      // eslint-disable-next-line react-hooks/set-state-in-effect
       setSelectedStation(null);
     }
   }, [filteredStations, selectedStation]);
@@ -530,6 +531,7 @@ export default function PetaPage() {
     if (activeLayer === 'none') return;
     const type = activeLayer;
     if (heatmapLoadedRef.current.has(type)) return;
+    // eslint-disable-next-line react-hooks/set-state-in-effect
     setHeatmapLoading(true);
     fetchHeatmapData(type)
       .then((data) => {
@@ -540,7 +542,7 @@ export default function PetaPage() {
       })
       .catch((err) => console.error('Heatmap fetch error:', err))
       .finally(() => setHeatmapLoading(false));
-    // eslint-disable-next-line react-hooks/exhaustive-deps
+
   }, [activeLayer]);
 
   return (
@@ -644,7 +646,7 @@ export default function PetaPage() {
                         Kecepatan Angin (Heatmap)
                         {heatmapLoading && activeLayer === 'wind' && <span className="material-symbols-outlined text-[13px] animate-spin text-primary">progress_activity</span>}
                       </p>
-                      <p className="text-slate-400 text-[11px]">{heatmapMeta.wind ? heatmapMeta.wind.source : 'GWA 3.0 / ERA5 · m/s'}</p>
+                      <p className="text-slate-400 text-[11px]">{heatmapMeta.wind ? heatmapMeta.wind.source : 'GWA 3.0 / ERA5 LTA · m/s'}</p>
                     </div>
                   </label>
                   {/* Iradiasi Surya */}
@@ -655,7 +657,7 @@ export default function PetaPage() {
                         Iradiasi Surya (Heatmap)
                         {heatmapLoading && activeLayer === 'solar' && <span className="material-symbols-outlined text-[13px] animate-spin text-primary">progress_activity</span>}
                       </p>
-                      <p className="text-slate-400 text-[11px]">{heatmapMeta.solar ? heatmapMeta.solar.source : 'GSA / ERA5 · kWh/m²/hari'}</p>
+                      <p className="text-slate-400 text-[11px]">{heatmapMeta.solar ? heatmapMeta.solar.source : 'GSA / ERA5 LTA · kWh/m²/hari'}</p>
                     </div>
                   </label>
                   {/* Prioritas GIS-MCDA */}
@@ -748,7 +750,9 @@ export default function PetaPage() {
                 onClick={() => {
                   // eslint-disable-next-line @typescript-eslint/no-explicit-any
                   const w = window as any;
-                  if (w.__leafletMap) btn.action === 'zoomin' ? w.__leafletMap.zoomIn() : w.__leafletMap.zoomOut();
+                  if (!w.__leafletMap) return;
+                  if (btn.action === 'zoomin') w.__leafletMap.zoomIn();
+                  else w.__leafletMap.zoomOut();
                 }}
                 className="bg-white dark:bg-[#192633] text-slate-700 dark:text-white p-2.5 rounded-lg shadow-lg hover:bg-slate-50 dark:hover:bg-[#233648] border border-slate-200 dark:border-[#233648] transition-colors"
                 title={btn.title}>
@@ -856,4 +860,3 @@ export default function PetaPage() {
     </div>
   );
 }
-

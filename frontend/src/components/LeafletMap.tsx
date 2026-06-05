@@ -2,7 +2,7 @@
 
 import { useEffect, useRef, useState } from 'react';
 import type { Station } from '@/lib/stationData';
-import { fetchGisMcda, type GisMcdaData } from '@/lib/api';
+import { fetchAtlasSample, fetchGisMcda, type AtlasSampleData, type GisMcdaData } from '@/lib/api';
 
 interface Props {
   stations: Station[];
@@ -39,6 +39,8 @@ export default function LeafletMap({
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const heatLayerRef = useRef<any>(null);
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const samplePopupRef = useRef<any>(null);
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const mcdaLayerRef = useRef<any>(null);
   // Ref to track current selectedStation inside marker click closures (avoids stale state)
   const selectedStationRef = useRef(selectedStation);
@@ -46,22 +48,68 @@ export default function LeafletMap({
   // GIS-MCDA data cache: station_id → fetched data
   const [mcdaCache, setMcdaCache] = useState<Record<string, GisMcdaData>>({});
 
+  const escapeHtml = (value: string) =>
+    value
+      .replace(/&/g, '&amp;')
+      .replace(/</g, '&lt;')
+      .replace(/>/g, '&gt;')
+      .replace(/"/g, '&quot;')
+      .replace(/'/g, '&#039;');
+
+  const renderSamplePopup = (
+    layer: 'wind' | 'solar',
+    lat: number,
+    lon: number,
+    sample?: AtlasSampleData,
+    error?: string,
+  ) => {
+    const isWind = layer === 'wind';
+    const color = isWind ? '#60a5fa' : '#fbbf24';
+    const icon = isWind ? 'air' : 'wb_sunny';
+    const title = isWind ? 'Kecepatan Angin Atlas' : 'Iradiasi Surya Atlas';
+    const value = error
+      ? 'Tidak tersedia'
+      : sample
+        ? sample.value == null
+          ? 'Tidak tersedia'
+          : `${sample.value.toFixed(2)} ${escapeHtml(sample.unit)}`
+        : 'Memuat...';
+    const source = error ? error : sample ? sample.source : 'Mengambil nilai atlas...';
+
+    return `
+      <div class="atlas-pop">
+        <div class="atlas-pop-head">
+          <span class="material-symbols-outlined atlas-pop-icon" style="color:${color}">${icon}</span>
+          <span>${title}</span>
+        </div>
+        <div class="atlas-pop-value" style="color:${color}">${value}</div>
+        <div class="atlas-pop-grid">
+          <span>Koordinat</span>
+          <strong>${lat.toFixed(4)}, ${lon.toFixed(4)}</strong>
+        </div>
+        <div class="atlas-pop-source">${escapeHtml(source)}</div>
+        <div class="atlas-pop-note">Baseline LTA atlas untuk screening lokasi.</div>
+      </div>
+    `;
+  };
+
   // ── Initialize map ──────────────────────────────────────────────────────────
   useEffect(() => {
-    if (!mapRef.current || mapInstanceRef.current) return;
+    const mapEl = mapRef.current;
+    if (!mapEl || mapInstanceRef.current) return;
     let cancelled = false;
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    if ((mapRef.current as any)._leaflet_id) delete (mapRef.current as any)._leaflet_id;
+    if ((mapEl as any)._leaflet_id) delete (mapEl as any)._leaflet_id;
 
     import('leaflet').then((L) => {
-      if (cancelled || !mapRef.current || mapInstanceRef.current) return;
+      if (cancelled || mapInstanceRef.current) return;
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      if ((mapRef.current as any)._leaflet_id) delete (mapRef.current as any)._leaflet_id;
+      if ((mapEl as any)._leaflet_id) delete (mapEl as any)._leaflet_id;
 
       // @ts-expect-error leaflet internal
       delete L.Icon.Default.prototype._getIconUrl;
 
-      const map = L.map(mapRef.current, {
+      const map = L.map(mapEl, {
         center: [-7.0, 107.8], zoom: 9, zoomControl: false, attributionControl: true,
       });
 
@@ -84,11 +132,11 @@ export default function LeafletMap({
         mapInstanceRef.current = null;
         baseTileRef.current = null;
         // eslint-disable-next-line @typescript-eslint/no-explicit-any
-        if (mapRef.current) delete (mapRef.current as any)._leaflet_id;
+        delete (mapEl as any)._leaflet_id;
         setMapReady(false);
       }
     };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
+
   }, []);
 
   // ── Basemap toggle OSM / Satellite ──────────────────────────────────────────
@@ -111,7 +159,7 @@ export default function LeafletMap({
       tile.addTo(map);
       baseTileRef.current = tile;
     });
-    // eslint-disable-next-line react-hooks/exhaustive-deps
+
   }, [mapReady, showSatellite]);
 
   useEffect(() => { selectedStationRef.current = selectedStation; }, [selectedStation]);
@@ -140,7 +188,7 @@ export default function LeafletMap({
           iconSize: [28, 28], iconAnchor: [14, 14],
         });
 
-        const marker = L.marker([station.lat, station.lon], { icon })
+        const marker = L.marker([station.lat, station.lon], { icon, bubblingMouseEvents: false })
           .addTo(mapInstanceRef.current)
           .on('click', () => onSelectStation(selectedStationRef.current?.id === station.id ? null : station));
 
@@ -161,6 +209,68 @@ export default function LeafletMap({
     // Zoom IN to at least level 10; don't zoom out if already closer
     mapInstanceRef.current.flyTo([selectedStation.lat, selectedStation.lon], Math.max(z, 10), { duration: 0.8 });
   }, [mapReady, selectedStation]);
+
+  useEffect(() => {
+    if (!mapReady || !mapInstanceRef.current) return;
+
+    const map = mapInstanceRef.current;
+    if (samplePopupRef.current) {
+      samplePopupRef.current.remove();
+      samplePopupRef.current = null;
+    }
+    if (activeLayer === 'none') return;
+
+    let cancelled = false;
+    let cleanup: (() => void) | undefined;
+    let requestId = 0;
+
+    import('leaflet').then((L) => {
+      if (cancelled || !mapInstanceRef.current) return;
+
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const handleClick = (e: any) => {
+        const lat = Number(e.latlng.lat);
+        const lon = Number(e.latlng.lng);
+        if (lat < -8.1 || lat > -5.9 || lon < 106.4 || lon > 109.5) return;
+
+        const currentRequest = ++requestId;
+        const popup = L.popup({
+          className: 'atlas-sample-popup',
+          closeButton: true,
+          maxWidth: 260,
+          autoPan: true,
+        })
+          .setLatLng(e.latlng)
+          .setContent(renderSamplePopup(activeLayer, lat, lon))
+          .openOn(map);
+
+        samplePopupRef.current = popup;
+
+        fetchAtlasSample(activeLayer, lat, lon)
+          .then((sample) => {
+            if (cancelled || currentRequest !== requestId) return;
+            popup.setContent(renderSamplePopup(activeLayer, lat, lon, sample));
+          })
+          .catch(() => {
+            if (cancelled || currentRequest !== requestId) return;
+            popup.setContent(renderSamplePopup(activeLayer, lat, lon, undefined, 'Nilai atlas tidak dapat diambil.'));
+          });
+      };
+
+      map.on('click', handleClick);
+      cleanup = () => map.off('click', handleClick);
+    });
+
+    return () => {
+      cancelled = true;
+      cleanup?.();
+      if (samplePopupRef.current) {
+        samplePopupRef.current.remove();
+        samplePopupRef.current = null;
+      }
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [mapReady, activeLayer]);
 
   // ── Wind / Solar heatmap (canvas imageOverlay — smooth bilinear gradient) ──
   useEffect(() => {
@@ -307,7 +417,7 @@ export default function LeafletMap({
           heatLayerRef.current = overlay;
         });
     });
-    // eslint-disable-next-line react-hooks/exhaustive-deps
+
   }, [mapReady, activeLayer, windPoints, solarPoints]);
 
   // ── Fetch GIS-MCDA data when layer is enabled ──────────────────────────────
@@ -399,7 +509,7 @@ export default function LeafletMap({
       grp.addTo(mapInstanceRef.current);
       mcdaLayerRef.current = grp;
     });
-    // eslint-disable-next-line react-hooks/exhaustive-deps
+
   }, [mapReady, showMCDA, stations, mcdaCache]);
 
   return (
@@ -423,6 +533,73 @@ export default function LeafletMap({
           box-shadow: 0 2px 8px rgba(0,0,0,0.4);
         }
         .lf-tt-name { font-weight: 600; color: #e2eaf0; }
+        .atlas-sample-popup .leaflet-popup-content-wrapper {
+          background: rgba(17,26,34,0.96);
+          border: 1px solid rgba(50,77,103,0.9);
+          border-radius: 10px;
+          box-shadow: 0 18px 40px rgba(0,0,0,0.35);
+        }
+        .atlas-sample-popup .leaflet-popup-content {
+          margin: 0;
+          min-width: 220px;
+        }
+        .atlas-sample-popup .leaflet-popup-tip {
+          background: rgba(17,26,34,0.96);
+          border: 1px solid rgba(50,77,103,0.9);
+        }
+        .atlas-sample-popup .leaflet-popup-close-button {
+          color: #94a3b8 !important;
+          padding: 8px 8px 0 0 !important;
+        }
+        .atlas-pop {
+          padding: 12px 13px;
+          color: #cbd5e1;
+          font-size: 12px;
+          line-height: 1.45;
+        }
+        .atlas-pop-head {
+          display: flex;
+          align-items: center;
+          gap: 7px;
+          color: #f8fafc;
+          font-size: 12px;
+          font-weight: 800;
+          padding-right: 18px;
+        }
+        .atlas-pop-icon {
+          font-size: 17px;
+          line-height: 1;
+        }
+        .atlas-pop-value {
+          font-size: 24px;
+          font-weight: 900;
+          margin-top: 7px;
+        }
+        .atlas-pop-grid {
+          display: flex;
+          justify-content: space-between;
+          gap: 12px;
+          margin-top: 8px;
+          padding-top: 8px;
+          border-top: 1px solid rgba(148,163,184,0.16);
+          color: #94a3b8;
+        }
+        .atlas-pop-grid strong {
+          color: #e2e8f0;
+          font-family: monospace;
+          font-size: 11px;
+        }
+        .atlas-pop-source {
+          margin-top: 7px;
+          color: #93c5fd;
+          font-size: 11px;
+          font-weight: 650;
+        }
+        .atlas-pop-note {
+          margin-top: 3px;
+          color: #64748b;
+          font-size: 10px;
+        }
       `}</style>
       <div ref={mapRef} className="absolute inset-0 w-full h-full bg-[#e8e0d8] dark:bg-background-dark" style={{ zIndex: 0 }} />
     </>

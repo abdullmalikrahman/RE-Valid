@@ -197,6 +197,31 @@ export async function fetchHeatmapData(type: 'wind' | 'solar'): Promise<HeatmapD
   return res.json();
 }
 
+export interface AtlasSampleData {
+  type: 'wind' | 'solar';
+  lat: number;
+  lon: number;
+  value: number | null;
+  unit: string;
+  source: string;
+  method: string;
+}
+
+export async function fetchAtlasSample(
+  type: 'wind' | 'solar',
+  lat: number,
+  lon: number,
+): Promise<AtlasSampleData> {
+  const params = new URLSearchParams({
+    type,
+    lat: lat.toFixed(6),
+    lon: lon.toFixed(6),
+  });
+  const res = await apiFetch(`${API_BASE}/atlas/sample?${params.toString()}`);
+  if (!res.ok) throw new Error(`Atlas sample API error: ${res.status}`);
+  return res.json();
+}
+
 export interface GisMcdaFactor {
   label: string;
   pct: number;

@@ -2,6 +2,7 @@
 Endpoint heatmap atlas untuk halaman Peta.
 
 GET /api/v1/atlas/heatmap?type=wind|solar
+GET /api/v1/atlas/sample?type=wind|solar&lat=-6.72&lon=107.58
 
 Strategi sumber data:
   wind  → GWA GeoTIFF  (jika file tersedia)  else  IDW dari station wind_baseline
@@ -172,7 +173,7 @@ def _sample_gwa_grid() -> dict:
         points_norm, min_v, max_v = _normalize(raw)
         return {
             "type": "wind",
-            "source": "GWA 3.0 GeoTIFF (raster 250m)",
+            "source": "GWA 3.0 LTA GeoTIFF (raster 250m)",
             "points": points_norm,
             "min_val": min_v,
             "max_val": max_v,
@@ -184,6 +185,17 @@ def _sample_gwa_grid() -> dict:
 
 
 # ─── Route ───────────────────────────────────────────────────────────────────
+
+def _solar_climatology_estimate(lat: float, lon: float) -> float:
+    """Last-resort solar estimate used only when GSA/station baselines are unavailable."""
+    east_factor = (lon - 106.4) / (111.0 - 106.4) * 0.30
+    mountain_dist = math.sqrt(
+        max(0.0, -(lat + 7.2)) ** 2
+        + max(0.0, abs(lon - 107.8) - 0.7) ** 2
+    )
+    mountain_factor = max(0.0, 0.35 - mountain_dist * 0.5)
+    return round(max(4.2, min(5.5, 5.0 + east_factor - mountain_factor)), 2)
+
 
 @router.get("/heatmap")
 async def get_heatmap(
@@ -237,7 +249,7 @@ async def get_heatmap(
                 pts_fb, min_fb, max_fb = _normalize(raw_fb)
                 return {
                     "type": "solar",
-                    "source": f"GSA Solargis IDW dari {len(gsa_ctrl)} titik kontrol (belum ada stasiun — tambahkan via /admin untuk data aktual)",
+                    "source": f"GSA Solargis LTA IDW dari {len(gsa_ctrl)} titik kontrol (belum ada stasiun — tambahkan via /admin untuk data aktual)",
                     "points": pts_fb,
                     "min_val": min_fb,
                     "max_val": max_fb,
@@ -256,7 +268,7 @@ async def get_heatmap(
             pts_lr, min_lr, max_lr = _normalize(raw_lr)
             return {
                 "type": "solar",
-                "source": "Estimasi klimatologi (GSA tidak tersedia — tambahkan stasiun via /admin)",
+                "source": "Estimasi klimatologi LTA (GSA tidak tersedia — tambahkan stasiun via /admin)",
                 "points": pts_lr,
                 "min_val": min_lr,
                 "max_val": max_lr,
@@ -283,7 +295,7 @@ async def get_heatmap(
     src_type = "GWA + " if type == "wind" else ""
     src_base = "ERA5" if type == "wind" else "GSA/ERA5"
     n_ctrl = len(ctrl)
-    source = f"IDW dari {n_ctrl} stasiun ({src_type}{src_base} baselines)"
+    source = f"IDW dari {n_ctrl} stasiun ({src_type}{src_base} LTA baselines)"
 
     return {
         "type": type,
@@ -292,4 +304,121 @@ async def get_heatmap(
         "min_val": min_v,
         "max_val": max_v,
         "unit": unit,
+    }
+
+
+@router.get("/sample")
+async def sample_atlas_value(
+    type: Literal["wind", "solar"] = Query(..., description="Atlas layer to sample"),
+    lat: float = Query(..., ge=_LAT_MIN, le=_LAT_MAX),
+    lon: float = Query(..., ge=_LON_MIN, le=_LON_MAX),
+    db: AsyncSession = Depends(get_db),
+):
+    """
+    Ambil nilai atlas LTA pada satu koordinat peta.
+
+    Nilai ini untuk screening lokasi pada peta, bukan ERA5 DOY periode observasi.
+    - wind  : GWA GeoTIFF LTA jika tersedia, else IDW dari baseline LTA stasiun.
+    - solar : IDW dari baseline GSA/ERA5 LTA stasiun, else GSA point/grid fallback.
+    """
+    if type == "wind":
+        try:
+            from app.workers.atlas_reader import GWA_TIFF, read_gwa_wind
+
+            if GWA_TIFF.exists():
+                wind = read_gwa_wind(lat, lon)
+                if wind is not None:
+                    return {
+                        "type": "wind",
+                        "lat": round(lat, 6),
+                        "lon": round(lon, 6),
+                        "value": wind,
+                        "unit": "m/s",
+                        "source": "GWA 3.0 LTA GeoTIFF",
+                        "method": "raster",
+                    }
+        except Exception as exc:
+            logger.warning("GWA point sample gagal: %s", exc)
+
+        stations = await get_all_stations(db)
+        ctrl = [
+            (float(s.lat), float(s.lon), float(s.wind_baseline))
+            for s in stations
+            if s.wind_baseline is not None
+        ]
+        if ctrl:
+            return {
+                "type": "wind",
+                "lat": round(lat, 6),
+                "lon": round(lon, 6),
+                "value": round(_idw(lat, lon, ctrl), 2),
+                "unit": "m/s",
+                "source": f"IDW dari {len(ctrl)} stasiun (GWA/ERA5 LTA)",
+                "method": "idw",
+            }
+
+        return {
+            "type": "wind",
+            "lat": round(lat, 6),
+            "lon": round(lon, 6),
+            "value": None,
+            "unit": "m/s",
+            "source": "Tidak ada baseline angin tersedia",
+            "method": "none",
+        }
+
+    stations = await get_all_stations(db)
+    ctrl = [
+        (float(s.lat), float(s.lon), float(s.ghi_baseline))
+        for s in stations
+        if s.ghi_baseline is not None
+    ]
+    if ctrl:
+        return {
+            "type": "solar",
+            "lat": round(lat, 6),
+            "lon": round(lon, 6),
+            "value": round(_idw(lat, lon, ctrl), 2),
+            "unit": "kWh/m²/hari",
+            "source": f"IDW dari {len(ctrl)} stasiun (GSA/ERA5 LTA)",
+            "method": "idw",
+        }
+
+    try:
+        from app.workers.atlas_reader import fetch_gsa_ghi
+
+        ghi = await fetch_gsa_ghi(lat, lon)
+        if ghi is not None:
+            return {
+                "type": "solar",
+                "lat": round(lat, 6),
+                "lon": round(lon, 6),
+                "value": ghi,
+                "unit": "kWh/m²/hari",
+                "source": "GSA Solargis LTA",
+                "method": "point_api",
+            }
+    except Exception as exc:
+        logger.warning("GSA point sample gagal: %s", exc)
+
+    gsa_ctrl = await _fetch_gsa_control_grid()
+    if gsa_ctrl:
+        return {
+            "type": "solar",
+            "lat": round(lat, 6),
+            "lon": round(lon, 6),
+            "value": round(_idw(lat, lon, gsa_ctrl), 2),
+            "unit": "kWh/m²/hari",
+            "source": f"IDW GSA Solargis dari {len(gsa_ctrl)} titik kontrol",
+            "method": "idw",
+        }
+
+    return {
+        "type": "solar",
+        "lat": round(lat, 6),
+        "lon": round(lon, 6),
+        "value": _solar_climatology_estimate(lat, lon),
+        "unit": "kWh/m²/hari",
+        "source": "Estimasi klimatologi LTA",
+        "method": "fallback",
     }
