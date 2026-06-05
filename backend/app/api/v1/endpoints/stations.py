@@ -19,18 +19,12 @@ from app.schemas.station import StationCreate, StationResponse, StationUpdate
 
 # ── Cache in-memory untuk hasil GIS-MCDA (TTL 6 jam per stasiun) ──────────────
 _GIS_CACHE: dict[str, tuple[float, dict]] = {}
-_GIS_CACHE_TTL = 6 * 3600  # detik
+_GIS_CACHE_SUCCESS_TTL = 6 * 3600  # detik
+_GIS_CACHE_FALLBACK_TTL = 10 * 60  # detik
 _GIS_METHOD_VERSION = "screening_v1"
 _GIS_SCREENING_NOTICE = (
-    "Screening teknis awal berbasis atlas/observasi, elevasi, dan OSM/Overpass; "
-    "bukan keputusan KKPR/RDTR, persetujuan lingkungan, atau izin resmi."
+    "Prioritas GIS-MCDA berbasis atlas/observasi, elevasi, dan OSM/Overpass."
 )
-_GIS_OFFICIAL_REQUIREMENTS = [
-    "KKPR/RDTR/RTRW melalui OSS/GISTARU/instansi tata ruang berwenang",
-    "Persetujuan Lingkungan melalui AMDAL/UKL-UPL/SPPL sesuai skala kegiatan",
-    "Kawasan hutan/lindung, sempadan, bencana, dan status/izin penguasaan tanah",
-    "Kelayakan interkoneksi jaringan dari pemilik/penyedia jaringan listrik",
-]
 
 
 def _haversine_km(lat1: float, lon1: float, lat2: float, lon2: float) -> float:
@@ -57,23 +51,32 @@ _OVERPASS_HEADERS = {
 
 
 async def _overpass_nearest_km(
-    lat: float, lon: float, osm_filter: str, max_km: int = 100
-) -> float | None:
+    lat: float,
+    lon: float,
+    osm_filter: str,
+    max_km: int = 100,
+    element_selector: str = "way",
+) -> tuple[float, str, int] | None:
     """
     Cari fitur OSM terdekat via Overpass API dengan pencarian radius bertahap.
     Mencoba beberapa Overpass instance secara berurutan.
     Mengembalikan jarak minimum (km) ke centroid way terdekat, atau None.
     """
-    radii = [r for r in [5_000, 20_000, 50_000, max_km * 1_000] if r <= max_km * 1_000]
+    max_m = max_km * 1_000
+    radii: list[int] = []
+    for radius in [5_000, 20_000, 50_000, 100_000, max_m]:
+        if radius <= max_m and radius not in radii:
+            radii.append(radius)
+    query_timeout = 25
     for radius_m in radii:
         query = (
-            f"[out:json][timeout:20];\n"
-            f"(way{osm_filter}(around:{radius_m},{lat},{lon}););\n"
-            f"out center;"
+            f"[out:json][timeout:{query_timeout}];\n"
+            f"({element_selector}{osm_filter}(around:{radius_m},{lat},{lon}););\n"
+            f"out center 100;"
         )
         for instance_url in _OVERPASS_INSTANCES:
             try:
-                async with httpx.AsyncClient(timeout=25.0) as client:
+                async with httpx.AsyncClient(timeout=query_timeout + 10.0) as client:
                     resp = await client.post(
                         instance_url,
                         data={"data": query},
@@ -85,13 +88,16 @@ async def _overpass_nearest_km(
                 if not elements:
                     break  # radius ini kosong, coba radius lebih besar
                 # Hitung jarak ke centroid setiap way — ambil minimum
-                dists = [
-                    _haversine_km(lat, lon, el["center"]["lat"], el["center"]["lon"])
-                    for el in elements
-                    if "center" in el
-                ]
+                dists = []
+                for el in elements:
+                    center = el.get("center")
+                    el_lat = center.get("lat") if center else el.get("lat")
+                    el_lon = center.get("lon") if center else el.get("lon")
+                    if el_lat is None or el_lon is None:
+                        continue
+                    dists.append(_haversine_km(lat, lon, float(el_lat), float(el_lon)))
                 if dists:
-                    return round(min(dists), 2)
+                    return (round(min(dists), 2), instance_url, radius_m)
             except Exception:
                 continue  # coba instance berikutnya
     return None
@@ -100,7 +106,7 @@ async def _overpass_nearest_km(
 def _road_pct(d: float | None) -> int:
     """Skor aksesibilitas (%) berdasarkan jarak ke jalan terdekat (km)."""
     if d is None:
-        return 20  # fallback konservatif jika Overpass tidak tersedia
+        return 20  # skor sementara jika Overpass belum responsif
     if d < 1:    return 90
     if d < 5:    return 75
     if d < 15:   return 55
@@ -111,7 +117,7 @@ def _road_pct(d: float | None) -> int:
 def _power_pct(d: float | None) -> int:
     """Skor infrastruktur (%) berdasarkan jarak ke saluran transmisi terdekat (km)."""
     if d is None:
-        return 30  # fallback konservatif jika Overpass tidak tersedia
+        return 30  # skor sementara jika Overpass belum responsif
     if d < 5:    return 80
     if d < 20:   return 60
     if d < 50:   return 40
@@ -306,16 +312,23 @@ async def fetch_atlas_baseline(
 # ---------------------------------------------------------------------------
 
 @router.get("/{station_id}/gis-mcda")
-async def get_gis_mcda(station_id: str, db: AsyncSession = Depends(get_db)):
+async def get_gis_mcda(
+    station_id: str,
+    refresh: bool = Query(False, description="Abaikan cache GIS-MCDA dan query ulang Overpass"),
+    db: AsyncSession = Depends(get_db),
+):
     """
-    Hitung faktor screening GIS-MCDA berbasis koordinat nyata stasiun.
+    Hitung faktor prioritas GIS-MCDA berbasis koordinat nyata stasiun.
     Aksesibilitas dan Infrastruktur menggunakan jarak aktual ke fitur OSM
-    via Overpass API. Hasil ini indikatif dan bukan keputusan regulasi resmi.
+    via Overpass API jika layanan responsif.
     """
     # ── Cache check ───────────────────────────────────────────────────────────
     cached = _GIS_CACHE.get(station_id)
-    if cached and (time.time() - cached[0]) < _GIS_CACHE_TTL:
-        return cached[1]
+    if cached and not refresh:
+        cached_status = cached[1].get("data_source_status", "fallback")
+        ttl = _GIS_CACHE_SUCCESS_TTL if cached_status.startswith("overpass") else _GIS_CACHE_FALLBACK_TTL
+        if (time.time() - cached[0]) < ttl:
+            return cached[1]
 
     station = await get_station_by_id(db, station_id)
     if not station:
@@ -326,17 +339,34 @@ async def get_gis_mcda(station_id: str, db: AsyncSession = Depends(get_db)):
     # ── Query Overpass API secara paralel ─────────────────────────────────────
     road_filter = (
         '["highway"~"^(motorway|trunk|primary|secondary|tertiary'
-        '|unclassified|residential|track)$"]'
+        '|unclassified|residential|service|living_street|track)$"]'
     )
-    power_filter = '["power"="line"]'
+    power_filter = '["power"~"^(line|minor_line|substation)$"]'
 
     road_result, power_result = await asyncio.gather(
         _overpass_nearest_km(lat, lon, road_filter, max_km=50),
-        _overpass_nearest_km(lat, lon, power_filter, max_km=150),
+        _overpass_nearest_km(lat, lon, power_filter, max_km=150, element_selector="nwr"),
         return_exceptions=True,
     )
-    road_dist: float | None = None if isinstance(road_result, Exception) else road_result
-    power_dist: float | None = None if isinstance(power_result, Exception) else power_result
+
+    def _unpack_overpass_result(value: object) -> tuple[float | None, str | None, int | None]:
+        if isinstance(value, Exception) or value is None:
+            return (None, None, None)
+        dist, endpoint, radius = value  # type: ignore[misc]
+        return (dist, endpoint, radius)
+
+    road_dist, road_endpoint, road_radius = _unpack_overpass_result(road_result)
+    power_dist, power_endpoint, power_radius = _unpack_overpass_result(power_result)
+
+    if road_dist is not None and power_dist is not None:
+        source_status = "overpass_full"
+        data_source = "Overpass API (OpenStreetMap)"
+    elif road_dist is not None or power_dist is not None:
+        source_status = "overpass_partial"
+        data_source = "Overpass API (OpenStreetMap) - parsial"
+    else:
+        source_status = "fallback"
+        data_source = "Skor sementara (Overpass belum responsif)"
 
     result = {
         "station_id": station_id,
@@ -345,18 +375,21 @@ async def get_gis_mcda(station_id: str, db: AsyncSession = Depends(get_db)):
         "altitude": alt,
         "road_dist_km": road_dist,
         "power_dist_km": power_dist,
-        "data_source": (
-            "Overpass API (OpenStreetMap)"
-            if (road_dist is not None or power_dist is not None)
-            else "Fallback konservatif (Overpass tidak responsif)"
-        ),
+        "data_source": data_source,
+        "data_source_status": source_status,
+        "road_query": {
+            "endpoint": road_endpoint,
+            "radius_m": road_radius,
+        },
+        "power_query": {
+            "endpoint": power_endpoint,
+            "radius_m": power_radius,
+        },
         "method": {
             "version": _GIS_METHOD_VERSION,
-            "status": "screening_teknis_awal",
+            "status": "prioritas_gis_mcda",
             "notice": _GIS_SCREENING_NOTICE,
             "composite": "Rata-rata Topografi, Aksesibilitas, dan Infrastruktur untuk radius zona peta.",
-            "official_requirements": _GIS_OFFICIAL_REQUIREMENTS,
-            "regulatory_status": "belum_diverifikasi_resmi",
         },
         "factors": [
             {
@@ -378,7 +411,7 @@ async def get_gis_mcda(station_id: str, db: AsyncSession = Depends(get_db)):
                 "detail": (
                     f"{road_dist:.1f} km ke jalan terdekat"
                     if road_dist is not None
-                    else "Fallback konservatif (Overpass tidak tersedia)"
+                    else "Skor sementara 20% - data jalan OSM belum berhasil diambil"
                 ),
             },
             {
@@ -388,7 +421,7 @@ async def get_gis_mcda(station_id: str, db: AsyncSession = Depends(get_db)):
                 "detail": (
                     f"{power_dist:.1f} km ke transmisi listrik terdekat"
                     if power_dist is not None
-                    else "Fallback konservatif (Overpass tidak tersedia)"
+                    else "Skor sementara 30% - data transmisi OSM belum berhasil diambil"
                 ),
             },
         ],

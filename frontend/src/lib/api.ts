@@ -237,6 +237,15 @@ export interface GisMcdaData {
   road_dist_km: number | null;
   power_dist_km: number | null;
   data_source: string;
+  data_source_status?: 'overpass_full' | 'overpass_partial' | 'fallback';
+  road_query?: {
+    endpoint: string | null;
+    radius_m: number | null;
+  };
+  power_query?: {
+    endpoint: string | null;
+    radius_m: number | null;
+  };
   method?: {
     version: string;
     status: string;

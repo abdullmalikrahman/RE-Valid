@@ -375,12 +375,12 @@ function LaporanContent() {
         {
           label: 'Aksesibilitas',
           pct: 20,
-          detail: 'Fallback konservatif: data jalan OSM/Overpass belum tersedia',
+          detail: 'Skor sementara: data jalan OSM/Overpass belum berhasil dimuat',
         },
         {
           label: 'Infrastruktur',
           pct: 30,
-          detail: 'Fallback konservatif: data transmisi OSM/Overpass belum tersedia',
+          detail: 'Skor sementara: data transmisi OSM/Overpass belum berhasil dimuat',
         },
       ];
 
@@ -1458,7 +1458,7 @@ function LaporanContent() {
                     <span className="material-symbols-outlined text-[12px] animate-spin">progress_activity</span>
                     Mengambil data koordinat dari OSM…
                   </span>
-                ) : gisMcda && (gisMcda.road_dist_km !== null || gisMcda.power_dist_km !== null) ? (
+                ) : gisMcda && gisMcda.data_source_status !== 'fallback' ? (
                   <span className="inline-flex items-center gap-1.5 text-[10px] font-medium px-2 py-0.5 rounded-full bg-emerald-500/10 border border-emerald-500/30 text-emerald-400">
                     <span className="material-symbols-outlined text-[12px]">gps_fixed</span>
                     Koordinat + OSM · {gisMcda.data_source}
@@ -1466,7 +1466,7 @@ function LaporanContent() {
                 ) : (
                   <span className="inline-flex items-center gap-1.5 text-[10px] font-medium px-2 py-0.5 rounded-full bg-amber-500/10 border border-amber-500/30 text-amber-400">
                     <span className="material-symbols-outlined text-[12px]">warning</span>
-                    Fallback konservatif (Overpass tidak responsif)
+                    {gisMcda?.data_source ?? 'Skor sementara (GIS-MCDA belum termuat)'}
                   </span>
                 )}
               </div>
