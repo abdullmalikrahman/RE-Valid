@@ -56,7 +56,7 @@ def upgrade() -> None:
         sa.Column("status_rule", sa.String(30), nullable=False, server_default="review"),
         sa.Column("message", sa.Text(), nullable=True),
         sa.Column("properties", sa.JSON(), nullable=True),
-        sa.Column("geom", Geometry("GEOMETRY", srid=4326), nullable=False),
+        sa.Column("geom", Geometry("GEOMETRY", srid=4326, spatial_index=False), nullable=False),
         sa.Column("created_at", sa.DateTime(timezone=True), server_default=sa.func.now()),
         sa.CheckConstraint(
             "status_rule IN ('allowed', 'conditional', 'restricted', 'review', 'informational')",

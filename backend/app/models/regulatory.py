@@ -54,7 +54,10 @@ class RegulatoryFeature(Base):
     status_rule: Mapped[str] = mapped_column(String(30), nullable=False, default="review")
     message: Mapped[str | None] = mapped_column(Text)
     properties: Mapped[dict | None] = mapped_column(JSON)
-    geom: Mapped[str] = mapped_column(Geometry("GEOMETRY", srid=4326), nullable=False)
+    geom: Mapped[str] = mapped_column(
+        Geometry("GEOMETRY", srid=4326, spatial_index=False),
+        nullable=False,
+    )
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now()
     )
