@@ -11,7 +11,13 @@ import Navbar from '@/components/Navbar';
 import Footer from '@/components/Footer';
 import { useStations } from '@/hooks/useStations';
 import { useMeasurements, type Measurement } from '@/hooks/useMeasurements';
-import { apiFetch, fetchGisMcda, type GisMcdaData } from '@/lib/api';
+import {
+  apiFetch,
+  fetchCompliance,
+  fetchGisMcda,
+  type ComplianceData,
+  type GisMcdaData,
+} from '@/lib/api';
 
 const statusLabel: Record<string, string> = {
   prioritas: 'Prioritas',
@@ -108,6 +114,13 @@ function baselineSkillColor(value: number | null | undefined): string {
   return score >= 0.85 ? 'text-green-400' : score >= 0.70 ? 'text-amber-400' : 'text-red-400';
 }
 
+function complianceStatusClass(status?: ComplianceData['overall_status'] | string): string {
+  if (status === 'terverifikasi' || status === 'ok') return 'text-green-400';
+  if (status === 'tidak_sesuai') return 'text-red-400';
+  if (status === 'perlu_tinjau') return 'text-amber-400';
+  return 'text-slate-400';
+}
+
 function LaporanContent() {
   const { stations } = useStations();
   const searchParams = useSearchParams();
@@ -145,6 +158,18 @@ function LaporanContent() {
       .then(setGisMcda)
       .catch(() => setGisMcda(null))
       .finally(() => setGisMcdaLoading(false));
+  }, [stationId]);
+
+  const [compliance, setCompliance] = useState<ComplianceData | null>(null);
+  const [complianceLoading, setComplianceLoading] = useState(false);
+  useEffect(() => {
+    if (!stationId) return;
+    setCompliance(null);
+    setComplianceLoading(true);
+    fetchCompliance(stationId)
+      .then(setCompliance)
+      .catch(() => setCompliance(null))
+      .finally(() => setComplianceLoading(false));
   }, [stationId]);
 
   // Derived baseline values — computed before any early return so hooks below are always called
@@ -492,8 +517,16 @@ function LaporanContent() {
       if (gisMcda) {
         row('Sumber data', gisMcda.data_source);
       }
-      row('Status kepatuhan resmi', 'Belum diverifikasi');
-      row('Cek resmi diperlukan', 'KKPR/RDTR, lingkungan, kawasan, tanah, interkoneksi');
+      row('Status kepatuhan resmi', compliance?.overall_label ?? 'Belum Ada Data Resmi');
+      row(
+        'Cek resmi diperlukan',
+        compliance?.missing_requirements.length
+          ? compliance.missing_requirements.join(', ')
+          : 'Tidak ada kekurangan pada data yang tersedia',
+      );
+      compliance?.checks.slice(0, 6).forEach((check) => {
+        row(check.label, `${check.status_label} - ${check.message}`);
+      });
       y += 3;
 
       // Data Meteorologi — show if any sensor readings exist
@@ -859,8 +892,25 @@ function LaporanContent() {
           addRow2('Jarak ke Transmisi Terdekat', `${gisMcda.power_dist_km.toFixed(1)} km`, mcdaFactors.length + 2);
         }
       }
-      addRow2('Status Kepatuhan Resmi', 'Belum diverifikasi', mcdaFactors.length + 3);
-      addRow2('Cek Resmi Diperlukan', 'KKPR/RDTR, lingkungan, kawasan, tanah, interkoneksi', mcdaFactors.length + 4);
+      addRow2(
+        'Status Kepatuhan Resmi',
+        compliance?.overall_label ?? 'Belum Ada Data Resmi',
+        mcdaFactors.length + 3,
+      );
+      addRow2(
+        'Cek Resmi Diperlukan',
+        compliance?.missing_requirements.length
+          ? compliance.missing_requirements.join(', ')
+          : 'Tidak ada kekurangan pada data yang tersedia',
+        mcdaFactors.length + 4,
+      );
+      compliance?.checks.forEach((check, i) => {
+        addRow2(
+          `Compliance - ${check.label}`,
+          `${check.status_label} - ${check.message}`,
+          mcdaFactors.length + 5 + i,
+        );
+      });
 
       // DATA METEOROLOGI — raw sensor readings if available
       const meteoRows = measurements.filter(
@@ -1447,13 +1497,13 @@ function LaporanContent() {
               <div className="flex items-center gap-2 mb-3">
                 <span className="material-symbols-outlined text-emerald-400 text-[20px]">layers</span>
                 <h4 className="text-sm font-bold text-slate-900 dark:text-white">Screening Teknis GIS-MCDA</h4>
-                <span className="ml-auto font-bold text-sm text-slate-900 dark:text-white">
+                <span className="ml-auto font-bold text-sm text-slate-900 dark:text-white text-right">
                   {station.score}/100
                 </span>
               </div>
 
               {/* Source badge */}
-              <div className="flex items-center gap-2 mb-3">
+              <div className="flex flex-wrap items-center gap-2 mb-3">
                 {gisMcdaLoading ? (
                   <span className="inline-flex items-center gap-1.5 text-[10px] font-medium px-2 py-0.5 rounded-full bg-blue-500/10 border border-blue-500/30 text-blue-400">
                     <span className="material-symbols-outlined text-[12px] animate-spin">progress_activity</span>
@@ -1470,10 +1520,29 @@ function LaporanContent() {
                     Fallback konservatif (Overpass tidak responsif)
                   </span>
                 )}
+                <span className={`inline-flex items-center gap-1.5 text-[10px] font-bold px-2 py-0.5 rounded-full bg-slate-500/10 border border-slate-500/30 ${complianceStatusClass(compliance?.overall_status)}`}>
+                  <span className="material-symbols-outlined text-[12px]">
+                    {complianceLoading ? 'progress_activity' : compliance?.verified ? 'verified' : 'rule'}
+                  </span>
+                  {complianceLoading ? 'Memuat kepatuhan...' : compliance?.overall_label ?? 'Belum Ada Data Resmi'}
+                </span>
               </div>
               <p className="text-[10px] leading-relaxed text-slate-400 mb-3">
-                Belum memverifikasi KKPR/RDTR, persetujuan lingkungan, kawasan/status tanah, dan interkoneksi resmi.
+                {compliance?.summary ?? 'Belum memverifikasi KKPR/RDTR, persetujuan lingkungan, kawasan/status tanah, dan interkoneksi resmi.'}
               </p>
+              {compliance && (
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 mb-3">
+                  {compliance.checks.slice(0, 6).map((check) => (
+                    <div key={check.key} className="rounded-lg border border-gray-200 dark:border-gray-800 bg-gray-50 dark:bg-[#111a22] px-3 py-2">
+                      <div className="flex items-start justify-between gap-2">
+                        <span className="text-[10px] font-semibold text-slate-500 dark:text-slate-400">{check.label}</span>
+                        <span className={`text-[10px] font-bold ${complianceStatusClass(check.status)}`}>{check.status_label}</span>
+                      </div>
+                      <p className="mt-1 text-[9px] leading-tight text-slate-400">{check.message}</p>
+                    </div>
+                  ))}
+                </div>
+              )}
 
               <div className="space-y-3">
                 {mcdaFactors.map((f) => (

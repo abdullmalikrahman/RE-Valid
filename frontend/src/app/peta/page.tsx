@@ -7,7 +7,12 @@ import Navbar from '@/components/Navbar';
 import { relativeTime, type Station } from '@/lib/stationData';
 import { useStations } from '@/hooks/useStations';
 import { useMeasurements } from '@/hooks/useMeasurements';
-import { fetchHeatmapData, type HeatmapData } from '@/lib/api';
+import {
+  fetchCompliance,
+  fetchHeatmapData,
+  type ComplianceData,
+  type HeatmapData,
+} from '@/lib/api';
 
 // Leaflet must be client-side only (no SSR)
 const LeafletMap = dynamic(() => import('@/components/LeafletMap'), {
@@ -30,6 +35,19 @@ const OFFICIAL_REGULATORY_ITEMS = [
   'Kawasan lindung & status tanah',
   'Interkoneksi jaringan',
 ];
+
+function complianceBadgeClass(status?: ComplianceData['overall_status'] | string) {
+  if (status === 'terverifikasi' || status === 'ok') {
+    return 'bg-green-500/10 border-green-500/30 text-green-700 dark:text-green-400';
+  }
+  if (status === 'tidak_sesuai') {
+    return 'bg-red-500/10 border-red-500/30 text-red-700 dark:text-red-400';
+  }
+  if (status === 'perlu_tinjau') {
+    return 'bg-amber-500/10 border-amber-500/30 text-amber-700 dark:text-amber-300';
+  }
+  return 'bg-slate-500/10 border-slate-500/30 text-slate-600 dark:text-slate-400';
+}
 
 // --- Station detail panel ---
 function StationPanel({
@@ -74,6 +92,20 @@ function StationPanel({
   // Fetch latest measurement for this station (7-day window, lightweight)
   const [sevenDaysAgo] = useState(() => new Date(Date.now() - 7 * 86400000).toISOString().slice(0, 10));
   const { measurements: recentMeasurements } = useMeasurements(station.id, sevenDaysAgo);
+  const [compliance, setCompliance] = useState<ComplianceData | null>(null);
+  const [complianceLoading, setComplianceLoading] = useState(false);
+  useEffect(() => {
+    let cancelled = false;
+    // eslint-disable-next-line react-hooks/set-state-in-effect
+    setCompliance(null);
+    setComplianceLoading(true);
+    fetchCompliance(station.id)
+      .then((data) => { if (!cancelled) setCompliance(data); })
+      .catch(() => { if (!cancelled) setCompliance(null); })
+      .finally(() => { if (!cancelled) setComplianceLoading(false); });
+    return () => { cancelled = true; };
+  }, [station.id]);
+
   const latestMeasurement = recentMeasurements.length > 0 ? recentMeasurements[recentMeasurements.length - 1] : null;
   const hasMeteoData = latestMeasurement !== null && (
     latestMeasurement.temperature !== null ||
@@ -155,14 +187,36 @@ function StationPanel({
             </div>
             <div className="flex justify-between items-center px-3 py-2">
               <span className="text-slate-500 dark:text-text-secondary">Kepatuhan Resmi</span>
-              <span className="text-[11px] font-bold px-2 py-0.5 rounded-full border bg-amber-500/10 border-amber-500/30 text-amber-700 dark:text-amber-300">
-                Belum Diverifikasi
+              <span className={`text-[11px] font-bold px-2 py-0.5 rounded-full border ${complianceBadgeClass(compliance?.overall_status)}`}>
+                {complianceLoading ? 'Memuat...' : compliance?.overall_label ?? 'Belum Ada Data Resmi'}
               </span>
             </div>
           </div>
-          <p className="mt-2 text-[10px] leading-relaxed text-slate-400">
-            Skor teknis bukan pengganti verifikasi resmi: {OFFICIAL_REGULATORY_ITEMS.join(', ')}.
-          </p>
+          {compliance ? (
+            <div className="mt-2 rounded-lg border border-slate-200 dark:border-[#233648] bg-slate-50/70 dark:bg-[#111a22]/70 p-2.5">
+              <p className="text-[10px] leading-relaxed text-slate-400 mb-2">{compliance.summary}</p>
+              <div className="space-y-1.5">
+                {compliance.checks.slice(0, 4).map((check) => (
+                  <div key={check.key} className="flex items-start justify-between gap-2 text-[10px]">
+                    <span className="text-slate-500 dark:text-slate-400">{check.label}</span>
+                    <span className={`shrink-0 rounded-full border px-1.5 py-0.5 font-bold ${complianceBadgeClass(check.status)}`}>
+                      {check.status_label}
+                    </span>
+                  </div>
+                ))}
+              </div>
+              {compliance.missing_requirements.length > 0 && (
+                <p className="mt-2 text-[10px] leading-relaxed text-slate-400">
+                  Belum lengkap: {compliance.missing_requirements.slice(0, 3).join(', ')}
+                  {compliance.missing_requirements.length > 3 ? ', ...' : ''}
+                </p>
+              )}
+            </div>
+          ) : (
+            <p className="mt-2 text-[10px] leading-relaxed text-slate-400">
+              Skor teknis bukan pengganti verifikasi resmi: {OFFICIAL_REGULATORY_ITEMS.join(', ')}.
+            </p>
+          )}
         </section>
 
         {(station.windRmse != null || station.solarRmse != null) && (

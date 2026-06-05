@@ -9,7 +9,14 @@ from alembic import context
 
 from app.core.config import settings
 from app.core.database import Base
-from app.models import Station, Measurement, User, StationDailyBaseline  # noqa: F401
+from app.models import (  # noqa: F401
+    Measurement,
+    RegulatoryFeature,
+    RegulatoryLayer,
+    Station,
+    StationDailyBaseline,
+    User,
+)
 
 config = context.config
 config.set_main_option("sqlalchemy.url", settings.DATABASE_URL)

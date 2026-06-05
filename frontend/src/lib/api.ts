@@ -258,3 +258,62 @@ export async function fetchGisMcda(stationId: string): Promise<GisMcdaData> {
   if (!res.ok) throw new Error(`GIS-MCDA API error: ${res.status}`);
   return res.json();
 }
+
+export interface ComplianceMatch {
+  layer: string;
+  feature: string | null;
+  rule_code: string | null;
+  status_rule: 'allowed' | 'conditional' | 'restricted' | 'review' | 'informational';
+  message: string | null;
+}
+
+export interface ComplianceCheck {
+  key: string;
+  label: string;
+  status:
+    | 'terverifikasi'
+    | 'ok'
+    | 'perlu_tinjau'
+    | 'tidak_sesuai'
+    | 'belum_data_resmi'
+    | 'belum_dokumen';
+  status_label: string;
+  message: string;
+  matches: ComplianceMatch[];
+}
+
+export interface ComplianceSource {
+  id: number;
+  name: string;
+  category: string;
+  source: string | null;
+  source_url: string | null;
+  source_date: string | null;
+  is_official: boolean;
+}
+
+export interface ComplianceData {
+  station_id: string;
+  lat: number;
+  lon: number;
+  overall_status:
+    | 'terverifikasi'
+    | 'ok'
+    | 'perlu_tinjau'
+    | 'tidak_sesuai'
+    | 'belum_data_resmi'
+    | 'belum_dokumen';
+  overall_label: string;
+  verified: boolean;
+  checked_at: string;
+  summary: string;
+  missing_requirements: string[];
+  checks: ComplianceCheck[];
+  sources: ComplianceSource[];
+}
+
+export async function fetchCompliance(stationId: string): Promise<ComplianceData> {
+  const res = await apiFetch(`${API_BASE}/compliance/stations/${stationId}`);
+  if (!res.ok) throw new Error(`Compliance API error: ${res.status}`);
+  return res.json();
+}
