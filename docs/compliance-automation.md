@@ -66,6 +66,19 @@ Setelah layer diimpor, status kepatuhan per stasiun dapat dicek otomatis melalui
 GET /api/v1/compliance/stations/{station_id}
 ```
 
+## Konektor Otomatis InaRISK
+
+Untuk risiko bencana, backend juga mencoba membaca service publik InaRISK BNPB melalui ArcGIS REST apabila belum ada layer `bencana` atau `risiko_bencana` yang diimpor ke database.
+
+Service yang dicoba:
+
+- Risiko Banjir JBTBPJ
+- Bahaya Banjir JBTBPJ
+- Risiko Tanah Longsor JBTBPJ
+- Bahaya Tanah Longsor JBTBPJ
+
+Hasil rendah diperlakukan sebagai `allowed`, sedang sebagai `conditional`, dan tinggi sebagai `restricted`. Jika service tidak mengembalikan nilai valid, status risiko bencana tetap membutuhkan data resmi tambahan.
+
 ## Catatan
 
 Jangan memakai hasil scraping peta pemerintah sebagai keputusan resmi. Gunakan API resmi, unduhan layer resmi, atau dokumen resmi yang dapat diaudit.

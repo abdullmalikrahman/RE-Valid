@@ -1,9 +1,11 @@
 from __future__ import annotations
 
 import json
+import asyncio
 from datetime import datetime, timezone
 from typing import Any, Literal
 
+import httpx
 from fastapi import APIRouter, Depends, HTTPException, status
 from pydantic import BaseModel, Field
 from sqlalchemy import delete, func, select
@@ -86,6 +88,30 @@ _SPATIAL_CHECKS = [
     },
 ]
 
+_INARISK_SERVICES = [
+    {
+        "label": "Risiko Banjir",
+        "url": "https://gis.bnpb.go.id/server/rest/services/inarisk/layer_risiko_banjir_JBTBPJ/MapServer",
+    },
+    {
+        "label": "Bahaya Banjir",
+        "url": "https://gis.bnpb.go.id/server/rest/services/inarisk/layer_bahaya_banjir_JBTBPJ/MapServer",
+    },
+    {
+        "label": "Risiko Tanah Longsor",
+        "url": "https://gis.bnpb.go.id/server/rest/services/inarisk/layer_risiko_tanahlongsor_JBTBPJ/MapServer",
+    },
+    {
+        "label": "Bahaya Tanah Longsor",
+        "url": "https://gis.bnpb.go.id/server/rest/services/inarisk/layer_bahaya_tanahlongsor_JBTBPJ/MapServer",
+    },
+]
+
+_INARISK_HEADERS = {
+    "User-Agent": "RE-Valid/1.0 (renewable energy site validation)",
+    "Accept": "application/json",
+}
+
 
 class ComplianceLayerImport(BaseModel):
     code: str = Field(..., min_length=2, max_length=80)
@@ -154,6 +180,155 @@ def _overall_status(checks: list[dict[str, Any]]) -> str:
     return "terverifikasi"
 
 
+def _extract_arcgis_value(payload: dict[str, Any]) -> str | float | int | None:
+    candidates: list[Any] = []
+    for result in payload.get("results", []) or []:
+        if isinstance(result, dict):
+            candidates.extend([result.get("value"), result.get("name"), result.get("layerName")])
+            attrs = result.get("attributes")
+            if isinstance(attrs, dict):
+                candidates.extend(attrs.values())
+    if isinstance(payload.get("value"), (str, int, float)):
+        candidates.append(payload.get("value"))
+
+    for candidate in candidates:
+        if candidate is None:
+            continue
+        if isinstance(candidate, (int, float)):
+            return candidate
+        text = str(candidate).strip()
+        if text and text.lower() not in {"null", "none", "nodata", "no data"}:
+            return text
+    return None
+
+
+def _risk_rule_from_value(value: str | float | int | None) -> tuple[str, str]:
+    if value is None:
+        return "informational", "Nilai risiko tidak tersedia pada titik ini."
+
+    if isinstance(value, str):
+        text = value.strip().lower()
+        if "tinggi" in text:
+            return "restricted", f"Kategori tinggi ({value})."
+        if "sedang" in text or "menengah" in text:
+            return "conditional", f"Kategori sedang ({value})."
+        if "rendah" in text:
+            return "allowed", f"Kategori rendah ({value})."
+        try:
+            value = float(text.replace(",", "."))
+        except ValueError:
+            return "review", f"Nilai '{value}' perlu ditinjau."
+
+    numeric = float(value)
+    if numeric <= 0 or numeric in {-9999, 9999}:
+        return "informational", f"Tidak ada nilai risiko valid ({numeric:g})."
+    if numeric <= 1:
+        return "allowed", f"Nilai risiko rendah ({numeric:g})."
+    if numeric <= 2:
+        return "conditional", f"Nilai risiko sedang ({numeric:g})."
+    return "restricted", f"Nilai risiko tinggi ({numeric:g})."
+
+
+def _status_from_rules(rules: list[str], fallback: str = "belum_data_resmi") -> str:
+    if not rules:
+        return fallback
+    if "restricted" in rules:
+        return "tidak_sesuai"
+    if "conditional" in rules or "review" in rules:
+        return "perlu_tinjau"
+    return "ok"
+
+
+async def _identify_arcgis_service(
+    client: httpx.AsyncClient,
+    lat: float,
+    lon: float,
+    service: dict[str, str],
+) -> dict[str, Any] | None:
+    params = {
+        "f": "json",
+        "geometry": json.dumps({"x": lon, "y": lat, "spatialReference": {"wkid": 4326}}),
+        "geometryType": "esriGeometryPoint",
+        "sr": "4326",
+        "layers": "all",
+        "tolerance": "3",
+        "mapExtent": f"{lon - 0.05},{lat - 0.05},{lon + 0.05},{lat + 0.05}",
+        "imageDisplay": "800,600,96",
+        "returnGeometry": "false",
+    }
+    try:
+        response = await client.get(
+            f"{service['url'].rstrip('/')}/identify",
+            params=params,
+            headers=_INARISK_HEADERS,
+        )
+        if response.status_code != 200:
+            return None
+        payload = response.json()
+    except Exception:
+        return None
+
+    value = _extract_arcgis_value(payload)
+    rule, message = _risk_rule_from_value(value)
+    return {
+        "layer": f"InaRISK BNPB - {service['label']}",
+        "feature": str(value) if value is not None else None,
+        "rule_code": "inarisk_arcgis_identify",
+        "status_rule": rule,
+        "message": message,
+        "source_url": service["url"],
+    }
+
+
+async def _check_inarisk_public_services(lat: float, lon: float) -> tuple[dict[str, Any], list[dict[str, Any]]]:
+    async with httpx.AsyncClient(timeout=20.0) as client:
+        results = await asyncio.gather(
+            *(_identify_arcgis_service(client, lat, lon, service) for service in _INARISK_SERVICES),
+            return_exceptions=True,
+        )
+
+    matches = [
+        result
+        for result in results
+        if isinstance(result, dict) and result.get("status_rule") != "informational"
+    ]
+    status_value = _status_from_rules([m["status_rule"] for m in matches])
+    check = {
+        "key": "disaster_risk",
+        "label": "Risiko Bencana",
+        "status": status_value,
+        "status_label": _STATUS_LABELS[status_value],
+        "message": (
+            f"Terbaca otomatis dari {len(matches)} service InaRISK BNPB."
+            if matches
+            else "Service InaRISK belum mengembalikan nilai risiko valid untuk titik ini."
+        ),
+        "matches": [
+            {
+                "layer": m["layer"],
+                "feature": m["feature"],
+                "rule_code": m["rule_code"],
+                "status_rule": m["status_rule"],
+                "message": m["message"],
+            }
+            for m in matches
+        ],
+    }
+    sources = [
+        {
+            "id": -100 - index,
+            "name": service["label"],
+            "category": "risiko_bencana",
+            "source": "InaRISK BNPB ArcGIS REST",
+            "source_url": service["url"],
+            "source_date": None,
+            "is_official": True,
+        }
+        for index, service in enumerate(_INARISK_SERVICES)
+    ]
+    return check, sources
+
+
 async def _count_layers(db: AsyncSession, categories: list[str]) -> int:
     stmt = select(func.count(RegulatoryLayer.id)).where(RegulatoryLayer.category.in_(categories))
     result = await db.execute(stmt)
@@ -195,6 +370,12 @@ async def check_station_compliance(
         categories = definition["categories"]
         layer_count = await _count_layers(db, categories)
         if layer_count == 0:
+            if definition["key"] == "disaster_risk":
+                inarisk_check, inarisk_sources = await _check_inarisk_public_services(lat, lon)
+                checks.append(inarisk_check)
+                for source in inarisk_sources:
+                    sources[source["id"]] = source
+                continue
             checks.append(
                 {
                     "key": definition["key"],
