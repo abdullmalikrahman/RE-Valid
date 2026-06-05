@@ -8,9 +8,7 @@ import { relativeTime, type Station } from '@/lib/stationData';
 import { useStations } from '@/hooks/useStations';
 import { useMeasurements } from '@/hooks/useMeasurements';
 import {
-  fetchCompliance,
   fetchHeatmapData,
-  type ComplianceData,
   type HeatmapData,
 } from '@/lib/api';
 
@@ -28,26 +26,6 @@ const LeafletMap = dynamic(() => import('@/components/LeafletMap'), {
 });
 
 type HeatLayer = 'none' | 'wind' | 'solar';
-
-const OFFICIAL_REGULATORY_ITEMS = [
-  'KKPR/RDTR/RTRW',
-  'Persetujuan Lingkungan',
-  'Kawasan lindung & status tanah',
-  'Interkoneksi jaringan',
-];
-
-function complianceBadgeClass(status?: ComplianceData['overall_status'] | string) {
-  if (status === 'terverifikasi' || status === 'ok') {
-    return 'bg-green-500/10 border-green-500/30 text-green-700 dark:text-green-400';
-  }
-  if (status === 'tidak_sesuai') {
-    return 'bg-red-500/10 border-red-500/30 text-red-700 dark:text-red-400';
-  }
-  if (status === 'perlu_tinjau') {
-    return 'bg-amber-500/10 border-amber-500/30 text-amber-700 dark:text-amber-300';
-  }
-  return 'bg-slate-500/10 border-slate-500/30 text-slate-600 dark:text-slate-400';
-}
 
 // --- Station detail panel ---
 function StationPanel({
@@ -92,19 +70,6 @@ function StationPanel({
   // Fetch latest measurement for this station (7-day window, lightweight)
   const [sevenDaysAgo] = useState(() => new Date(Date.now() - 7 * 86400000).toISOString().slice(0, 10));
   const { measurements: recentMeasurements } = useMeasurements(station.id, sevenDaysAgo);
-  const [compliance, setCompliance] = useState<ComplianceData | null>(null);
-  const [complianceLoading, setComplianceLoading] = useState(false);
-  useEffect(() => {
-    let cancelled = false;
-    // eslint-disable-next-line react-hooks/set-state-in-effect
-    setCompliance(null);
-    setComplianceLoading(true);
-    fetchCompliance(station.id)
-      .then((data) => { if (!cancelled) setCompliance(data); })
-      .catch(() => { if (!cancelled) setCompliance(null); })
-      .finally(() => { if (!cancelled) setComplianceLoading(false); });
-    return () => { cancelled = true; };
-  }, [station.id]);
 
   const latestMeasurement = recentMeasurements.length > 0 ? recentMeasurements[recentMeasurements.length - 1] : null;
   const hasMeteoData = latestMeasurement !== null && (
@@ -164,13 +129,13 @@ function StationPanel({
               </div>
             ))}
             <div className="flex justify-between items-center px-3 py-2">
-              <span className="text-slate-500 dark:text-text-secondary">Status Teknis</span>
+              <span className="text-slate-500 dark:text-text-secondary">Status Lokasi</span>
               <span className={`text-[11px] font-bold px-2 py-0.5 rounded-full border ${statusBg[station.status]}`}>
                 {statusLabel[station.status]}
               </span>
             </div>
             <div className="flex justify-between items-center px-3 py-2">
-              <span className="text-slate-500 dark:text-text-secondary">Skor Teknis</span>
+              <span className="text-slate-500 dark:text-text-secondary">Skor Kesesuaian</span>
               <span className="font-bold text-slate-900 dark:text-white">
                 {station.score}/100
                 {' '}&#8212;
@@ -185,38 +150,7 @@ function StationPanel({
                 {mcpLabel[station.mcpStatus]}
               </span>
             </div>
-            <div className="flex justify-between items-center px-3 py-2">
-              <span className="text-slate-500 dark:text-text-secondary">Kepatuhan Resmi</span>
-              <span className={`text-[11px] font-bold px-2 py-0.5 rounded-full border ${complianceBadgeClass(compliance?.overall_status)}`}>
-                {complianceLoading ? 'Memuat...' : compliance?.overall_label ?? 'Belum Ada Data Resmi'}
-              </span>
-            </div>
           </div>
-          {compliance ? (
-            <div className="mt-2 rounded-lg border border-slate-200 dark:border-[#233648] bg-slate-50/70 dark:bg-[#111a22]/70 p-2.5">
-              <p className="text-[10px] leading-relaxed text-slate-400 mb-2">{compliance.summary}</p>
-              <div className="space-y-1.5">
-                {compliance.checks.slice(0, 4).map((check) => (
-                  <div key={check.key} className="flex items-start justify-between gap-2 text-[10px]">
-                    <span className="text-slate-500 dark:text-slate-400">{check.label}</span>
-                    <span className={`shrink-0 rounded-full border px-1.5 py-0.5 font-bold ${complianceBadgeClass(check.status)}`}>
-                      {check.status_label}
-                    </span>
-                  </div>
-                ))}
-              </div>
-              {compliance.missing_requirements.length > 0 && (
-                <p className="mt-2 text-[10px] leading-relaxed text-slate-400">
-                  Belum lengkap: {compliance.missing_requirements.slice(0, 3).join(', ')}
-                  {compliance.missing_requirements.length > 3 ? ', ...' : ''}
-                </p>
-              )}
-            </div>
-          ) : (
-            <p className="mt-2 text-[10px] leading-relaxed text-slate-400">
-              Skor teknis bukan pengganti verifikasi resmi: {OFFICIAL_REGULATORY_ITEMS.join(', ')}.
-            </p>
-          )}
         </section>
 
         {(station.windRmse != null || station.solarRmse != null) && (
@@ -463,7 +397,7 @@ function AnalisisModal({ onClose, stations }: { onClose: () => void; stations: S
           {!done ? (
             <>
               <p className="text-[13px] text-slate-500 dark:text-text-secondary">
-                Peringkat teknis awal berdasarkan skor validasi lokasi yang tersimpan. Status perizinan tetap perlu diverifikasi melalui data resmi KKPR/RDTR, lingkungan, kawasan, tanah, dan interkoneksi.
+                Peringkat zona prioritas energi berdasarkan skor validasi lokasi, potensi atlas, dan hasil MCP yang tersimpan.
               </p>
               <div className="grid grid-cols-2 gap-3 text-[12px]">
                 {[
@@ -730,18 +664,15 @@ export default function PetaPage() {
                       <p className="text-slate-400 text-[11px]">{heatmapMeta.solar ? heatmapMeta.solar.source : 'GSA / ERA5 LTA · kWh/m²/hari'}</p>
                     </div>
                   </label>
-                  {/* Screening GIS-MCDA */}
+                  {/* Prioritas GIS-MCDA */}
                   <label className="flex items-center gap-3 py-1.5 cursor-pointer group border-t border-slate-200 dark:border-[#233648]/50">
                     <input type="checkbox" checked={showMCDA} onChange={() => setShowMCDA(v => !v)} className="h-4 w-4 rounded border-slate-300 dark:border-[#324d67] accent-primary" />
                     <div>
-                      <p className="text-slate-700 dark:text-white text-[13px] font-medium group-hover:text-primary transition-colors">Screening GIS-MCDA</p>
-                      <p className="text-slate-400 text-[11px]">Indikatif: topografi, akses, jaringan</p>
+                      <p className="text-slate-700 dark:text-white text-[13px] font-medium group-hover:text-primary transition-colors">Prioritas GIS-MCDA</p>
+                      <p className="text-slate-400 text-[11px]">Peta zona potensi energi</p>
                     </div>
                   </label>
                 </div>
-                <p className="mt-2 text-[10px] leading-relaxed text-slate-500 dark:text-slate-400">
-                  GIS-MCDA adalah screening teknis, bukan status izin resmi.
-                </p>
               </div>
 
               <div>
@@ -900,14 +831,13 @@ export default function PetaPage() {
             )}
             {showMCDA && (
               <div className="mb-3">
-                <h4 className="text-[10px] font-bold text-slate-900 dark:text-white uppercase tracking-wider mb-1.5">Screening GIS-MCDA</h4>
+                <h4 className="text-[10px] font-bold text-slate-900 dark:text-white uppercase tracking-wider mb-1.5">Zona GIS-MCDA</h4>
                 <div className="flex items-center gap-2 text-[11px] text-slate-600 dark:text-text-secondary">
                   <span className="inline-flex items-center justify-center w-5 h-5 shrink-0">
                     <span className="block w-4 h-4 rounded-full border-2 border-green-500/70 bg-green-500/10" />
                   </span>
-                  <span>Besar = skor teknis lebih tinggi</span>
+                  <span>Besar = skor lebih tinggi</span>
                 </div>
-                <p className="text-[10px] text-slate-400 mt-1">Belum cek izin resmi</p>
               </div>
             )}
             <h4 className="text-[10px] font-bold text-slate-900 dark:text-white uppercase tracking-wider mb-2">Status Stasiun</h4>
