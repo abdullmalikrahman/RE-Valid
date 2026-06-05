@@ -24,6 +24,13 @@ const LeafletMap = dynamic(() => import('@/components/LeafletMap'), {
 
 type HeatLayer = 'none' | 'wind' | 'solar';
 
+const OFFICIAL_REGULATORY_ITEMS = [
+  'KKPR/RDTR/RTRW',
+  'Persetujuan Lingkungan',
+  'Kawasan lindung & status tanah',
+  'Interkoneksi jaringan',
+];
+
 // --- Station detail panel ---
 function StationPanel({
   station,
@@ -125,13 +132,13 @@ function StationPanel({
               </div>
             ))}
             <div className="flex justify-between items-center px-3 py-2">
-              <span className="text-slate-500 dark:text-text-secondary">Status Lokasi</span>
+              <span className="text-slate-500 dark:text-text-secondary">Status Teknis</span>
               <span className={`text-[11px] font-bold px-2 py-0.5 rounded-full border ${statusBg[station.status]}`}>
                 {statusLabel[station.status]}
               </span>
             </div>
             <div className="flex justify-between items-center px-3 py-2">
-              <span className="text-slate-500 dark:text-text-secondary">Skor Kesesuaian</span>
+              <span className="text-slate-500 dark:text-text-secondary">Skor Teknis</span>
               <span className="font-bold text-slate-900 dark:text-white">
                 {station.score}/100
                 {' '}&#8212;
@@ -146,7 +153,16 @@ function StationPanel({
                 {mcpLabel[station.mcpStatus]}
               </span>
             </div>
+            <div className="flex justify-between items-center px-3 py-2">
+              <span className="text-slate-500 dark:text-text-secondary">Kepatuhan Resmi</span>
+              <span className="text-[11px] font-bold px-2 py-0.5 rounded-full border bg-amber-500/10 border-amber-500/30 text-amber-700 dark:text-amber-300">
+                Belum Diverifikasi
+              </span>
+            </div>
           </div>
+          <p className="mt-2 text-[10px] leading-relaxed text-slate-400">
+            Skor teknis bukan pengganti verifikasi resmi: {OFFICIAL_REGULATORY_ITEMS.join(', ')}.
+          </p>
         </section>
 
         {(station.windRmse != null || station.solarRmse != null) && (
@@ -393,12 +409,12 @@ function AnalisisModal({ onClose, stations }: { onClose: () => void; stations: S
           {!done ? (
             <>
               <p className="text-[13px] text-slate-500 dark:text-text-secondary">
-                Peringkat lokasi berdasarkan skor kesesuaian yang dihitung dari data validasi lapangan: kecepatan angin, iradiasi surya, RMSE, skor baseline, bias, dan ketinggian stasiun.
+                Peringkat teknis awal berdasarkan skor validasi lokasi yang tersimpan. Status perizinan tetap perlu diverifikasi melalui data resmi KKPR/RDTR, lingkungan, kawasan, tanah, dan interkoneksi.
               </p>
               <div className="grid grid-cols-2 gap-3 text-[12px]">
                 {[
                   { icon: 'sensors', label: 'Total Lokasi', value: `${stations.length} lokasi` },
-                  { icon: 'layers', label: 'Kriteria Skor', value: '6 variabel' },
+                  { icon: 'layers', label: 'Kriteria Teknis', value: 'Skor MCP' },
                   { icon: 'area_chart', label: 'Cakupan', value: 'Jawa Barat' },
                   { icon: 'schedule', label: 'Est. Waktu', value: 'Instan' },
                 ].map((s) => (
@@ -622,12 +638,12 @@ export default function PetaPage() {
                   <h3 className="text-slate-900 dark:text-white text-[12px] font-bold uppercase tracking-wider">Lapisan Aktif</h3>
                 </div>
                 <div className="bg-slate-50 dark:bg-panel-dark rounded-lg p-3 border border-slate-200 dark:border-[#233648] space-y-1">
-                  {/* Lapisan Dasar Atlas */}
+                  {/* Peta dasar satelit dan medan */}
                   <label className="flex items-center gap-3 py-1.5 cursor-pointer group">
                     <input type="checkbox" checked={showSatellite} onChange={() => setShowSatellite(v => !v)} className="h-4 w-4 rounded border-slate-300 dark:border-[#324d67] accent-primary" />
                     <div>
-                      <p className="text-slate-700 dark:text-white text-[13px] font-medium group-hover:text-primary transition-colors">Lapisan Dasar Atlas</p>
-                      <p className="text-slate-400 text-[11px]">Citra satelit &amp; medan</p>
+                      <p className="text-slate-700 dark:text-white text-[13px] font-medium group-hover:text-primary transition-colors">Peta Dasar Satelit &amp; Medan</p>
+                      <p className="text-slate-400 text-[11px]">Konteks visual lokasi</p>
                     </div>
                   </label>
                   {/* Hasil Validasi */}
@@ -660,15 +676,18 @@ export default function PetaPage() {
                       <p className="text-slate-400 text-[11px]">{heatmapMeta.solar ? heatmapMeta.solar.source : 'GSA / ERA5 LTA · kWh/m²/hari'}</p>
                     </div>
                   </label>
-                  {/* Prioritas GIS-MCDA */}
+                  {/* Screening GIS-MCDA */}
                   <label className="flex items-center gap-3 py-1.5 cursor-pointer group border-t border-slate-200 dark:border-[#233648]/50">
                     <input type="checkbox" checked={showMCDA} onChange={() => setShowMCDA(v => !v)} className="h-4 w-4 rounded border-slate-300 dark:border-[#324d67] accent-primary" />
                     <div>
-                      <p className="text-slate-700 dark:text-white text-[13px] font-medium group-hover:text-primary transition-colors">Prioritas GIS-MCDA</p>
-                      <p className="text-slate-400 text-[11px]">Peta zona potensi energi</p>
+                      <p className="text-slate-700 dark:text-white text-[13px] font-medium group-hover:text-primary transition-colors">Screening GIS-MCDA</p>
+                      <p className="text-slate-400 text-[11px]">Indikatif: topografi, akses, jaringan</p>
                     </div>
                   </label>
                 </div>
+                <p className="mt-2 text-[10px] leading-relaxed text-slate-500 dark:text-slate-400">
+                  GIS-MCDA adalah screening teknis, bukan status izin resmi.
+                </p>
               </div>
 
               <div>
@@ -827,13 +846,14 @@ export default function PetaPage() {
             )}
             {showMCDA && (
               <div className="mb-3">
-                <h4 className="text-[10px] font-bold text-slate-900 dark:text-white uppercase tracking-wider mb-1.5">Zona GIS-MCDA</h4>
+                <h4 className="text-[10px] font-bold text-slate-900 dark:text-white uppercase tracking-wider mb-1.5">Screening GIS-MCDA</h4>
                 <div className="flex items-center gap-2 text-[11px] text-slate-600 dark:text-text-secondary">
                   <span className="inline-flex items-center justify-center w-5 h-5 shrink-0">
                     <span className="block w-4 h-4 rounded-full border-2 border-green-500/70 bg-green-500/10" />
                   </span>
-                  <span>Besar = skor lebih tinggi</span>
+                  <span>Besar = skor teknis lebih tinggi</span>
                 </div>
+                <p className="text-[10px] text-slate-400 mt-1">Belum cek izin resmi</p>
               </div>
             )}
             <h4 className="text-[10px] font-bold text-slate-900 dark:text-white uppercase tracking-wider mb-2">Status Stasiun</h4>

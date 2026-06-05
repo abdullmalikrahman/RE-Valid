@@ -134,7 +134,7 @@ function LaporanContent() {
       .catch(() => setDailyBaseline(new Map()));
   }, [stationId]);
 
-  // ── GIS-MCDA: fetch dari backend (Overpass API / OSM) ─────────────────────
+  // ── Screening teknis GIS-MCDA: fetch dari backend (Overpass API / OSM) ─────
   const [gisMcda, setGisMcda] = useState<GisMcdaData | null>(null);
   const [gisMcdaLoading, setGisMcdaLoading] = useState(false);
   useEffect(() => {
@@ -355,9 +355,9 @@ function LaporanContent() {
   const tooltipBorder = isDark ? '#2d3b4a' : '#e2e8f0';
   const tooltipLabel = isDark ? '#92adc9' : '#374151';
 
-  // Faktor kesesuaian GIS-MCDA
-  // Jika data Overpass sudah tiba → gunakan jarak nyata per koordinat
-  // Jika masih loading / gagal → fallback ke tier-altitude
+  // Faktor screening teknis GIS-MCDA.
+  // Jika data Overpass sudah tiba, gunakan jarak nyata per koordinat.
+  // Jika gagal, gunakan fallback konservatif agar tidak memberi presisi palsu.
   const alt = station.altitude;
   const mcdaFactors: { label: string; pct: number; detail?: string | null }[] = gisMcda
     ? gisMcda.factors
@@ -370,13 +370,13 @@ function LaporanContent() {
         },
         {
           label: 'Aksesibilitas',
-          pct: alt < 150 ? 82 : alt < 400 ? 70 : alt < 800 ? 55 : 38,
-          detail: 'Estimasi tier-altitude',
+          pct: 20,
+          detail: 'Fallback konservatif: data jalan OSM/Overpass belum tersedia',
         },
         {
           label: 'Infrastruktur',
-          pct: alt < 200 ? 72 : alt < 600 ? 58 : alt < 1500 ? 42 : 28,
-          detail: 'Estimasi tier-altitude',
+          pct: 30,
+          detail: 'Fallback konservatif: data transmisi OSM/Overpass belum tersedia',
         },
       ];
 
@@ -450,7 +450,7 @@ function LaporanContent() {
       row('Skor Kesesuaian Baseline', (station.windR2 ?? station.r2) != null ? (station.windR2 ?? station.r2)!.toFixed(2) : '–');
       row('AEP PLTB P50 (Bersih)', station.aep != null ? `${Math.round(station.aep * 0.877).toLocaleString('id')} MWh/thn` : '–');
       row('AEP PLTB P90 (Bersih)', station.aep != null ? `${Math.round(station.aep * 0.767).toLocaleString('id')} MWh/thn` : '–');
-      row('Skor GIS-MCDA', `${station.score} / 100`);
+      row('Skor Teknis Lokasi', `${station.score} / 100`);
       y += 3;
 
       // Validasi Surya
@@ -483,8 +483,8 @@ function LaporanContent() {
       row('Hasil Spesifik PLTS /MWp (kWh/kWp·thn)', `${Math.round(ghiBaselineVal * 365 * 0.78).toLocaleString('id')} kWh/kWp·thn`);
       y += 3;
 
-      // GIS-MCDA
-      sectionTitle('Faktor Kesesuaian GIS-MCDA');
+      // Screening teknis GIS-MCDA
+      sectionTitle('Screening Teknis GIS-MCDA');
       mcdaFactors.forEach((f) => {
         const detailSuffix = f.detail ? ` (${f.detail})` : '';
         row(f.label, `${f.pct}%${detailSuffix}`);
@@ -492,6 +492,8 @@ function LaporanContent() {
       if (gisMcda) {
         row('Sumber data', gisMcda.data_source);
       }
+      row('Status kepatuhan resmi', 'Belum diverifikasi');
+      row('Cek resmi diperlukan', 'KKPR/RDTR, lingkungan, kawasan, tanah, interkoneksi');
       y += 3;
 
       // Data Meteorologi — show if any sensor readings exist
@@ -809,7 +811,7 @@ function LaporanContent() {
         ['Skor Kesesuaian Baseline', wR2 != null ? wR2.toFixed(2) : '\u2013'],
         ['AEP PLTB P50 Net (MWh/thn)', station.aep != null ? Math.round(station.aep * 0.877).toLocaleString('id') : '\u2013'],
         ['AEP PLTB P90 Net (MWh/thn)', station.aep != null ? Math.round(station.aep * 0.767).toLocaleString('id') : '\u2013'],
-        ['Skor GIS-MCDA (/100)', `${station.score} / 100`],
+        ['Skor Teknis Lokasi (/100)', `${station.score} / 100`],
       ].forEach((pair, i) => addRow2(pair[0], pair[1], i));
 
       addSection('VALIDASI SURYA \u2014 GHI (ERA5 DOY/GSA vs Observasi)');
@@ -843,7 +845,7 @@ function LaporanContent() {
         ['Hasil Spesifik PLTS /MWp PR=78%', `${Math.round(ghiBaselineVal * 365 * 0.78).toLocaleString('id')} kWh/kWp\u00b7thn`],
       ].forEach((pair, i) => addRow2(pair[0], pair[1], i));
 
-      addSection('FAKTOR KESESUAIAN GIS-MCDA');
+      addSection('SCREENING TEKNIS GIS-MCDA');
       mcdaFactors.forEach(({ label, pct, detail }, i) => {
         const detailSuffix = detail ? ` (${detail})` : '';
         addRow2(label, `${pct}%${detailSuffix}`, i);
@@ -857,6 +859,8 @@ function LaporanContent() {
           addRow2('Jarak ke Transmisi Terdekat', `${gisMcda.power_dist_km.toFixed(1)} km`, mcdaFactors.length + 2);
         }
       }
+      addRow2('Status Kepatuhan Resmi', 'Belum diverifikasi', mcdaFactors.length + 3);
+      addRow2('Cek Resmi Diperlukan', 'KKPR/RDTR, lingkungan, kawasan, tanah, interkoneksi', mcdaFactors.length + 4);
 
       // DATA METEOROLOGI — raw sensor readings if available
       const meteoRows = measurements.filter(
@@ -1438,11 +1442,11 @@ function LaporanContent() {
               </div>
             </div>{/* end Potensi Energi card */}
 
-            {/* GIS-MCDA */}
+            {/* Screening teknis GIS-MCDA */}
             <div className="bg-white dark:bg-card-dark border border-gray-200 dark:border-border-dark rounded-xl p-5 shadow-sm">
               <div className="flex items-center gap-2 mb-3">
                 <span className="material-symbols-outlined text-emerald-400 text-[20px]">layers</span>
-                <h4 className="text-sm font-bold text-slate-900 dark:text-white">Faktor Kesesuaian GIS-MCDA</h4>
+                <h4 className="text-sm font-bold text-slate-900 dark:text-white">Screening Teknis GIS-MCDA</h4>
                 <span className="ml-auto font-bold text-sm text-slate-900 dark:text-white">
                   {station.score}/100
                 </span>
@@ -1458,15 +1462,18 @@ function LaporanContent() {
                 ) : gisMcda && (gisMcda.road_dist_km !== null || gisMcda.power_dist_km !== null) ? (
                   <span className="inline-flex items-center gap-1.5 text-[10px] font-medium px-2 py-0.5 rounded-full bg-emerald-500/10 border border-emerald-500/30 text-emerald-400">
                     <span className="material-symbols-outlined text-[12px]">gps_fixed</span>
-                    Berbasis koordinat nyata · {gisMcda.data_source}
+                    Koordinat + OSM (screening teknis) · {gisMcda.data_source}
                   </span>
                 ) : (
                   <span className="inline-flex items-center gap-1.5 text-[10px] font-medium px-2 py-0.5 rounded-full bg-amber-500/10 border border-amber-500/30 text-amber-400">
                     <span className="material-symbols-outlined text-[12px]">warning</span>
-                    Estimasi tier-altitude (Overpass tidak responsif)
+                    Fallback konservatif (Overpass tidak responsif)
                   </span>
                 )}
               </div>
+              <p className="text-[10px] leading-relaxed text-slate-400 mb-3">
+                Belum memverifikasi KKPR/RDTR, persetujuan lingkungan, kawasan/status tanah, dan interkoneksi resmi.
+              </p>
 
               <div className="space-y-3">
                 {mcdaFactors.map((f) => (

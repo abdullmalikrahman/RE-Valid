@@ -237,13 +237,21 @@ export interface GisMcdaData {
   road_dist_km: number | null;
   power_dist_km: number | null;
   data_source: string;
+  method?: {
+    version: string;
+    status: string;
+    notice: string;
+    composite: string;
+    official_requirements: string[];
+    regulatory_status: string;
+  };
   factors: GisMcdaFactor[];
 }
 
 /**
- * Ambil faktor kesesuaian GIS-MCDA berbasis koordinat nyata (Overpass API/OSM).
+ * Ambil faktor screening teknis GIS-MCDA berbasis koordinat nyata (Overpass API/OSM).
  * Aksesibilitas = jarak ke jalan terdekat; Infrastruktur = jarak ke transmisi listrik terdekat.
- * Hasil di-cache 6 jam di server.
+ * Hasil di-cache 6 jam di server dan bukan keputusan perizinan resmi.
  */
 export async function fetchGisMcda(stationId: string): Promise<GisMcdaData> {
   const res = await apiFetch(`${API_BASE}/stations/${stationId}/gis-mcda`);

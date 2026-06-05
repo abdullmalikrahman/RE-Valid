@@ -20,6 +20,17 @@ from app.schemas.station import StationCreate, StationResponse, StationUpdate
 # ── Cache in-memory untuk hasil GIS-MCDA (TTL 6 jam per stasiun) ──────────────
 _GIS_CACHE: dict[str, tuple[float, dict]] = {}
 _GIS_CACHE_TTL = 6 * 3600  # detik
+_GIS_METHOD_VERSION = "screening_v1"
+_GIS_SCREENING_NOTICE = (
+    "Screening teknis awal berbasis atlas/observasi, elevasi, dan OSM/Overpass; "
+    "bukan keputusan KKPR/RDTR, persetujuan lingkungan, atau izin resmi."
+)
+_GIS_OFFICIAL_REQUIREMENTS = [
+    "KKPR/RDTR/RTRW melalui OSS/GISTARU/instansi tata ruang berwenang",
+    "Persetujuan Lingkungan melalui AMDAL/UKL-UPL/SPPL sesuai skala kegiatan",
+    "Kawasan hutan/lindung, sempadan, bencana, dan status/izin penguasaan tanah",
+    "Kelayakan interkoneksi jaringan dari pemilik/penyedia jaringan listrik",
+]
 
 
 def _haversine_km(lat1: float, lon1: float, lat2: float, lon2: float) -> float:
@@ -89,7 +100,7 @@ async def _overpass_nearest_km(
 def _road_pct(d: float | None) -> int:
     """Skor aksesibilitas (%) berdasarkan jarak ke jalan terdekat (km)."""
     if d is None:
-        return 20  # fallback jika Overpass tidak tersedia
+        return 20  # fallback konservatif jika Overpass tidak tersedia
     if d < 1:    return 90
     if d < 5:    return 75
     if d < 15:   return 55
@@ -100,7 +111,7 @@ def _road_pct(d: float | None) -> int:
 def _power_pct(d: float | None) -> int:
     """Skor infrastruktur (%) berdasarkan jarak ke saluran transmisi terdekat (km)."""
     if d is None:
-        return 30  # fallback jika Overpass tidak tersedia
+        return 30  # fallback konservatif jika Overpass tidak tersedia
     if d < 5:    return 80
     if d < 20:   return 60
     if d < 50:   return 40
@@ -109,7 +120,7 @@ def _power_pct(d: float | None) -> int:
 
 
 def _topo_pct(alt: int | None) -> int:
-    """Skor topografi (%) berdasarkan kelas elevasi DEMNAS/SRTM (Pedoman ESDM No. 1/2012)."""
+    """Skor topografi (%) berdasarkan kelas elevasi untuk screening internal."""
     if alt is None:
         return 50
     if alt < 200:   return 70   # dataran rendah, lereng <8°
@@ -287,18 +298,19 @@ async def fetch_atlas_baseline(
 # Endpoint: hitung faktor GIS-MCDA berdasarkan koordinat nyata
 #   · Aksesibilitas  → jarak ke jalan terdekat via Overpass API (OSM)
 #   · Infrastruktur  → jarak ke saluran transmisi listrik terdekat via Overpass API
-#   · Topografi      → kelas elevasi DEMNAS/SRTM (altitude dari DB)
+#   · Topografi      → kelas elevasi dari data altitude stasiun
 #   · Potensi EBT    → skor validasi MCP langsung dari station.score
 #
+# Catatan: ini screening teknis, bukan cek kepatuhan/perizinan resmi.
 # Cache 6 jam per stasiun (jaringan jalan & transmisi jarang berubah).
 # ---------------------------------------------------------------------------
 
 @router.get("/{station_id}/gis-mcda")
 async def get_gis_mcda(station_id: str, db: AsyncSession = Depends(get_db)):
     """
-    Hitung faktor kesesuaian GIS-MCDA berbasis koordinat nyata stasiun.
+    Hitung faktor screening GIS-MCDA berbasis koordinat nyata stasiun.
     Aksesibilitas dan Infrastruktur menggunakan jarak aktual ke fitur OSM
-    via Overpass API — bukan lookup tier-altitude generik.
+    via Overpass API. Hasil ini indikatif dan bukan keputusan regulasi resmi.
     """
     # ── Cache check ───────────────────────────────────────────────────────────
     cached = _GIS_CACHE.get(station_id)
@@ -336,19 +348,27 @@ async def get_gis_mcda(station_id: str, db: AsyncSession = Depends(get_db)):
         "data_source": (
             "Overpass API (OpenStreetMap)"
             if (road_dist is not None or power_dist is not None)
-            else "Fallback tier-altitude (Overpass tidak responsif)"
+            else "Fallback konservatif (Overpass tidak responsif)"
         ),
+        "method": {
+            "version": _GIS_METHOD_VERSION,
+            "status": "screening_teknis_awal",
+            "notice": _GIS_SCREENING_NOTICE,
+            "composite": "Rata-rata Topografi, Aksesibilitas, dan Infrastruktur untuk radius zona peta.",
+            "official_requirements": _GIS_OFFICIAL_REQUIREMENTS,
+            "regulatory_status": "belum_diverifikasi_resmi",
+        },
         "factors": [
             {
                 "label": "Potensi EBT",
                 "pct": station.score,
-                "source": "Hasil validasi MCP (atlas vs. observasi lapangan)",
+                "source": "Skor teknis validasi MCP (atlas vs. observasi lapangan)",
                 "detail": None,
             },
             {
                 "label": "Topografi",
                 "pct": _topo_pct(alt),
-                "source": "Kelas elevasi DEMNAS/SRTM — Pedoman ESDM No. 1/2012",
+                "source": "Kelas elevasi stasiun untuk screening internal",
                 "detail": f"{alt} m dpl" if alt is not None else None,
             },
             {
@@ -358,7 +378,7 @@ async def get_gis_mcda(station_id: str, db: AsyncSession = Depends(get_db)):
                 "detail": (
                     f"{road_dist:.1f} km ke jalan terdekat"
                     if road_dist is not None
-                    else "Fallback (Overpass tidak tersedia)"
+                    else "Fallback konservatif (Overpass tidak tersedia)"
                 ),
             },
             {
@@ -368,7 +388,7 @@ async def get_gis_mcda(station_id: str, db: AsyncSession = Depends(get_db)):
                 "detail": (
                     f"{power_dist:.1f} km ke transmisi listrik terdekat"
                     if power_dist is not None
-                    else "Fallback (Overpass tidak tersedia)"
+                    else "Fallback konservatif (Overpass tidak tersedia)"
                 ),
             },
         ],

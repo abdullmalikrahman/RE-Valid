@@ -88,7 +88,7 @@ export default function LeafletMap({
           <strong>${lat.toFixed(4)}, ${lon.toFixed(4)}</strong>
         </div>
         <div class="atlas-pop-source">${escapeHtml(source)}</div>
-        <div class="atlas-pop-note">Baseline LTA atlas untuk screening lokasi.</div>
+        <div class="atlas-pop-note">Baseline LTA atlas untuk screening teknis, bukan keputusan perizinan.</div>
       </div>
     `;
   };
@@ -441,7 +441,7 @@ export default function LeafletMap({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [showMCDA, stations]);
 
-  // ── Prioritas GIS-MCDA ─────────────────────────────────────────────────────
+  // ── Screening teknis GIS-MCDA ──────────────────────────────────────────────
   useEffect(() => {
     if (!mapReady || !mapInstanceRef.current) return;
     if (mcdaLayerRef.current) { mcdaLayerRef.current.remove(); mcdaLayerRef.current = null; }
@@ -452,7 +452,7 @@ export default function LeafletMap({
       stations.forEach((s) => {
         const color = s.status === 'prioritas' ? '#22c55e' : s.status === 'kandidat' ? '#f59e0b' : '#64748b';
 
-        // Radius berdasarkan skor GIS-MCDA komposit (rata-rata Topografi + Aksesibilitas + Infrastruktur)
+        // Radius berdasarkan skor teknis komposit (rata-rata Topografi + Aksesibilitas + Infrastruktur)
         // Skala: 1km (composite=0%) → 5km (composite=100%)
         const mcda = mcdaCache[s.id];
         let composite = 40; // default sementara selama data belum dimuat
@@ -469,7 +469,7 @@ export default function LeafletMap({
         // Warna persentase berdasarkan nilai (bukan warna status stasiun yang bisa gelap)
         const pctColor = (pct: number) => pct >= 75 ? '#4ade80' : pct >= 50 ? '#fbbf24' : '#f87171';
 
-        // Tooltip breakdown GIS-MCDA per faktor
+        // Tooltip breakdown screening GIS-MCDA per faktor
         const gisRows = mcda
           ? mcda.factors
               .filter((f) => ['Topografi', 'Aksesibilitas', 'Infrastruktur'].includes(f.label))
@@ -487,12 +487,12 @@ export default function LeafletMap({
         const tooltipHtml =
           `<div class="lf-tt-inner" style="min-width:200px;padding:8px 11px">`
           + `<div style="margin-bottom:6px;font-size:11px;font-weight:700;color:#f1f5f9">`
-          + `<span style="color:${color}">&#9679;</span> ${s.id} <span style="color:#94a3b8;font-weight:400;font-size:10px">— GIS-MCDA</span></div>`
+          + `<span style="color:${color}">&#9679;</span> ${s.id} <span style="color:#94a3b8;font-weight:400;font-size:10px">— screening GIS</span></div>`
           + gisRows
-          + (mcda ? `<div style="font-size:9px;color:#64748b;margin-top:7px;border-top:1px solid rgba(148,163,184,0.15);padding-top:5px">${mcda.data_source}</div>` : '')
+          + (mcda ? `<div style="font-size:9px;color:#64748b;margin-top:7px;border-top:1px solid rgba(148,163,184,0.15);padding-top:5px">${mcda.data_source}<br/>Belum verifikasi KKPR/RDTR & lingkungan resmi</div>` : '')
           + `</div>`;
 
-        // Lingkaran luar: zona kesesuaian lahan GIS
+        // Lingkaran luar: zona screening teknis GIS
         L.circle([s.lat, s.lon], {
           radius: r, color, weight: 2, opacity: 0.7,
           fillColor: color, fillOpacity: 0.10, interactive: true,
