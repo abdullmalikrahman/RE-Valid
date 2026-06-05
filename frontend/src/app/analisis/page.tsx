@@ -805,8 +805,8 @@ function AnalisisContent() {
     { metric: 'RMSE (m/s)', value: windRmseForRow != null ? windRmseForRow.toFixed(2) : '–', target: '< 2.0', pass: windRmseForRow != null ? windRmseForRow < 2.0 : null },
     { metric: 'MAE (m/s)', value: mae !== null ? mae.toFixed(2) : '–', target: '< 1.5', pass: mae !== null ? mae < 1.5 : null },
     { metric: 'Skor Kesesuaian Baseline', value: windR2Val > 0 ? windR2Val.toFixed(2) : '–', target: '> 0.70', pass: windR2Val > 0 ? windR2Val > 0.70 : null },
-    { metric: 'Bias vs GWA (%)', value: windDiffGwa !== null ? (windDiffGwa >= 0 ? '+' : '') + windDiffGwa + '%' : '–', target: '± 5%', pass: windDiffGwa !== null ? Math.abs(windDiffGwa) <= 5 : null },
-    { metric: 'Bias vs ERA5/ECMWF (%)', value: windDiffNasa !== null ? (windDiffNasa >= 0 ? '+' : '') + windDiffNasa + '%' : '–', target: '± 5%', pass: windDiffNasa !== null ? Math.abs(windDiffNasa) <= 5 : null },
+    { metric: 'Bias vs GWA LTA (%)', value: windDiffGwa !== null ? (windDiffGwa >= 0 ? '+' : '') + windDiffGwa + '%' : '–', target: '± 5%', pass: windDiffGwa !== null ? Math.abs(windDiffGwa) <= 5 : null },
+    { metric: 'Bias vs ERA5 DOY (%)', value: windDiffNasa !== null ? (windDiffNasa >= 0 ? '+' : '') + windDiffNasa + '%' : '–', target: '± 5%', pass: windDiffNasa !== null ? Math.abs(windDiffNasa) <= 5 : null },
     { metric: 'Kelengkapan Sampel 1 Menit', value: availDisplay, target: '>= 90%', pass: availability.pct !== null ? availability.pct >= 90 : null },
   ];
   const solarRmseVal = station.solarRmse ?? null;
@@ -814,8 +814,8 @@ function AnalisisContent() {
     { metric: 'RMSE (kWh/m²/hari)', value: solarRmseVal !== null ? solarRmseVal.toFixed(2) : '–', target: '< 1.5', pass: solarRmseVal !== null ? solarRmseVal < 1.5 : null },
     { metric: 'MAE (kWh/m²/hari)', value: mae !== null ? mae.toFixed(2) : '–', target: '< 1.0', pass: mae !== null ? mae < 1.0 : null },
     { metric: 'Skor Kesesuaian Baseline', value: solarR2Val > 0 ? solarR2Val.toFixed(2) : '–', target: '> 0.70', pass: solarR2Val > 0 ? solarR2Val > 0.70 : null },
-    { metric: 'Bias vs GSA (%)', value: ghiDiffGsa !== null ? (ghiDiffGsa >= 0 ? '+' : '') + ghiDiffGsa + '%' : '–', target: '± 5%', pass: ghiDiffGsa !== null ? Math.abs(ghiDiffGsa) <= 5 : null },
-    { metric: 'Bias vs ERA5/ECMWF (%)', value: ghiDiffNasa !== null ? (ghiDiffNasa >= 0 ? '+' : '') + ghiDiffNasa + '%' : '–', target: '± 5%', pass: ghiDiffNasa !== null ? Math.abs(ghiDiffNasa) <= 5 : null },
+    { metric: 'Bias vs GSA LTA (%)', value: ghiDiffGsa !== null ? (ghiDiffGsa >= 0 ? '+' : '') + ghiDiffGsa + '%' : '–', target: '± 5%', pass: ghiDiffGsa !== null ? Math.abs(ghiDiffGsa) <= 5 : null },
+    { metric: 'Bias vs ERA5 DOY (%)', value: ghiDiffNasa !== null ? (ghiDiffNasa >= 0 ? '+' : '') + ghiDiffNasa + '%' : '–', target: '± 5%', pass: ghiDiffNasa !== null ? Math.abs(ghiDiffNasa) <= 5 : null },
     { metric: 'Clearness Index (Kt)', value: ktIndex.toFixed(2), target: '0.40–0.65', pass: ktIndex >= 0.40 && ktIndex <= 0.65 },
     { metric: 'Kelengkapan Sampel 1 Menit', value: availDisplay, target: '>= 90%', pass: availability.pct !== null ? availability.pct >= 90 : null },
   ];
@@ -989,7 +989,7 @@ function AnalisisContent() {
                     {obsWindMean >= 5 ? 'Kuat' : 'Moderat'}
                   </span>
                 </div>
-                <p className="text-[10px] text-slate-400 mt-1">vs baseline GWA 3.0 · ERA5 (ECMWF)</p>
+                <p className="text-[10px] text-slate-400 mt-1">vs GWA 3.0 LTA · ERA5 DOY</p>
               </div>
               <div className="bg-white dark:bg-card-dark rounded-xl p-4 border border-gray-200 dark:border-border-dark">
                 <div className="flex justify-between items-start mb-1.5">
@@ -1009,9 +1009,9 @@ function AnalisisContent() {
                 </div>
                 <div className="flex items-baseline gap-2">
                   <h3 className="text-2xl font-bold text-slate-900 dark:text-white">{biasDisplay}</h3>
-                  <span className="text-xs text-slate-500 dark:text-slate-400 uppercase font-medium">vs ERA5</span>
+                  <span className="text-xs text-slate-500 dark:text-slate-400 uppercase font-medium">vs ERA5 DOY</span>
                 </div>
-                <p className="text-[10px] text-slate-400 mt-1">MBE harian obs vs ERA5 selama periode obs</p>
+                <p className="text-[10px] text-slate-400 mt-1">MBE harian obs vs ERA5 DOY selama periode obs</p>
               </div>
               <div className="bg-white dark:bg-card-dark rounded-xl p-4 border border-gray-200 dark:border-border-dark relative overflow-hidden group">
                 <div className="absolute right-0 top-0 p-3 opacity-10 group-hover:opacity-20 transition-opacity">
@@ -1044,7 +1044,7 @@ function AnalisisContent() {
                   <h3 className="text-2xl font-bold text-slate-900 dark:text-white">{obsGhiMean.toFixed(2)}</h3>
                   <span className="text-sm text-slate-500 dark:text-slate-400">kWh/m²/hari</span>
                 </div>
-                <p className="text-[10px] text-slate-400 mt-1">GHI lapangan vs baseline GSA: <span className="text-amber-400 font-semibold">{ghiBaseline}</span></p>
+                <p className="text-[10px] text-slate-400 mt-1">GHI lapangan vs baseline GSA LTA: <span className="text-amber-400 font-semibold">{ghiBaseline}</span></p>
               </div>
               <div className="bg-white dark:bg-card-dark rounded-xl p-4 border border-gray-200 dark:border-border-dark">
                 <div className="flex justify-between items-start mb-1.5">
@@ -1068,9 +1068,9 @@ function AnalisisContent() {
                       ? `${station.solarBias > 0 ? '+' : ''}${station.solarBias.toFixed(1)}%`
                       : `${ghiDiff > 0 ? '+' : ''}${ghiDiff.toFixed(1)}%`}
                   </h3>
-                  <span className="text-xs text-slate-500 dark:text-slate-400 uppercase font-medium">vs ERA5</span>
+                  <span className="text-xs text-slate-500 dark:text-slate-400 uppercase font-medium">vs ERA5 DOY</span>
                 </div>
-                <p className="text-[10px] text-slate-400 mt-1">MBE harian obs vs ERA5 · Kt: {ktIndex.toFixed(2)} ({ktLabel})</p>
+                <p className="text-[10px] text-slate-400 mt-1">MBE harian obs vs ERA5 DOY · Kt: {ktIndex.toFixed(2)} ({ktLabel})</p>
               </div>
               <div className="bg-white dark:bg-card-dark rounded-xl p-4 border border-gray-200 dark:border-border-dark relative overflow-hidden group">
                 <div className="absolute right-0 top-0 p-3 opacity-10 group-hover:opacity-20 transition-opacity">
@@ -1576,7 +1576,7 @@ function AnalisisContent() {
                           <XAxis dataKey="date" tick={{ fontSize: 7, fill: '#64748b' }} tickLine={false} interval="preserveStartEnd" />
                           <YAxis tick={{ fontSize: 7, fill: '#64748b' }} tickLine={false} axisLine={false} domain={domain ?? ['auto', 'auto']} />
                           <Tooltip contentStyle={{ backgroundColor: tooltipBg, border: `1px solid ${tooltipBorder}`, borderRadius: '8px', fontSize: 10 }} />
-                          <Line type="monotone" dataKey="obs" stroke={color} strokeWidth={2} dot={false} name={label} />
+                          <Line type="monotone" dataKey="obs" stroke={color} strokeWidth={2} dot={{ r: 2, fill: color }} activeDot={{ r: 4 }} name={label} />
                         </LineChart>
                       </ResponsiveContainer>
                     )}
