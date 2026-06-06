@@ -23,7 +23,7 @@ _GIS_CACHE_SUCCESS_TTL = 6 * 3600  # detik
 _GIS_CACHE_FALLBACK_TTL = 10 * 60  # detik
 _GIS_METHOD_VERSION = "screening_v1"
 _GIS_SCREENING_NOTICE = (
-    "Prioritas GIS-MCDA berbasis atlas/observasi, elevasi, dan OSM/Overpass."
+    "Screening teknis indikatif berbasis atlas/observasi, elevasi, dan OSM/Overpass; bukan status izin resmi."
 )
 
 
@@ -389,7 +389,7 @@ async def get_gis_mcda(
             "version": _GIS_METHOD_VERSION,
             "status": "prioritas_gis_mcda",
             "notice": _GIS_SCREENING_NOTICE,
-            "composite": "Rata-rata Topografi, Aksesibilitas, dan Infrastruktur untuk radius zona peta.",
+            "composite": "Rata-rata Topografi, Aksesibilitas, dan Infrastruktur untuk marker prioritas peta.",
         },
         "factors": [
             {

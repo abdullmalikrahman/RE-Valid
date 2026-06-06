@@ -452,8 +452,7 @@ export default function LeafletMap({
       stations.forEach((s) => {
         const color = s.status === 'prioritas' ? '#22c55e' : s.status === 'kandidat' ? '#f59e0b' : '#64748b';
 
-        // Radius berdasarkan skor komposit (rata-rata Topografi + Aksesibilitas + Infrastruktur)
-        // Skala: 1km (composite=0%) → 5km (composite=100%)
+        // Marker visual berbasis skor, bukan radius spasial.
         const mcda = mcdaCache[s.id];
         let composite = 40; // default sementara selama data belum dimuat
         if (mcda) {
@@ -464,7 +463,8 @@ export default function LeafletMap({
             composite = gisFactors.reduce((sum, f) => sum + f.pct, 0) / gisFactors.length;
           }
         }
-        const r = 1000 + (composite / 100) * 4000;
+        const markerRadius = 8 + (composite / 100) * 14;
+        const coreRadius = Math.max(4, markerRadius * 0.45);
 
         // Warna persentase berdasarkan nilai (bukan warna status stasiun yang bisa gelap)
         const pctColor = (pct: number) => pct >= 75 ? '#4ade80' : pct >= 50 ? '#fbbf24' : '#f87171';
@@ -489,20 +489,21 @@ export default function LeafletMap({
           + `<div style="margin-bottom:6px;font-size:11px;font-weight:700;color:#f1f5f9">`
           + `<span style="color:${color}">&#9679;</span> ${s.id} <span style="color:#94a3b8;font-weight:400;font-size:10px">— GIS-MCDA</span></div>`
           + gisRows
+          + `<div style="font-size:9px;color:#94a3b8;margin-top:7px;border-top:1px solid rgba(148,163,184,0.15);padding-top:5px">Ukuran marker = skor screening teknis, bukan area cakupan pengukuran.</div>`
           + (mcda ? `<div style="font-size:9px;color:#64748b;margin-top:7px;border-top:1px solid rgba(148,163,184,0.15);padding-top:5px">${mcda.data_source}</div>` : '')
           + `</div>`;
 
-        // Lingkaran luar: zona prioritas GIS-MCDA
-        L.circle([s.lat, s.lon], {
-          radius: r, color, weight: 2, opacity: 0.7,
+        // Marker luar: prioritas GIS-MCDA.
+        L.circleMarker([s.lat, s.lon], {
+          radius: markerRadius, color, weight: 2, opacity: 0.85,
           fillColor: color, fillOpacity: 0.10, interactive: true,
         })
           .bindTooltip(tooltipHtml, { permanent: false, direction: 'top', className: 'leaflet-tooltip-custom' })
           .addTo(grp);
 
-        // Lingkaran dalam: inti representatif stasiun (~30% radius)
-        L.circle([s.lat, s.lon], {
-          radius: r * 0.30, color, weight: 1.5, opacity: 0.6,
+        // Marker inti agar titik prioritas tetap terbaca.
+        L.circleMarker([s.lat, s.lon], {
+          radius: coreRadius, color, weight: 1.5, opacity: 0.65,
           fillColor: color, fillOpacity: 0.22, interactive: false,
         }).addTo(grp);
       });
