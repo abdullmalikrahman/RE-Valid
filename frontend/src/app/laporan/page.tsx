@@ -1470,9 +1470,6 @@ function LaporanContent() {
                   </span>
                 )}
               </div>
-              <p className="text-[10px] text-slate-400 dark:text-slate-500 mb-3 leading-relaxed">
-                Screening teknis indikatif untuk prioritas lokasi; bukan status izin resmi atau area representatif pengukuran.
-              </p>
               <div className="space-y-3">
                 {mcdaFactors.map((f) => (
                   <div key={f.label}>

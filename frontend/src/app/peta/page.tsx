@@ -397,12 +397,12 @@ function AnalisisModal({ onClose, stations }: { onClose: () => void; stations: S
           {!done ? (
             <>
               <p className="text-[13px] text-slate-500 dark:text-text-secondary">
-                Peringkat prioritas lokasi berdasarkan skor validasi, faktor teknis GIS-MCDA, potensi atlas, dan hasil MCP yang tersimpan.
+                Peringkat zona prioritas energi berdasarkan skor validasi lokasi, potensi atlas, dan hasil MCP yang tersimpan.
               </p>
               <div className="grid grid-cols-2 gap-3 text-[12px]">
                 {[
                   { icon: 'sensors', label: 'Total Lokasi', value: `${stations.length} lokasi` },
-                  { icon: 'layers', label: 'Kriteria Teknis', value: 'GIS-MCDA + MCP' },
+                  { icon: 'layers', label: 'Kriteria Teknis', value: 'Skor MCP' },
                   { icon: 'area_chart', label: 'Cakupan', value: 'Jawa Barat' },
                   { icon: 'schedule', label: 'Est. Waktu', value: 'Instan' },
                 ].map((s) => (
@@ -669,7 +669,7 @@ export default function PetaPage() {
                     <input type="checkbox" checked={showMCDA} onChange={() => setShowMCDA(v => !v)} className="h-4 w-4 rounded border-slate-300 dark:border-[#324d67] accent-primary" />
                     <div>
                       <p className="text-slate-700 dark:text-white text-[13px] font-medium group-hover:text-primary transition-colors">Prioritas GIS-MCDA</p>
-                      <p className="text-slate-400 text-[11px]">Screening teknis indikatif</p>
+                      <p className="text-slate-400 text-[11px]">Peta zona potensi energi</p>
                     </div>
                   </label>
                 </div>
@@ -831,12 +831,12 @@ export default function PetaPage() {
             )}
             {showMCDA && (
               <div className="mb-3">
-                <h4 className="text-[10px] font-bold text-slate-900 dark:text-white uppercase tracking-wider mb-1.5">Prioritas GIS-MCDA</h4>
+                <h4 className="text-[10px] font-bold text-slate-900 dark:text-white uppercase tracking-wider mb-1.5">Zona GIS-MCDA</h4>
                 <div className="flex items-center gap-2 text-[11px] text-slate-600 dark:text-text-secondary">
                   <span className="inline-flex items-center justify-center w-5 h-5 shrink-0">
-                    <span className="block w-3.5 h-3.5 rounded-full border-2 border-green-500/70 bg-green-500/10" />
+                    <span className="block w-4 h-4 rounded-full border-2 border-green-500/70 bg-green-500/10" />
                   </span>
-                  <span>Ukuran marker = skor teknis</span>
+                  <span>Besar = skor lebih tinggi</span>
                 </div>
               </div>
             )}
