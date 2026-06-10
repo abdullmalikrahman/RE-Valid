@@ -276,7 +276,8 @@ function AnalisisContent() {
 
           if (innerStatus === 'quick_check') {
             setTaskState('success');
-            setTaskMsg(`${result.message ?? 'Quick check sensor selesai.'} Sampling: ${result.sample_count ?? result.count ?? '–'}.`);
+            const samples = result.sample_count ?? result.count;
+            setTaskMsg(`Quick check sensor selesai${samples != null ? `: ${samples} sampling` : ''}.`);
             mutate();
             return;
           }
@@ -286,11 +287,11 @@ function AnalisisContent() {
             : result.analysis_level === 'preliminary'
               ? 'Analisis preliminary selesai'
               : 'Perbandingan harian awal selesai';
-          const validDays = result.valid_days != null ? `  Hari valid: ${result.valid_days}` : '';
-          const samples = result.sample_count != null ? `  Sampling: ${result.sample_count}` : '';
-          const warning = result.warning ? `  Catatan: ${result.warning}` : '';
+          const validDays = result.valid_days != null ? `${result.valid_days} hari valid` : null;
+          const samples = result.sample_count != null ? `${result.sample_count} sampling` : null;
+          const summaryParts = [validDays, samples].filter(Boolean).join(', ');
           setTaskState('success');
-          setTaskMsg(`${levelLabel} - RMSE: ${result.rmse ?? '–'}  Bias: ${result.bias ?? '–'}%  Skor: ${result.score ?? '–'}${validDays}${samples}${warning}`);
+          setTaskMsg(`${levelLabel}${summaryParts ? `. ${summaryParts}` : ''}.`);
           mutate();
           return;
         }
