@@ -5,6 +5,44 @@ import Link from 'next/link';
 import Navbar from '@/components/Navbar';
 import Footer from '@/components/Footer';
 import { useStations } from '@/hooks/useStations';
+import type { Station } from '@/lib/stationData';
+
+const REFERENCE_CAPACITY_MW = 10;
+const WIND_P50_NET_FACTOR = 0.877;
+const SOLAR_REFERENCE_PR = 78;
+const DEFAULT_WIND_CAPEX_PER_MW = 1.2;
+const DEFAULT_SOLAR_CAPEX_PER_MWP = 0.9;
+
+function clampNumber(value: number, min: number, max: number, fallback: number) {
+  if (!Number.isFinite(value)) return fallback;
+  return Math.min(max, Math.max(min, value));
+}
+
+function getWindBaselineValue(station: Station) {
+  return station.windBaselineGwa ?? station.windBaselineNasa ?? station.windBaseline ?? station.windSpeed ?? null;
+}
+
+function getGhiBaselineValue(station: Station) {
+  return station.ghiBaselineGsa ?? station.ghiBaselineNasa ?? station.ghiBaseline ?? station.irradiation ?? null;
+}
+
+function getWindSourceLabel(station: Station) {
+  if (station.windBaselineGwa != null) return 'GWA 3.0';
+  if (station.windBaselineNasa != null) return 'ERA5 (ECMWF)';
+  if (station.windBaseline != null) return 'Baseline Atlas';
+  return 'Terukur';
+}
+
+function getGhiSourceLabel(station: Station) {
+  if (station.ghiBaselineGsa != null) return 'GSA (Solargis)';
+  if (station.ghiBaselineNasa != null) return 'ERA5 (ECMWF)';
+  if (station.ghiBaseline != null) return 'Baseline Atlas';
+  return 'Terukur';
+}
+
+function getWindReferenceAepMwh(station: Station) {
+  return station.aep && station.aep > 0 ? station.aep : station.windAep ?? null;
+}
 
 export default function KalkulatorPage() {
   useEffect(() => { document.title = 'Kalkulator | RE-Valid'; }, []);
@@ -38,16 +76,22 @@ export default function KalkulatorPage() {
     setSelectedStationId(id);
     if (isWind) {
       // Prioritas: GWA 3.0 → ERA5 → baseline → terukur
-      const speed = s.windBaselineGwa ?? s.windBaselineNasa ?? s.windBaseline ?? s.windSpeed ?? 0;
-      const cf = speed > 0 ? Math.round(Math.max(15, Math.min(42, speed * 3.8))) : 20;
+      const referenceAep = getWindReferenceAepMwh(s);
+      const speed = getWindBaselineValue(s) ?? 0;
+      const cfFromAep = referenceAep && referenceAep > 0
+        ? (referenceAep * WIND_P50_NET_FACTOR) / (REFERENCE_CAPACITY_MW * 8760) * 100
+        : null;
+      const cf = cfFromAep != null
+        ? Math.round(clampNumber(cfFromAep, 5, 60, 20))
+        : Math.round(clampNumber(speed * 3.8, 5, 60, 20));
       setFaktorKapasitas(cf);
       // CAPEX ref. PLTB Indonesia: ~$1.0–1.5 M/MW
-      setCapex(parseFloat((kapasitas * 1.2).toFixed(1)));
+      setCapex(parseFloat((kapasitas * DEFAULT_WIND_CAPEX_PER_MW).toFixed(1)));
     } else {
       // Solar: PR default 75%, CAPEX disesuaikan kapasitas
       setPerformanceRatio(75);
       // CAPEX PLTS lebih rendah (~$0.8–1.2 M/MWp) vs angin (~$1.0–1.5 M/MW)
-      setCapex(parseFloat((kapasitas * 0.9).toFixed(1)));
+      setCapex(parseFloat((kapasitas * DEFAULT_SOLAR_CAPEX_PER_MWP).toFixed(1)));
     }
   }
 
@@ -59,9 +103,10 @@ export default function KalkulatorPage() {
       // AEP PLTS = kapasitas (MWp) × GHI (kWh/m²/day) × 365 × PR
       // Prioritas sumber GHI: GSA (Solargis) → ERA5 → baseline → irradiation terukur
       const station = stations.find((s) => s.id === selectedStationId);
-      const ghi = station
-        ? (station.ghiBaselineGsa ?? station.ghiBaselineNasa ?? station.ghiBaseline ?? station.irradiation ?? 4.5)
-        : 4.5;
+      if (station?.solarAep && station.solarAep > 0) {
+        return (station.solarAep / 1000) * (kapasitas / REFERENCE_CAPACITY_MW) * (performanceRatio / SOLAR_REFERENCE_PR);
+      }
+      const ghi = station ? (getGhiBaselineValue(station) ?? 4.5) : 4.5;
       return (kapasitas * ghi * 365 * (performanceRatio / 100)) / 1000; // GWh
     }
   }, [kapasitas, faktorKapasitas, performanceRatio, energyType, selectedStationId, isWind, stations]);
@@ -95,11 +140,11 @@ export default function KalkulatorPage() {
     const lcoeCents = discAep > 0 ? ((capex + discOpex) * 100) / discAep : 0;
 
     let cumulative = -capex;
-    let payback = umurProyek;
+    let payback: number | null = null;
     for (const cf of cashFlows) {
       const prev = cumulative;
       cumulative += cf.net;
-      if (cumulative >= 0) {
+      if (cumulative >= 0 && cf.net > 0) {
         payback = cf.year - 1 + (-prev / cf.net);
         break;
       }
@@ -110,27 +155,32 @@ export default function KalkulatorPage() {
 
     // ── IRR via Newton-Raphson ────────────────────────────────────
     const flows = [-capex, ...cashFlows.map((cf) => cf.net)];
-    let irr = 0.1;
-    for (let i = 0; i < 200; i++) {
-      let f = 0;
-      let df = 0;
-      flows.forEach((c, t) => {
-        const denom = Math.pow(1 + irr, t);
-        f += c / denom;
-        if (t > 0) df -= (t * c) / (denom * (1 + irr));
-      });
-      if (Math.abs(df) < 1e-12) break;
-      const irr1 = irr - f / df;
-      if (Math.abs(irr1 - irr) < 1e-8) { irr = irr1; break; }
-      irr = irr1 <= -1 ? 0.01 : irr1;
+    const hasPositiveFlow = flows.some((flow) => flow > 0);
+    const hasNegativeFlow = flows.some((flow) => flow < 0);
+    let irrPct: number | null = null;
+    if (hasPositiveFlow && hasNegativeFlow) {
+      let irr = 0.1;
+      for (let i = 0; i < 200; i++) {
+        let f = 0;
+        let df = 0;
+        flows.forEach((c, t) => {
+          const denom = Math.pow(1 + irr, t);
+          f += c / denom;
+          if (t > 0) df -= (t * c) / (denom * (1 + irr));
+        });
+        if (Math.abs(df) < 1e-12) break;
+        const irr1 = irr - f / df;
+        if (Math.abs(irr1 - irr) < 1e-8) { irr = irr1; break; }
+        irr = irr1 <= -1 ? 0.01 : irr1;
+      }
+      irrPct = Number.isFinite(irr) ? irr * 100 : null;
     }
-    const irrPct = isFinite(irr) ? irr * 100 : null;
 
     return {
       aepY1,
       npv: parseFloat(npv.toFixed(1)),
       lcoeCents: parseFloat(lcoeCents.toFixed(2)),
-      payback: parseFloat(payback.toFixed(1)),
+      payback: payback !== null ? parseFloat(payback.toFixed(1)) : null,
       roi: parseFloat(roi.toFixed(1)),
       irr: irrPct !== null ? parseFloat(irrPct.toFixed(1)) : null,
     };
@@ -144,6 +194,17 @@ export default function KalkulatorPage() {
 
   const isViable = kpis.npv > 0;
   const selectedStation = stations.find((s) => s.id === selectedStationId);
+  const selectedWindAepMwh = selectedStation ? getWindReferenceAepMwh(selectedStation) : null;
+  const selectedWindNetAepMwh = selectedWindAepMwh && selectedWindAepMwh > 0 ? selectedWindAepMwh * WIND_P50_NET_FACTOR : null;
+  const selectedSolarAepMwh = selectedStation?.solarAep && selectedStation.solarAep > 0 ? selectedStation.solarAep : null;
+  const activeGhiValue = selectedStation ? getGhiBaselineValue(selectedStation) : null;
+  const aepBasisText = isWind
+    ? selectedWindNetAepMwh
+      ? `AEP P50 net stasiun @10 MW: ${Math.round(selectedWindNetAepMwh).toLocaleString('id-ID')} MWh/thn`
+      : `CF manual dari ${selectedStation ? getWindSourceLabel(selectedStation) : 'input user'}`
+    : selectedSolarAepMwh
+      ? `AEP PLTS stasiun @10 MWp PR 78%: ${Math.round(selectedSolarAepMwh).toLocaleString('id-ID')} MWh/thn`
+      : `GHI ${activeGhiValue ?? 4.5} kWh/m2/hari`;
   const accentClass = isWind ? 'text-primary' : 'text-amber-400';
   const accentBg = isWind ? 'bg-primary' : 'bg-amber-500';
   const accentBgLight = isWind ? 'bg-primary/10' : 'bg-amber-500/10';
@@ -154,7 +215,7 @@ export default function KalkulatorPage() {
     setPerformanceRatio(75);
     setUmurProyek(20);
     setDegradasi(isWind ? 0.5 : 0.4);
-    setCapex(isWind ? 60 : 45.0);
+    setCapex(isWind ? 50 * DEFAULT_WIND_CAPEX_PER_MW : 50 * DEFAULT_SOLAR_CAPEX_PER_MWP);
     setOpex(isWind ? 2.0 : 1.5);
     setDiskonto(8.5);
     setTarif(80);
@@ -166,12 +227,12 @@ export default function KalkulatorPage() {
     setSelectedStationId('none');
     if (type === 'wind') {
       setFaktorKapasitas(20);
-      setCapex(60);
+      setCapex(50 * DEFAULT_WIND_CAPEX_PER_MW);
       setDegradasi(0.5);
       setOpex(2.0);
     } else {
       setFaktorKapasitas(20);
-      setCapex(45.0);
+      setCapex(50 * DEFAULT_SOLAR_CAPEX_PER_MWP);
       setDegradasi(0.4); // PLTS degradasi panel ~0.4%/thn
       setOpex(1.5);
     }
@@ -224,7 +285,7 @@ export default function KalkulatorPage() {
         kpis.aepY1.toFixed(2),
         kpis.lcoeCents.toFixed(2),
         `${kpis.npv >= 0 ? '+' : ''}${kpis.npv.toFixed(1)}`,
-        kpis.payback.toFixed(1),
+        kpis.payback !== null ? kpis.payback.toFixed(1) : `>${umurProyek}`,
         kpis.irr !== null ? `${kpis.irr.toFixed(1)}%` : 'N/A',
         `${kpis.roi >= 0 ? '+' : ''}${kpis.roi.toFixed(1)}%`,
       ];
@@ -310,7 +371,7 @@ export default function KalkulatorPage() {
           pdf.line(cToX(i - 1), cToY(cumVals[i - 1]), cToX(i), cToY(cumVals[i]));
         }
 
-        if (kpis.payback < umurProyek) {
+        if (kpis.payback !== null && kpis.payback < umurProyek) {
           const pbX = cToX(kpis.payback);
           const pbY = cToY(0);
           pdf.setFillColor(19, 127, 236);
@@ -515,7 +576,7 @@ export default function KalkulatorPage() {
             </button>
           </div>
           <p className="text-[11px] text-slate-400">
-            {isWind ? 'CF pre-fill dari baseline atlas (GWA 3.0 / ERA5 ECMWF) · CAPEX ref. ~$1.0–1.5 M/MW' : 'AEP dihitung dari GHI baseline (GSA / ERA5 ECMWF) · CAPEX ref. ~$0.8–1.2 M/MWp'}
+            {isWind ? 'CF pre-fill dari AEP validasi/GWA/ERA5 jika tersedia · simulasi screening ekonomi' : 'AEP pre-fill dari solar AEP/GHI GSA/ERA5 jika tersedia · simulasi screening ekonomi'}
           </p>
         </div>
 
@@ -539,8 +600,8 @@ export default function KalkulatorPage() {
                   {stations.map((s) => (
                     <option key={s.id} value={s.id}>
                       {s.name} ({s.id}) &mdash; {isWind
-                      ? `${s.windBaselineGwa ?? s.windBaselineNasa ?? s.windBaseline ?? s.windSpeed ?? '–'} m/s`
-                      : `${s.ghiBaselineGsa ?? s.ghiBaselineNasa ?? s.ghiBaseline ?? s.irradiation ?? '–'} kWh/m²/hari`}
+                      ? `${getWindBaselineValue(s) ?? '–'} m/s`
+                      : `${getGhiBaselineValue(s) ?? '–'} kWh/m²/hari`}
                     </option>
                   ))}
                 </select>
@@ -552,21 +613,21 @@ export default function KalkulatorPage() {
                   <div className={`flex items-center gap-2 text-[11px] ${isWind ? 'text-green-500 bg-green-500/10 border-green-500/20' : 'text-amber-500 bg-amber-500/10 border-amber-500/20'} border rounded px-2.5 py-1.5`}>
                     <span className="material-symbols-outlined text-[14px]">check_circle</span>
                     {isWind
-                      ? `CF dihitung dari baseline angin: ${selectedStation.windBaselineGwa ?? selectedStation.windBaselineNasa ?? selectedStation.windBaseline ?? selectedStation.windSpeed ?? '–'} m/s`
-                      : `GHI aktif: ${selectedStation.ghiBaselineGsa ?? selectedStation.ghiBaselineNasa ?? selectedStation.ghiBaseline ?? selectedStation.irradiation ?? '–'} kWh/m²/hari (GSA/ERA5)`}
+                      ? `CF aktif: ${faktorKapasitas}% (${selectedWindNetAepMwh ? 'AEP P50 net stasiun' : getWindSourceLabel(selectedStation)})`
+                      : `AEP/GHI aktif: ${selectedSolarAepMwh ? 'AEP PLTS stasiun' : `${getGhiBaselineValue(selectedStation) ?? '–'} kWh/m²/hari (${getGhiSourceLabel(selectedStation)})`}`}
                   </div>
                   <div className="grid grid-cols-2 gap-1.5 text-[11px]">
                     <div className="bg-gray-50 dark:bg-[#111a22] rounded px-2.5 py-2 flex flex-col gap-0.5">
                       <span className="text-slate-400 uppercase font-bold text-[10px]">{isWind ? 'Baseline Angin' : 'GHI Baseline'}</span>
                       <span className="font-bold text-slate-900 dark:text-white">
                         {isWind
-                          ? `${selectedStation.windBaselineGwa ?? selectedStation.windBaselineNasa ?? selectedStation.windBaseline ?? selectedStation.windSpeed ?? '–'} m/s`
-                          : `${selectedStation.ghiBaselineGsa ?? selectedStation.ghiBaselineNasa ?? selectedStation.ghiBaseline ?? selectedStation.irradiation ?? '–'} kWh/m²/d`}
+                          ? `${getWindBaselineValue(selectedStation) ?? '–'} m/s`
+                          : `${getGhiBaselineValue(selectedStation) ?? '–'} kWh/m²/d`}
                       </span>
                       <span className="text-slate-400 text-[10px]">
                         {isWind
-                          ? (selectedStation.windBaselineGwa != null ? 'GWA 3.0' : selectedStation.windBaselineNasa != null ? 'ERA5 (ECMWF)' : 'Terukur')
-                          : (selectedStation.ghiBaselineGsa != null ? 'GSA (Solargis)' : selectedStation.ghiBaselineNasa != null ? 'ERA5 (ECMWF)' : 'Terukur')}
+                          ? getWindSourceLabel(selectedStation)
+                          : getGhiSourceLabel(selectedStation)}
                       </span>
                     </div>
                     <div className="bg-gray-50 dark:bg-[#111a22] rounded px-2.5 py-2 flex flex-col gap-0.5">
@@ -622,8 +683,8 @@ export default function KalkulatorPage() {
                       <span className={`text-[10px] font-bold ${accentClass} ${accentBgLight} px-1.5 py-0.5 rounded`}>{isWind ? 'MW' : 'MWp'}</span>
                     </div>
                     <div className="flex items-center gap-3">
-                      <input className="flex-1" max="200" min="1" type="range" value={kapasitas} onChange={(e) => setKapasitas(Number(e.target.value))} />
-                      <input className="w-16 bg-gray-50 dark:bg-[#111a22] border border-gray-200 dark:border-border-dark rounded px-2 py-1.5 text-right text-sm font-medium text-slate-900 dark:text-white focus:outline-none focus:border-primary" type="number" min="1" max="200" value={kapasitas} onChange={(e) => setKapasitas(Number(e.target.value))} />
+                      <input className="flex-1" max="200" min="1" type="range" value={kapasitas} onChange={(e) => setKapasitas(clampNumber(Number(e.target.value), 1, 200, kapasitas))} />
+                      <input className="w-16 bg-gray-50 dark:bg-[#111a22] border border-gray-200 dark:border-border-dark rounded px-2 py-1.5 text-right text-sm font-medium text-slate-900 dark:text-white focus:outline-none focus:border-primary" type="number" min="1" max="200" value={kapasitas} onChange={(e) => setKapasitas(clampNumber(Number(e.target.value), 1, 200, kapasitas))} />
                     </div>
                   </div>
 
@@ -635,8 +696,8 @@ export default function KalkulatorPage() {
                         <span className="text-[10px] font-bold text-primary bg-primary/10 px-1.5 py-0.5 rounded">%</span>
                       </div>
                       <div className="flex items-center gap-3">
-                        <input className="flex-1" max="60" min="5" type="range" value={faktorKapasitas} onChange={(e) => setFaktorKapasitas(Number(e.target.value))} />
-                        <input className="w-16 bg-gray-50 dark:bg-[#111a22] border border-gray-200 dark:border-border-dark rounded px-2 py-1.5 text-right text-sm font-medium text-slate-900 dark:text-white focus:outline-none focus:border-primary" type="number" min="5" max="60" value={faktorKapasitas} onChange={(e) => setFaktorKapasitas(Number(e.target.value))} />
+                        <input className="flex-1" max="60" min="5" type="range" value={faktorKapasitas} onChange={(e) => setFaktorKapasitas(clampNumber(Number(e.target.value), 5, 60, faktorKapasitas))} />
+                        <input className="w-16 bg-gray-50 dark:bg-[#111a22] border border-gray-200 dark:border-border-dark rounded px-2 py-1.5 text-right text-sm font-medium text-slate-900 dark:text-white focus:outline-none focus:border-primary" type="number" min="5" max="60" value={faktorKapasitas} onChange={(e) => setFaktorKapasitas(clampNumber(Number(e.target.value), 5, 60, faktorKapasitas))} />
                       </div>
                       <p className="text-[10px] text-slate-400">Tipikal PLTB Indonesia: 20–35% · CF = AEP / (Kapasitas × 8760)</p>
                     </div>
@@ -648,8 +709,8 @@ export default function KalkulatorPage() {
                           <span className="text-[10px] font-bold text-amber-500 bg-amber-500/10 px-1.5 py-0.5 rounded">%</span>
                         </div>
                         <div className="flex items-center gap-3">
-                          <input className="flex-1" max="90" min="50" type="range" value={performanceRatio} onChange={(e) => setPerformanceRatio(Number(e.target.value))} />
-                          <input className="w-16 bg-gray-50 dark:bg-[#111a22] border border-gray-200 dark:border-border-dark rounded px-2 py-1.5 text-right text-sm font-medium text-slate-900 dark:text-white focus:outline-none" type="number" min="50" max="90" value={performanceRatio} onChange={(e) => setPerformanceRatio(Number(e.target.value))} />
+                          <input className="flex-1" max="90" min="50" type="range" value={performanceRatio} onChange={(e) => setPerformanceRatio(clampNumber(Number(e.target.value), 50, 90, performanceRatio))} />
+                          <input className="w-16 bg-gray-50 dark:bg-[#111a22] border border-gray-200 dark:border-border-dark rounded px-2 py-1.5 text-right text-sm font-medium text-slate-900 dark:text-white focus:outline-none" type="number" min="50" max="90" value={performanceRatio} onChange={(e) => setPerformanceRatio(clampNumber(Number(e.target.value), 50, 90, performanceRatio))} />
                         </div>
                         <p className="text-[10px] text-slate-400">Tipikal PLTS tropik: 72–80% · Mencakup rugi kabel, suhu, debu</p>
                       </div>
@@ -658,8 +719,9 @@ export default function KalkulatorPage() {
                         <p className="text-slate-600 dark:text-slate-300 font-mono">AEP = MWp × GHI × 365 × PR</p>
                         {selectedStation ? (
                           <p className="text-amber-500 mt-1">
-                            GHI = {selectedStation.ghiBaselineGsa ?? selectedStation.ghiBaselineNasa ?? selectedStation.ghiBaseline ?? selectedStation.irradiation} kWh/m²/hari
-                            {' '}({selectedStation.ghiBaselineGsa != null ? 'GSA Solargis' : selectedStation.ghiBaselineNasa != null ? 'ERA5 (ECMWF)' : selectedStation.ghiBaseline != null ? 'Baseline Atlas' : 'Terukur'})
+                            {selectedSolarAepMwh
+                              ? `Basis: AEP PLTS stasiun ${Math.round(selectedSolarAepMwh).toLocaleString('id-ID')} MWh/thn @10 MWp, PR ${SOLAR_REFERENCE_PR}%`
+                              : `GHI = ${getGhiBaselineValue(selectedStation)} kWh/m²/hari (${getGhiSourceLabel(selectedStation)})`}
                           </p>
                         ) : (
                           <p className="text-slate-400 mt-1">Pilih stasiun untuk GHI aktual (prioritas: GSA → ERA5 → Terukur)</p>
@@ -675,8 +737,8 @@ export default function KalkulatorPage() {
                       <span className={`text-[10px] font-bold ${accentClass} ${accentBgLight} px-1.5 py-0.5 rounded`}>Tahun</span>
                     </div>
                     <div className="flex items-center gap-3">
-                      <input className="flex-1" max="30" min="5" type="range" value={umurProyek} onChange={(e) => setUmurProyek(Number(e.target.value))} />
-                      <input className="w-16 bg-gray-50 dark:bg-[#111a22] border border-gray-200 dark:border-border-dark rounded px-2 py-1.5 text-right text-sm font-medium text-slate-900 dark:text-white focus:outline-none focus:border-primary" type="number" min="5" max="30" value={umurProyek} onChange={(e) => setUmurProyek(Number(e.target.value))} />
+                      <input className="flex-1" max="30" min="5" type="range" value={umurProyek} onChange={(e) => setUmurProyek(clampNumber(Number(e.target.value), 5, 30, umurProyek))} />
+                      <input className="w-16 bg-gray-50 dark:bg-[#111a22] border border-gray-200 dark:border-border-dark rounded px-2 py-1.5 text-right text-sm font-medium text-slate-900 dark:text-white focus:outline-none focus:border-primary" type="number" min="5" max="30" value={umurProyek} onChange={(e) => setUmurProyek(clampNumber(Number(e.target.value), 5, 30, umurProyek))} />
                     </div>
                   </div>
 
@@ -687,8 +749,8 @@ export default function KalkulatorPage() {
                       <span className={`text-[10px] font-bold ${accentClass} ${accentBgLight} px-1.5 py-0.5 rounded`}>%</span>
                     </div>
                     <div className="flex items-center gap-3">
-                      <input className="flex-1" max="5" min="0" step="0.1" type="range" value={degradasi} onChange={(e) => setDegradasi(Number(e.target.value))} />
-                      <input className="w-16 bg-gray-50 dark:bg-[#111a22] border border-gray-200 dark:border-border-dark rounded px-2 py-1.5 text-right text-sm font-medium text-slate-900 dark:text-white focus:outline-none focus:border-primary" step="0.1" type="number" min="0" max="5" value={degradasi} onChange={(e) => setDegradasi(Number(e.target.value))} />
+                      <input className="flex-1" max="5" min="0" step="0.1" type="range" value={degradasi} onChange={(e) => setDegradasi(clampNumber(Number(e.target.value), 0, 5, degradasi))} />
+                      <input className="w-16 bg-gray-50 dark:bg-[#111a22] border border-gray-200 dark:border-border-dark rounded px-2 py-1.5 text-right text-sm font-medium text-slate-900 dark:text-white focus:outline-none focus:border-primary" step="0.1" type="number" min="0" max="5" value={degradasi} onChange={(e) => setDegradasi(clampNumber(Number(e.target.value), 0, 5, degradasi))} />
                     </div>
                     <p className="text-[10px] text-slate-400">{isWind ? 'PLTB: ~0.5%/thn (keausan mekanis)' : 'PLTS: ~0.4%/thn (degradasi panel surya)'}</p>
                   </div>
@@ -714,7 +776,7 @@ export default function KalkulatorPage() {
                     </div>
                     <div className="relative">
                       <span className="absolute left-3 top-2 text-slate-500 dark:text-gray-400 text-sm">$</span>
-                      <input className="w-full bg-gray-50 dark:bg-[#111a22] border border-gray-200 dark:border-border-dark rounded px-3 py-1.5 pl-6 text-sm font-medium text-slate-900 dark:text-white focus:outline-none focus:border-primary" type="number" min="0.1" step="0.5" value={capex} onChange={(e) => setCapex(Number(e.target.value))} />
+                      <input className="w-full bg-gray-50 dark:bg-[#111a22] border border-gray-200 dark:border-border-dark rounded px-3 py-1.5 pl-6 text-sm font-medium text-slate-900 dark:text-white focus:outline-none focus:border-primary" type="number" min="0.1" step="0.5" value={capex} onChange={(e) => setCapex(clampNumber(Number(e.target.value), 0.1, 1000, capex))} />
                     </div>
                     <p className="text-[10px] text-slate-400">
                       {isWind ? 'Ref. PLTB Indonesia: $1.0–1.5 M/MW' : 'Ref. PLTS Indonesia: $0.8–1.2 M/MWp'}
@@ -728,8 +790,8 @@ export default function KalkulatorPage() {
                       <span className="text-[10px] font-bold text-green-500 bg-green-500/10 px-1.5 py-0.5 rounded">% CAPEX</span>
                     </div>
                     <div className="flex items-center gap-3">
-                      <input className="flex-1" max="5" min="0.5" step="0.1" type="range" value={opex} onChange={(e) => setOpex(Number(e.target.value))} />
-                      <input className="w-16 bg-gray-50 dark:bg-[#111a22] border border-gray-200 dark:border-border-dark rounded px-2 py-1.5 text-right text-sm font-medium text-slate-900 dark:text-white focus:outline-none focus:border-primary" step="0.1" type="number" min="0.5" max="5" value={opex} onChange={(e) => setOpex(Number(e.target.value))} />
+                      <input className="flex-1" max="5" min="0.5" step="0.1" type="range" value={opex} onChange={(e) => setOpex(clampNumber(Number(e.target.value), 0.5, 5, opex))} />
+                      <input className="w-16 bg-gray-50 dark:bg-[#111a22] border border-gray-200 dark:border-border-dark rounded px-2 py-1.5 text-right text-sm font-medium text-slate-900 dark:text-white focus:outline-none focus:border-primary" step="0.1" type="number" min="0.5" max="5" value={opex} onChange={(e) => setOpex(clampNumber(Number(e.target.value), 0.5, 5, opex))} />
                     </div>
                     <p className="text-[10px] text-slate-400">
                       {isWind ? 'PLTB: ~2–3% CAPEX/thn (maintenance turbin)' : 'PLTS: ~1–2% CAPEX/thn (cleaning, inverter)'}
@@ -743,8 +805,8 @@ export default function KalkulatorPage() {
                       <span className="text-[10px] font-bold text-green-500 bg-green-500/10 px-1.5 py-0.5 rounded">%</span>
                     </div>
                     <div className="flex items-center gap-3">
-                      <input className="flex-1" max="20" min="1" step="0.1" type="range" value={diskonto} onChange={(e) => setDiskonto(Number(e.target.value))} />
-                      <input className="w-16 bg-gray-50 dark:bg-[#111a22] border border-gray-200 dark:border-border-dark rounded px-2 py-1.5 text-right text-sm font-medium text-slate-900 dark:text-white focus:outline-none focus:border-primary" step="0.1" type="number" min="1" max="20" value={diskonto} onChange={(e) => setDiskonto(Number(e.target.value))} />
+                      <input className="flex-1" max="20" min="1" step="0.1" type="range" value={diskonto} onChange={(e) => setDiskonto(clampNumber(Number(e.target.value), 1, 20, diskonto))} />
+                      <input className="w-16 bg-gray-50 dark:bg-[#111a22] border border-gray-200 dark:border-border-dark rounded px-2 py-1.5 text-right text-sm font-medium text-slate-900 dark:text-white focus:outline-none focus:border-primary" step="0.1" type="number" min="1" max="20" value={diskonto} onChange={(e) => setDiskonto(clampNumber(Number(e.target.value), 1, 20, diskonto))} />
                     </div>
                   </div>
 
@@ -755,8 +817,8 @@ export default function KalkulatorPage() {
                       <span className="text-[10px] font-bold text-green-500 bg-green-500/10 px-1.5 py-0.5 rounded">USD/MWh</span>
                     </div>
                     <div className="flex items-center gap-3">
-                      <input className="flex-1" max="200" min="20" step="5" type="range" value={tarif} onChange={(e) => setTarif(Number(e.target.value))} />
-                      <input className="w-16 bg-gray-50 dark:bg-[#111a22] border border-gray-200 dark:border-border-dark rounded px-2 py-1.5 text-right text-sm font-medium text-slate-900 dark:text-white focus:outline-none focus:border-primary" step="5" type="number" min="20" max="200" value={tarif} onChange={(e) => setTarif(Number(e.target.value))} />
+                      <input className="flex-1" max="200" min="20" step="5" type="range" value={tarif} onChange={(e) => setTarif(clampNumber(Number(e.target.value), 20, 200, tarif))} />
+                      <input className="w-16 bg-gray-50 dark:bg-[#111a22] border border-gray-200 dark:border-border-dark rounded px-2 py-1.5 text-right text-sm font-medium text-slate-900 dark:text-white focus:outline-none focus:border-primary" step="5" type="number" min="20" max="200" value={tarif} onChange={(e) => setTarif(clampNumber(Number(e.target.value), 20, 200, tarif))} />
                     </div>
                   </div>
                 </div>
@@ -769,13 +831,13 @@ export default function KalkulatorPage() {
                   <>
                     <p>AEP = Kapasitas &times; CF &times; 8.760 jam</p>
                     <p>LCOE = (CAPEX + &Sigma;OPEX) / &Sigma;AEP (diskonto)</p>
-                    <p>NPV = &Sigma;(Pendapatan &minus; OPEX) / (1+r)&sup t; &minus; CAPEX</p>
+                    <p>NPV = &Sigma;(Pendapatan &minus; OPEX) / (1+r)<sup>t</sup> &minus; CAPEX</p>
                   </>
                 ) : (
                   <>
                     <p>AEP = MWp &times; GHI &times; 365 &times; PR</p>
                     <p>LCOE = (CAPEX + &Sigma;OPEX) / &Sigma;AEP (diskonto)</p>
-                    <p>NPV = &Sigma;(Pendapatan &minus; OPEX) / (1+r)&sup t; &minus; CAPEX</p>
+                    <p>NPV = &Sigma;(Pendapatan &minus; OPEX) / (1+r)<sup>t</sup> &minus; CAPEX</p>
                   </>
                 )}
               </div>
@@ -807,7 +869,7 @@ export default function KalkulatorPage() {
                   <span className="text-xs font-bold text-slate-400">GWh</span>
                 </div>
                 <p className="text-[10px] text-slate-400 mt-1">
-                  {isWind ? `CF = ${faktorKapasitas}%` : `GHI × PR = ${performanceRatio}%`}
+                  {aepBasisText}
                 </p>
               </div>
 
@@ -845,10 +907,10 @@ export default function KalkulatorPage() {
                 </div>
                 <p className="text-xs text-slate-500 dark:text-text-secondary font-medium uppercase tracking-wide mb-1.5">Periode Pengembalian</p>
                 <div className="flex items-baseline gap-1">
-                  <h4 className="text-2xl font-bold text-slate-900 dark:text-white">{kpis.payback.toFixed(1)}</h4>
+                  <h4 className="text-2xl font-bold text-slate-900 dark:text-white">{kpis.payback !== null ? kpis.payback.toFixed(1) : `>${umurProyek}`}</h4>
                   <span className="text-xs font-bold text-slate-400">Tahun</span>
                 </div>
-                <p className="text-[10px] text-slate-400 mt-1">ROI total: {kpis.roi.toFixed(1)}%</p>
+                <p className="text-[10px] text-slate-400 mt-1">{kpis.payback !== null ? `ROI total: ${kpis.roi.toFixed(1)}%` : `Belum balik modal; ROI total ${kpis.roi.toFixed(1)}%`}</p>
               </div>
 
               <div className="bg-white dark:bg-card-dark rounded-xl p-4 border border-gray-200 dark:border-border-dark relative overflow-hidden group">
@@ -903,7 +965,7 @@ export default function KalkulatorPage() {
                     <line x1="0" y1={cumPoints.zeroY} x2="100" y2={cumPoints.zeroY} stroke="#64748b" strokeWidth="0.5" strokeDasharray="2,2" vectorEffect="non-scaling-stroke" />
                     <path d={cumPoints.areaD} fill="url(#cashGrad)" opacity="0.2" />
                     <path d={cumPoints.pathD} fill="none" stroke={isWind ? '#137fec' : '#f59e0b'} strokeLinejoin="round" strokeWidth="2" vectorEffect="non-scaling-stroke" />
-                    {kpis.payback < umurProyek && (
+                    {kpis.payback !== null && kpis.payback < umurProyek && (
                       <circle cx={Math.min(95, (kpis.payback / umurProyek) * 100)} cy={cumPoints.zeroY} fill={isWind ? '#137fec' : '#f59e0b'} r="1.5" className="animate-pulse" />
                     )}
                   </svg>
