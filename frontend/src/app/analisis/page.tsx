@@ -14,8 +14,8 @@ import { useMeasurements, type Measurement } from '@/hooks/useMeasurements';
 import { apiFetch } from '@/lib/api';
 
 const mcpStatusLabel: Record<string, Record<string, string>> = {
-  wind: { selesai: 'Analisis MCP Selesai', berjalan: 'Analisis MCP Berjalan', pending: 'Belum Dijalankan' },
-  solar: { selesai: 'Validasi GHI Selesai', berjalan: 'Validasi GHI Berjalan', pending: 'Belum Dijalankan' },
+  wind: { selesai: 'MCP Screening Selesai', berjalan: 'MCP Screening Berjalan', pending: 'Belum Dijalankan' },
+  solar: { selesai: 'GHI Screening Selesai', berjalan: 'GHI Screening Berjalan', pending: 'Belum Dijalankan' },
 };
 const mcpStatusColor: Record<string, string> = {
   selesai: 'bg-green-500/10 border-green-500/30',
@@ -227,7 +227,13 @@ function AnalisisContent() {
           'Content-Type': 'application/json',
           ...(token ? { Authorization: `Bearer ${token}` } : {}),
         },
-        body: JSON.stringify({ station_id: station.id, variable: energyType, n: 14400 }),
+        body: JSON.stringify({
+          station_id: station.id,
+          variable: energyType,
+          n: 14400,
+          start: startDate,
+          end: endDate,
+        }),
       });
         if (!res.ok) {
         if (res.status === 403 || res.status === 401) {
@@ -252,21 +258,43 @@ function AnalisisContent() {
         const r = await apiFetch(`/api/v1/analyze/${task_id}`);
         const data = await r.json();
         if (data.status === 'success') {
-          const innerStatus: string = data.result?.status ?? '';
-          // Celery task completed, but check inner result for soft errors
+          const result = data.result ?? {};
+          const innerStatus: string = result.status ?? '';
+
           if (innerStatus === 'insufficient_data') {
             setTaskState('error');
-            setTaskMsg(`Data tidak cukup (${data.result?.count ?? 0} baris, minimum 10). Pastikan sensor sudah mengirim data ke stasiun ini.`);
+            setTaskMsg(result.message ?? `Data belum cukup (${result.count ?? 0} ${result.unit ?? 'sampling'}, minimum ${result.minimum ?? 10}).`);
             mutate();
-          } else if (innerStatus === 'baseline_not_set') {
-            setTaskState('error');
-            setTaskMsg('Baseline atlas belum diisi. Admin perlu mengisi nilai wind_baseline / ghi_baseline di halaman Pengelolaan Lokasi (/admin) terlebih dahulu (gunakan tombol "Ambil dari Atlas" atau input manual).');
-          } else {
-            setTaskState('success');
-            setTaskMsg(`Selesai — RMSE: ${data.result?.rmse ?? '–'}  Bias: ${data.result?.bias ?? '–'}%  Skor: ${data.result?.r2 ?? '–'}`);
-            mutate();
+            return;
           }
-        } else if (data.status === 'failed') {
+
+          if (innerStatus === 'baseline_not_set') {
+            setTaskState('error');
+            setTaskMsg(result.message ?? 'Baseline atlas belum diisi. Admin perlu mengisi nilai wind_baseline / ghi_baseline di halaman Pengelolaan Lokasi (/admin) terlebih dahulu.');
+            return;
+          }
+
+          if (innerStatus === 'quick_check') {
+            setTaskState('success');
+            setTaskMsg(`${result.message ?? 'Quick check sensor selesai.'} Sampling: ${result.sample_count ?? result.count ?? '–'}.`);
+            mutate();
+            return;
+          }
+
+          const levelLabel = result.analysis_level === 'campaign_10_day'
+            ? 'Campaign 10 hari selesai'
+            : result.analysis_level === 'preliminary'
+              ? 'Analisis preliminary selesai'
+              : 'Perbandingan harian awal selesai';
+          const validDays = result.valid_days != null ? `  Hari valid: ${result.valid_days}` : '';
+          const samples = result.sample_count != null ? `  Sampling: ${result.sample_count}` : '';
+          const warning = result.warning ? `  Catatan: ${result.warning}` : '';
+          setTaskState('success');
+          setTaskMsg(`${levelLabel} - RMSE: ${result.rmse ?? '–'}  Bias: ${result.bias ?? '–'}%  Skor: ${result.score ?? '–'}${validDays}${samples}${warning}`);
+          mutate();
+          return;
+        }
+        if (data.status === 'failed') {
           setTaskState('error');
           // Tampilkan pesan khusus jika baseline belum di-set
           const errMsg: string = data.result?.message ?? data.error ?? 'Task gagal';
@@ -834,7 +862,7 @@ function AnalisisContent() {
               </h1>
               <p className="text-slate-600 dark:text-text-secondary text-sm font-normal leading-normal">
                 {isWind
-                  ? 'Validasi kecepatan angin observasi vs GWA 3.0/ERA5, skor kesesuaian baseline, dan proyeksi MCP jangka panjang.'
+                  ? 'Validasi kecepatan angin observasi vs GWA 3.0/ERA5 untuk screening kampanye 10 hari.'
                   : 'Validasi iradiasi surya observasi vs GSA/ERA5, Clearness Index (Kt), dan estimasi AEP PLTS.'}
               </p>
             </div>
@@ -864,7 +892,7 @@ function AnalisisContent() {
                   <span className={`material-symbols-outlined text-[16px] ${taskState === 'loading' ? 'animate-spin' : ''}`}>
                     {taskState === 'loading' ? 'progress_activity' : isWind ? 'science' : 'wb_sunny'}
                   </span>
-                  {taskState === 'loading' ? 'Memproses…' : isWind ? 'Jalankan Analisis MCP' : 'Jalankan Validasi GHI'}
+                  {taskState === 'loading' ? 'Memproses...' : isWind ? 'Analisis MCP Screening' : 'Validasi GHI Screening'}
                 </button>
               </div>
               {taskMsg && (
@@ -1612,7 +1640,7 @@ function AnalisisContent() {
               <span>
                 <strong className="text-slate-800 dark:text-slate-200">Durasi observasi:</strong>{' '}
                 {station.period}.{' '}
-                {isWind ? 'Minimum rekomendasi IEC 61400-12: 12 bulan ✓' : 'Minimum rekomendasi IEC 61853: 12 bulan ✓'}
+                {isWind ? 'Target proyek: 10 hari per lokasi untuk screening awal.' : 'Target proyek: 10 hari per lokasi untuk validasi awal.'}
               </span>
             </div>
             <div className="flex gap-2.5">
@@ -1630,7 +1658,7 @@ function AnalisisContent() {
                   {isWind ? 'Periode overlap MCP:' : 'Periode validasi GHI:'}
                 </strong>{' '}
                 {station.period}.{' '}
-                {isWind ? 'Overlap minimum untuk MCP valid: ≥ 6 bulan.' : 'Data harian minimum untuk validasi surya: ≥ 30 hari/bulan.'}
+                {isWind ? 'Quick check: 10 sampling; harian awal: 1 hari valid; preliminary: 5 hari valid; campaign selesai: 10 hari valid.' : 'Quick check: 10 sampling; validasi harian: 1 hari valid; campaign selesai: 10 hari valid.'}
               </span>
             </div>
             <div className="flex gap-2.5">

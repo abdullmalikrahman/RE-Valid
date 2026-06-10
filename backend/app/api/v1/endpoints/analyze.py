@@ -1,24 +1,38 @@
+from datetime import date
+
+from celery.result import AsyncResult
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel, Field
-from celery.result import AsyncResult
+
 from app.core.security import get_current_user
-from app.workers.tasks import validate_station_mcp
 from app.workers.celery_app import celery_app
+from app.workers.tasks import validate_station_mcp
 
 router = APIRouter()
 
 
 class AnalyzeRequest(BaseModel):
     station_id: str
-    variable: str = "wind"   # "wind" | "solar"
-    n: int = Field(14400, ge=10, le=100_000)  # batas: 10 ≤ n ≤ 100.000
+    variable: str = "wind"  # "wind" | "solar"
+    n: int = Field(14400, ge=10, le=100_000)
+    start: date | None = None
+    end: date | None = None
 
 
 @router.post("", summary="Jalankan analisis MCP / validasi GHI untuk satu stasiun")
 def start_analysis(body: AnalyzeRequest, _=Depends(get_current_user)):
     if body.variable not in ("wind", "solar"):
         raise HTTPException(status_code=422, detail="variable harus 'wind' atau 'solar'")
-    task = validate_station_mcp.delay(body.station_id, body.variable, body.n)
+    if body.start and body.end and body.start > body.end:
+        raise HTTPException(status_code=422, detail="start tidak boleh lebih besar dari end")
+
+    task = validate_station_mcp.delay(
+        body.station_id,
+        body.variable,
+        body.n,
+        body.start.isoformat() if body.start else None,
+        body.end.isoformat() if body.end else None,
+    )
     return {"task_id": task.id, "status": "queued"}
 
 
