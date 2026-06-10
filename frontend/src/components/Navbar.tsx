@@ -17,6 +17,7 @@ export default function Navbar() {
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
   const [isLoggedIn, setIsLoggedIn] = useState(false);
   const [isDark, setIsDark] = useState(true);
+  const [loginHref, setLoginHref] = useState('/login');
 
   useEffect(() => {
     const check = () => {
@@ -31,6 +32,10 @@ export default function Navbar() {
     // Read initial theme
     const saved = localStorage.getItem('re_valid_theme');
     setIsDark(saved !== 'light');
+
+    const current = `${window.location.pathname}${window.location.search}`;
+    const returnTo = current.startsWith('/login') ? '/admin' : current;
+    setLoginHref(`/login?returnTo=${encodeURIComponent(returnTo)}`);
 
     return () => {
       window.removeEventListener('storage', check);
@@ -107,7 +112,7 @@ export default function Navbar() {
             </span>
           </button>
           <Link
-            href={isLoggedIn ? '/admin' : '/login'}
+            href={isLoggedIn ? '/admin' : loginHref}
             className="text-[13px] bg-primary hover:bg-blue-600 text-white px-3 py-1.5 rounded-lg transition-colors font-medium"
           >
             {isLoggedIn ? 'Admin' : 'Masuk'}
@@ -164,7 +169,7 @@ export default function Navbar() {
               {isDark ? 'Light Mode' : 'Dark Mode'}
             </button>
             <Link
-              href={isLoggedIn ? '/admin' : '/login'}
+              href={isLoggedIn ? '/admin' : loginHref}
               onClick={() => setMobileMenuOpen(false)}
               className="flex-1 text-center text-[13px] bg-primary hover:bg-blue-600 text-white px-3 py-2 rounded-lg transition-colors font-medium"
             >

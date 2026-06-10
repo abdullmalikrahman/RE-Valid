@@ -565,7 +565,7 @@ export default function AdminPage() {
   useEffect(() => {
     const token = getToken();
     if (!token) {
-      router.replace('/login');
+      router.replace('/login?returnTo=/admin');
       return;
     }
     setAdminUsername(localStorage.getItem('re_valid_username') ?? 'Admin');

@@ -239,6 +239,10 @@ function AnalisisContent() {
         if (res.status === 403 || res.status === 401) {
           setTaskState('error');
           setTaskMsg('Diperlukan login admin untuk menjalankan analisis.');
+          if (typeof window !== 'undefined') {
+            const current = `${window.location.pathname}${window.location.search}`;
+            router.push(`/login?returnTo=${encodeURIComponent(current)}`);
+          }
           return;
         }
         throw new Error(await res.text());

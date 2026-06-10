@@ -3,15 +3,25 @@
 import { useState, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
 
+function getSafeReturnTo(): string {
+  if (typeof window === 'undefined') return '/admin';
+  const params = new URLSearchParams(window.location.search);
+  const raw = params.get('returnTo') ?? '/admin';
+  if (!raw.startsWith('/') || raw.startsWith('//') || raw.startsWith('/login')) {
+    return '/admin';
+  }
+  return raw;
+}
+
 export default function LoginPage() {
   const router = useRouter();
 
   useEffect(() => { document.title = 'Login | RE-Valid'; }, []);
 
-  // Redirect to admin panel if already logged in
+  // Jika sudah login, kembali ke halaman yang meminta login.
   useEffect(() => {
     const token = localStorage.getItem('re_valid_token');
-    if (token) router.replace('/admin');
+    if (token) router.replace(getSafeReturnTo());
   }, [router]);
 
   const [username, setUsername] = useState('');
@@ -49,7 +59,8 @@ export default function LoginPage() {
       localStorage.setItem('re_valid_username', data.username);
       localStorage.setItem('re_valid_role', data.role);
 
-      router.push('/admin');
+      window.dispatchEvent(new CustomEvent('re_valid_auth_change'));
+      router.push(getSafeReturnTo());
     } catch {
       setError('Tidak dapat terhubung ke server. Periksa koneksi Anda.');
     } finally {

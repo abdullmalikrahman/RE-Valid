@@ -2,6 +2,13 @@ import type { Station } from './stationData';
 
 const API_BASE = '/api/v1';
 
+function loginUrlForCurrentPage(): string {
+  if (typeof window === 'undefined') return '/login';
+  const current = `${window.location.pathname}${window.location.search}`;
+  const returnTo = current.startsWith('/login') ? '/admin' : current;
+  return `/login?returnTo=${encodeURIComponent(returnTo)}`;
+}
+
 // ── Token auto-refresh ────────────────────────────────────────────────────────
 
 /** Decode payload dari JWT tanpa library eksternal (JWT = header.payload.sig base64). */
@@ -92,7 +99,7 @@ export async function apiFetch(
     localStorage.removeItem('re_valid_role');
     if (typeof window !== 'undefined') {
       window.dispatchEvent(new CustomEvent('re_valid_auth_change'));
-      window.location.href = '/login';
+      window.location.href = loginUrlForCurrentPage();
     }
   }
   return res;
