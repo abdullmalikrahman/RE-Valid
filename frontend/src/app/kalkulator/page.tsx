@@ -109,7 +109,7 @@ export default function KalkulatorPage() {
       const ghi = station ? (getGhiBaselineValue(station) ?? 4.5) : 4.5;
       return (kapasitas * ghi * 365 * (performanceRatio / 100)) / 1000; // GWh
     }
-  }, [kapasitas, faktorKapasitas, performanceRatio, energyType, selectedStationId, isWind, stations]);
+  }, [kapasitas, faktorKapasitas, performanceRatio, selectedStationId, isWind, stations]);
 
   // --- Computed cash flows ---
   const cashFlows = useMemo(() => {
@@ -184,7 +184,29 @@ export default function KalkulatorPage() {
       roi: parseFloat(roi.toFixed(1)),
       irr: irrPct !== null ? parseFloat(irrPct.toFixed(1)) : null,
     };
-  }, [cashFlows, capex, diskonto, umurProyek, aepY1]);
+  }, [cashFlows, capex, diskonto, aepY1]);
+
+  const cashFlowSummary = useMemo(() => {
+    const r = diskonto / 100;
+    const totalEnergy = cashFlows.reduce((acc, cf) => acc + cf.energy, 0);
+    const totalRevenue = cashFlows.reduce((acc, cf) => acc + cf.revenue, 0);
+    const totalOpex = cashFlows.reduce((acc, cf) => acc + cf.opex, 0);
+    const totalNet = cashFlows.reduce((acc, cf) => acc + cf.net, 0);
+    const discountedRevenue = cashFlows.reduce((acc, cf) => acc + cf.revenue / Math.pow(1 + r, cf.year), 0);
+    const discountedOpex = cashFlows.reduce((acc, cf) => acc + cf.opex / Math.pow(1 + r, cf.year), 0);
+    const discountedNet = cashFlows.reduce((acc, cf) => acc + cf.net / Math.pow(1 + r, cf.year), 0);
+
+    return {
+      totalEnergy,
+      totalRevenue,
+      totalOpex,
+      totalNet,
+      endingCumulative: totalNet - capex,
+      discountedRevenue,
+      discountedOpex,
+      discountedNet,
+    };
+  }, [cashFlows, capex, diskonto]);
 
   const barData = cashFlows.filter((_, i) => i % 2 === 0).slice(0, 6).map((cf) => ({
     label: `Y${cf.year}`,
@@ -192,7 +214,7 @@ export default function KalkulatorPage() {
     cost: Math.min(100, Math.round((cf.opex / (cashFlows[0]?.revenue ?? 1)) * 80)),
   }));
 
-  const isViable = kpis.npv > 0;
+  const isViable = kpis.npv >= 0;
   const selectedStation = stations.find((s) => s.id === selectedStationId);
   const selectedWindAepMwh = selectedStation ? getWindReferenceAepMwh(selectedStation) : null;
   const selectedWindNetAepMwh = selectedWindAepMwh && selectedWindAepMwh > 0 ? selectedWindAepMwh * WIND_P50_NET_FACTOR : null;
@@ -244,36 +266,85 @@ export default function KalkulatorPage() {
       const { default: jsPDF } = await import('jspdf');
       const pdf = new jsPDF({ orientation: 'portrait', unit: 'mm', format: 'a4' });
       const W = pdf.internal.pageSize.getWidth();
+      const H = pdf.internal.pageSize.getHeight();
+      const marginX = 10;
+      const footerY = H - 10;
+      const exportedAt = new Date().toLocaleString('id-ID');
+      const projectName = `Simulasi ${isWind ? 'PLTB (Angin)' : 'PLTS (Surya)'}`;
+      const energyUnit = isWind ? 'MW' : 'MWp';
+      const money = (value: number, digits = 2) => `${value >= 0 ? '+' : ''}${value.toFixed(digits)}`;
+      const plainMoney = (value: number, digits = 2) => value.toFixed(digits);
+      const splitText = (text: string, maxWidth: number) => pdf.splitTextToSize(text, maxWidth) as string[];
+      const drawHeader = (subtitle = 'Kalkulator Energi & Ekonomi') => {
+        pdf.setFillColor(19, 127, 236);
+        pdf.rect(0, 0, W, 14, 'F');
+        pdf.setTextColor(255, 255, 255);
+        pdf.setFontSize(11);
+        pdf.setFont('helvetica', 'bold');
+        pdf.text('RE-Valid — Kalkulator Energi & Ekonomi', marginX, 9.5);
+        pdf.setFontSize(8);
+        pdf.setFont('helvetica', 'normal');
+        pdf.text(subtitle, W - marginX, 9.5, { align: 'right' });
+      };
+      const ensureSpace = (needed: number, subtitle?: string) => {
+        if (y + needed <= footerY - 6) return;
+        pdf.addPage();
+        y = 20;
+        drawHeader(subtitle);
+      };
+      const sectionTitle = (title: string, subtitle?: string) => {
+        ensureSpace(subtitle ? 15 : 10);
+        pdf.setFontSize(10);
+        pdf.setFont('helvetica', 'bold');
+        pdf.setTextColor(30, 30, 30);
+        pdf.text(title, marginX, y);
+        y += 5;
+        if (subtitle) {
+          pdf.setFontSize(7.5);
+          pdf.setFont('helvetica', 'normal');
+          pdf.setTextColor(100, 100, 100);
+          pdf.text(subtitle, marginX, y);
+          y += 5;
+        }
+      };
       let y = 18;
 
       // Header
-      pdf.setFillColor(19, 127, 236);
-      pdf.rect(0, 0, W, 14, 'F');
-      pdf.setTextColor(255, 255, 255);
-      pdf.setFontSize(11);
-      pdf.setFont('helvetica', 'bold');
-      pdf.text('RE-Valid — Kalkulator Energi & Ekonomi', 10, 9.5);
+      drawHeader(`Diekspor: ${exportedAt}`);
       pdf.setFontSize(8);
       pdf.setFont('helvetica', 'normal');
-      pdf.text(`Diekspor: ${new Date().toLocaleString('id-ID')}`, W - 10, 9.5, { align: 'right' });
 
       // Title
       pdf.setTextColor(30, 30, 30);
       pdf.setFontSize(14);
       pdf.setFont('helvetica', 'bold');
-      pdf.text(`Simulasi ${isWind ? 'PLTB (Angin)' : 'PLTS (Surya)'}`, 10, y);
+      pdf.text(projectName, marginX, y);
       y += 7;
 
       // Parameter summary
       pdf.setFontSize(9);
       pdf.setFont('helvetica', 'normal');
       pdf.setTextColor(80, 80, 80);
+      const stationLine = selectedStation
+        ? `Stasiun Referensi: ${selectedStation.name} (${selectedStation.id}) | ${selectedStation.region} | Skor GIS ${selectedStation.score}/100 | MCP ${selectedStation.mcpStatus}`
+        : 'Stasiun: Manual (tidak ada stasiun dipilih)';
+      const baselineLine = selectedStation
+        ? isWind
+          ? `Basis Energi: ${aepBasisText}; baseline angin ${getWindBaselineValue(selectedStation) ?? '-'} m/s (${getWindSourceLabel(selectedStation)})`
+          : `Basis Energi: ${aepBasisText}; GHI ${getGhiBaselineValue(selectedStation) ?? '-'} kWh/m2/hari (${getGhiSourceLabel(selectedStation)})`
+        : `Basis Energi: ${aepBasisText}`;
       const paramLines = [
-        `Kapasitas: ${kapasitas} ${isWind ? 'MW' : 'MWp'}  |  ${isWind ? `CF: ${faktorKapasitas}%` : `PR: ${performanceRatio}%`}  |  Umur Proyek: ${umurProyek} thn  |  Degradasi: ${degradasi}%/thn`,
+        `Kapasitas: ${kapasitas} ${energyUnit}  |  ${isWind ? `CF: ${faktorKapasitas}%` : `PR: ${performanceRatio}%`}  |  Umur Proyek: ${umurProyek} thn  |  Degradasi: ${degradasi}%/thn`,
         `CAPEX: $${capex} Jt  |  OPEX: ${opex}% CAPEX/thn  |  Diskonto: ${diskonto}%  |  Tarif: $${tarif}/MWh`,
-        selectedStation ? `Stasiun Referensi: ${selectedStation.name} (${selectedStation.id})` : 'Stasiun: Manual (tidak ada stasiun dipilih)',
+        stationLine,
+        baselineLine,
       ];
-      paramLines.forEach((line) => { pdf.text(line, 10, y); y += 5; });
+      paramLines.forEach((line) => {
+        splitText(line, W - 20).forEach((wrappedLine) => {
+          pdf.text(wrappedLine, marginX, y);
+          y += 4.5;
+        });
+      });
       y += 3;
 
       // KPI section (6 columns: AEP, LCOE, NPV, Payback, IRR, ROI)
@@ -408,18 +479,119 @@ export default function KalkulatorPage() {
         y += cH + 12;
       }
 
-      // ── Page 2: Rincian Arus Kas ──────────────────────────────────────────
-      pdf.addPage();
-      y = 18;
-      pdf.setFillColor(19, 127, 236);
-      pdf.rect(0, 0, W, 14, 'F');
-      pdf.setTextColor(255, 255, 255);
-      pdf.setFontSize(11);
-      pdf.setFont('helvetica', 'bold');
-      pdf.text('RE-Valid — Kalkulator Energi & Ekonomi', 10, 9.5);
-      pdf.setFontSize(8);
-      pdf.setFont('helvetica', 'normal');
-      pdf.text(`Simulasi ${isWind ? 'PLTB' : 'PLTS'} — Rincian Arus Kas`, W - 10, 9.5, { align: 'right' });
+      sectionTitle('Ringkasan Kelayakan', 'Ikhtisar total selama umur proyek berdasarkan parameter aktif.');
+      {
+        const rows = [
+          ['Status Finansial', isViable ? 'Layak (NPV positif)' : 'Tidak layak (NPV negatif)', isViable ? 'good' : 'bad'],
+          ['AEP Total Proyek', `${cashFlowSummary.totalEnergy.toFixed(2)} GWh`, 'neutral'],
+          ['Pendapatan Total', `$${plainMoney(cashFlowSummary.totalRevenue)} Jt`, 'neutral'],
+          ['OPEX Total', `$${plainMoney(cashFlowSummary.totalOpex)} Jt`, 'neutral'],
+          ['Pendapatan Terdiskonto', `$${plainMoney(cashFlowSummary.discountedRevenue)} Jt`, 'neutral'],
+          ['OPEX Terdiskonto', `$${plainMoney(cashFlowSummary.discountedOpex)} Jt`, 'neutral'],
+          ['Arus Kas Bersih Total', `${money(cashFlowSummary.totalNet)} $Jt`, cashFlowSummary.totalNet >= 0 ? 'good' : 'bad'],
+          ['Arus Kas Akhir Setelah CAPEX', `${money(cashFlowSummary.endingCumulative, 1)} $Jt`, cashFlowSummary.endingCumulative >= 0 ? 'good' : 'bad'],
+          ['NPV @ Diskonto', `${money(kpis.npv, 1)} $Jt`, kpis.npv >= 0 ? 'good' : 'bad'],
+          ['IRR vs Diskonto', kpis.irr !== null ? `${kpis.irr.toFixed(1)}% vs ${diskonto}%` : 'Tidak dapat dihitung', kpis.irr !== null && kpis.irr >= diskonto ? 'good' : 'bad'],
+        ] as const;
+        const rowH = 6.8;
+        const colW2 = (W - 24) / 2;
+        ensureSpace(Math.ceil(rows.length / 2) * rowH + 4);
+        rows.forEach(([label, value, tone], idx) => {
+          const col = idx % 2;
+          const row = Math.floor(idx / 2);
+          const boxX = marginX + col * (colW2 + 4);
+          const boxY = y + row * rowH;
+          pdf.setFillColor(248, 250, 252);
+          pdf.setDrawColor(225, 230, 235);
+          pdf.rect(boxX, boxY, colW2, rowH - 1, 'FD');
+          pdf.setFontSize(6.2);
+          pdf.setFont('helvetica', 'normal');
+          pdf.setTextColor(100, 100, 100);
+          pdf.text(label, boxX + 2, boxY + 2.7);
+          pdf.setFontSize(7.3);
+          pdf.setFont('helvetica', 'bold');
+          if (tone === 'good') pdf.setTextColor(22, 163, 74);
+          else if (tone === 'bad') pdf.setTextColor(185, 28, 28);
+          else pdf.setTextColor(30, 30, 30);
+          pdf.text(value, boxX + colW2 - 2, boxY + 5.1, { align: 'right' });
+        });
+        y += Math.ceil(rows.length / 2) * rowH + 5;
+      }
+
+      ensureSpace(52, 'Kalkulator Energi & Ekonomi');
+      sectionTitle('Pendapatan vs OPEX', 'Sampel tahun proyek untuk membandingkan pendapatan energi dan biaya operasi.');
+      {
+        const step = Math.max(1, Math.floor(umurProyek / 6));
+        const samples = cashFlows.filter((_, idx) => idx % step === 0).slice(0, 6);
+        const bX = 20;
+        const bW = W - 40;
+        const bH = 30;
+        const maxBar = Math.max(...samples.flatMap((cf) => [cf.revenue, cf.opex]), 1);
+        ensureSpace(bH + 14);
+        const baseY = y + bH;
+        pdf.setDrawColor(220, 225, 230);
+        pdf.setLineWidth(0.25);
+        pdf.line(bX, y, bX, baseY);
+        pdf.line(bX, baseY, bX + bW, baseY);
+        for (let gi = 1; gi <= 3; gi++) {
+          const gridY = y + (gi / 4) * bH;
+          pdf.setDrawColor(235, 238, 242);
+          pdf.line(bX, gridY, bX + bW, gridY);
+        }
+        samples.forEach((cf, idx) => {
+          const groupW = bW / samples.length;
+          const centerX = bX + idx * groupW + groupW / 2;
+          const revH = (cf.revenue / maxBar) * (bH - 3);
+          const opexH = (cf.opex / maxBar) * (bH - 3);
+          pdf.setFillColor(isWind ? 19 : 245, isWind ? 127 : 158, isWind ? 236 : 11);
+          pdf.rect(centerX - 3.5, baseY - revH, 3, revH, 'F');
+          pdf.setFillColor(148, 163, 184);
+          pdf.rect(centerX + 0.8, baseY - opexH, 3, opexH, 'F');
+          pdf.setFontSize(6);
+          pdf.setTextColor(100, 100, 100);
+          pdf.text(`Y${cf.year}`, centerX, baseY + 4, { align: 'center' });
+        });
+        pdf.setFontSize(7);
+        pdf.setTextColor(60, 60, 60);
+        pdf.setFillColor(isWind ? 19 : 245, isWind ? 127 : 158, isWind ? 236 : 11);
+        pdf.rect(W - 62, y + 1, 3, 3, 'F');
+        pdf.text('Pendapatan', W - 57, y + 4);
+        pdf.setFillColor(148, 163, 184);
+        pdf.rect(W - 31, y + 1, 3, 3, 'F');
+        pdf.text('OPEX', W - 26, y + 4);
+        y += bH + 12;
+      }
+
+      sectionTitle('Metodologi & Asumsi', 'Formula yang digunakan di simulasi ekonomi.');
+      {
+        const methodLines = [
+          isWind
+            ? 'AEP tahun pertama = Kapasitas x CF x 8.760 jam; AEP tahun berikutnya mengikuti degradasi tahunan.'
+            : 'AEP tahun pertama = Kapasitas MWp x GHI x 365 x PR; AEP tahun berikutnya mengikuti degradasi tahunan.',
+          'Pendapatan = AEP (MWh) x tarif listrik. OPEX dihitung tetap sebagai persentase CAPEX per tahun.',
+          'LCOE, NPV, dan arus kas terdiskonto memakai tingkat diskonto aktif; payback memakai arus kas kumulatif sederhana.',
+        ];
+        const wrappedMethodLines = methodLines.flatMap((line) => splitText(line, W - 28));
+        const methodBoxH = wrappedMethodLines.length * 4.5 + 7;
+        ensureSpace(methodBoxH + 2);
+        pdf.setFillColor(248, 250, 252);
+        pdf.setDrawColor(225, 230, 235);
+        pdf.roundedRect(marginX, y - 2, W - 20, methodBoxH, 1.5, 1.5, 'FD');
+        pdf.setFontSize(7.3);
+        pdf.setFont('helvetica', 'normal');
+        pdf.setTextColor(70, 70, 70);
+        methodLines.forEach((line) => {
+          splitText(line, W - 28).forEach((wrappedLine, idx) => {
+            pdf.text(`${idx === 0 ? '-' : ' '} ${wrappedLine}`, marginX + 3, y + 2);
+            y += 4.5;
+          });
+        });
+        y += 3;
+      }
+
+      // ── Rincian Arus Kas ─────────────────────────────────────────────────
+      ensureSpace(50, `${isWind ? 'PLTB' : 'PLTS'} - Rincian Arus Kas`);
+      y += 2;
 
       // Cash flow table
       pdf.setFontSize(10);
@@ -427,57 +599,120 @@ export default function KalkulatorPage() {
       pdf.setTextColor(30, 30, 30);
       pdf.text('Rincian Arus Kas', 10, y);
       y += 5;
+      pdf.setFontSize(7.5);
+      pdf.setFont('helvetica', 'normal');
+      pdf.setTextColor(100, 100, 100);
+      pdf.text(`CAPEX tahun 0: $${plainMoney(capex, 1)} Jt. Nilai diskonto memakai tingkat ${diskonto}% per tahun.`, 10, y);
+      y += 5;
 
-      const headers = ['Tahun', 'AEP (GWh)', 'Pendapatan ($Jt)', 'OPEX ($Jt)', 'Arus Kas Bersih ($Jt)'];
-      const cols = [15, 30, 50, 35, 55];
+      const headers = ['Thn', 'AEP (GWh)', 'Pendapatan ($Jt)', 'OPEX ($Jt)', 'Bersih ($Jt)', 'Kumulatif ($Jt)', 'Diskonto ($Jt)'];
+      const cols = [12, 24, 30, 22, 28, 34, 35];
       let x = 10;
       const drawCfHeader = () => {
         x = 10;
         pdf.setFillColor(235, 240, 248);
         pdf.rect(10, y, W - 20, 7, 'F');
-        pdf.setFontSize(8);
+        pdf.setFontSize(6.7);
         pdf.setFont('helvetica', 'bold');
         pdf.setTextColor(60, 60, 60);
-        headers.forEach((h, i) => { pdf.text(h, x + 2, y + 5); x += cols[i]; });
+        headers.forEach((h, i) => {
+          pdf.text(h, i === 0 ? x + 2 : x + cols[i] - 2, y + 5, { align: i === 0 ? 'left' : 'right' });
+          x += cols[i];
+        });
         y += 7;
       };
       drawCfHeader();
 
+      let cumulativeCashFlow = -capex;
       cashFlows.forEach((row, rowIdx) => {
-        if (y > 274) {
+        if (y > footerY - 18) {
           pdf.addPage();
-          pdf.setFillColor(19, 127, 236);
-          pdf.rect(0, 0, W, 14, 'F');
-          pdf.setTextColor(255, 255, 255);
-          pdf.setFontSize(11);
-          pdf.setFont('helvetica', 'bold');
-          pdf.text('RE-Valid \u2014 Kalkulator Energi & Ekonomi', 10, 9.5);
-          pdf.setFontSize(8);
-          pdf.setFont('helvetica', 'normal');
-          pdf.text(`Simulasi ${isWind ? 'PLTB' : 'PLTS'} \u2014 Rincian Arus Kas (lanjutan)`, W - 10, 9.5, { align: 'right' });
           y = 18;
+          drawHeader(`${isWind ? 'PLTB' : 'PLTS'} - Rincian Arus Kas (lanjutan)`);
           drawCfHeader();
         }
+        cumulativeCashFlow += row.net;
+        const discountedNet = row.net / Math.pow(1 + diskonto / 100, row.year);
         x = 10;
         pdf.setFont('helvetica', 'normal');
+        pdf.setFontSize(7.1);
         pdf.setTextColor(40, 40, 40);
-        if (rowIdx % 2 === 0) { pdf.setFillColor(250, 250, 252); pdf.rect(10, y, W - 20, 6.5, 'F'); }
-        const cells = [String(row.year), parseFloat(String(row.energy)).toFixed(2), row.revenue.toFixed(2), row.opex.toFixed(2), (row.net >= 0 ? '+' : '') + row.net.toFixed(2)];
+        if (rowIdx % 2 === 0) { pdf.setFillColor(250, 250, 252); pdf.rect(10, y, W - 20, 6.2, 'F'); }
+        const cells = [
+          String(row.year),
+          row.energy.toFixed(2),
+          row.revenue.toFixed(2),
+          row.opex.toFixed(2),
+          money(row.net),
+          money(cumulativeCashFlow),
+          money(discountedNet),
+        ];
         cells.forEach((c, i) => {
-          if (i === 4) pdf.setTextColor(row.net >= 0 ? 22 : 185, row.net >= 0 ? 163 : 28, row.net >= 0 ? 74 : 28);
+          const toneValue = i === 4 ? row.net : i === 5 ? cumulativeCashFlow : i === 6 ? discountedNet : null;
+          if (toneValue !== null) pdf.setTextColor(toneValue >= 0 ? 22 : 185, toneValue >= 0 ? 163 : 28, toneValue >= 0 ? 74 : 28);
           else pdf.setTextColor(40, 40, 40);
-          pdf.text(c, x + 2, y + 4.5); x += cols[i];
+          pdf.text(c, i === 0 ? x + 2 : x + cols[i] - 2, y + 4.3, { align: i === 0 ? 'left' : 'right' });
+          x += cols[i];
         });
-        y += 6.5;
+        y += 6.2;
       });
       y += 6;
+
+      if (y > footerY - 26) {
+        pdf.addPage();
+        y = 18;
+        drawHeader(`${isWind ? 'PLTB' : 'PLTS'} - Ringkasan Total`);
+        drawCfHeader();
+      }
+      x = 10;
+      pdf.setFillColor(235, 240, 248);
+      pdf.rect(10, y, W - 20, 7, 'F');
+      pdf.setFont('helvetica', 'bold');
+      pdf.setFontSize(7.1);
+      const totalCells = [
+        'Total',
+        cashFlowSummary.totalEnergy.toFixed(2),
+        plainMoney(cashFlowSummary.totalRevenue),
+        plainMoney(cashFlowSummary.totalOpex),
+        money(cashFlowSummary.totalNet),
+        money(cashFlowSummary.endingCumulative, 1),
+        money(cashFlowSummary.discountedNet),
+      ];
+      totalCells.forEach((c, i) => {
+        const toneValue = i === 4 ? cashFlowSummary.totalNet : i === 5 ? cashFlowSummary.endingCumulative : i === 6 ? cashFlowSummary.discountedNet : null;
+        if (toneValue !== null) pdf.setTextColor(toneValue >= 0 ? 22 : 185, toneValue >= 0 ? 163 : 28, toneValue >= 0 ? 74 : 28);
+        else pdf.setTextColor(40, 40, 40);
+        pdf.text(c, i === 0 ? x + 2 : x + cols[i] - 2, y + 4.7, { align: i === 0 ? 'left' : 'right' });
+        x += cols[i];
+      });
+      y += 11;
+
+      ensureSpace(20, `${isWind ? 'PLTB' : 'PLTS'} - Catatan Perhitungan`);
+      pdf.setFontSize(7.4);
+      pdf.setFont('helvetica', 'normal');
+      pdf.setTextColor(90, 90, 90);
+      splitText(`NPV = total arus kas bersih terdiskonto ($${plainMoney(cashFlowSummary.discountedNet, 2)} Jt) - CAPEX ($${plainMoney(capex, 1)} Jt) = ${money(kpis.npv, 1)} $Jt.`, W - 20)
+        .forEach((line) => { pdf.text(line, 10, y); y += 4; });
 
       // Footer disclaimer
       pdf.setFontSize(7);
       pdf.setFont('helvetica', 'italic');
       pdf.setTextColor(150, 150, 150);
-      pdf.text('Simulasi screening awal. Tidak menggantikan studi kelayakan finansial atau analisis detail konsultan EBT bersertifikat.', 10, y);
-      pdf.text('Sumber: RE-Valid DSS — ERA5/GWA/GSA', 10, y + 4);
+      splitText('Catatan: simulasi screening awal. Tidak menggantikan studi kelayakan finansial atau analisis detail konsultan EBT bersertifikat.', W - 20)
+        .forEach((line) => { pdf.text(line, 10, y + 4); y += 4; });
+
+      const pageCount = pdf.getNumberOfPages();
+      for (let page = 1; page <= pageCount; page++) {
+        pdf.setPage(page);
+        pdf.setDrawColor(225, 230, 235);
+        pdf.setLineWidth(0.2);
+        pdf.line(marginX, footerY - 4, W - marginX, footerY - 4);
+        pdf.setFontSize(6.8);
+        pdf.setFont('helvetica', 'italic');
+        pdf.setTextColor(130, 130, 130);
+        pdf.text('Sumber: RE-Valid DSS - ERA5/GWA/GSA', marginX, footerY);
+        pdf.text(`Diekspor ${exportedAt} | Halaman ${page}/${pageCount}`, W - marginX, footerY, { align: 'right' });
+      }
 
       pdf.save(`RE-Valid_Kalkulator_${new Date().toISOString().slice(0, 10)}.pdf`);
     } finally {

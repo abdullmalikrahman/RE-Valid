@@ -42,6 +42,8 @@ const mcpBadge: Record<string, string> = {
 };
 
 const DISPLAY_TIME_ZONE = 'Asia/Jakarta';
+const EXPECTED_SAMPLES_PER_DAY = 1440;
+const REPORT_MEASUREMENT_FETCH_LIMIT = 20_000;
 const jakartaDateFormatter = new Intl.DateTimeFormat('en-CA', {
   timeZone: DISPLAY_TIME_ZONE,
   year: 'numeric',
@@ -50,7 +52,7 @@ const jakartaDateFormatter = new Intl.DateTimeFormat('en-CA', {
 });
 
 type DailyBaselineRow = { doy: number; ghi_era5: number | null; wind_era5: number | null };
-type ChartPoint = { date: string; obs: number; baseline: number };
+type ChartPoint = { key: string; date: string; obs: number; baseline: number };
 type DeviationPoint = { obs: number; dev: number };
 type Era5BaselineSummary = { value: number; mode: 'period' | 'annual'; count: number };
 
@@ -58,6 +60,32 @@ function getJakartaDateKey(isoDate: string): string {
   const parts = jakartaDateFormatter.formatToParts(new Date(isoDate));
   const part = (type: string) => parts.find((p) => p.type === type)?.value ?? '00';
   return `${part('year')}-${part('month')}-${part('day')}`;
+}
+
+function isDateInput(value: string | null | undefined): value is string {
+  return !!value && /^\d{4}-\d{2}-\d{2}$/.test(value);
+}
+
+function toJakartaDateInput(value: string | null | undefined): string | null {
+  if (!value) return null;
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime()) || date.getUTCFullYear() < 2024) return null;
+  return getJakartaDateKey(value);
+}
+
+function defaultDateRange(
+  firstMeasAt: string | null | undefined,
+  lastMeasAt: string | null | undefined,
+): { start: string; end: string } {
+  const start = toJakartaDateInput(firstMeasAt);
+  const end = toJakartaDateInput(lastMeasAt);
+  if (start && end && start <= end) return { start, end };
+  if (start) return { start, end: start };
+  if (end) return { start: end, end };
+
+  const today = new Date();
+  const fallbackStart = new Date(today.getTime() - 30 * 86_400_000).toISOString().slice(0, 10);
+  return { start: fallbackStart, end: today.toISOString().slice(0, 10) };
 }
 
 function dateKeyToUtcDate(dateKey: string): Date {
@@ -86,6 +114,15 @@ function formatDateKeyLabel(dateKey: string): string {
   return dateKeyToUtcDate(dateKey).toLocaleDateString('id-ID', {
     day: 'numeric',
     month: 'short',
+    timeZone: 'UTC',
+  });
+}
+
+function formatReportDate(dateKey: string): string {
+  return dateKeyToUtcDate(dateKey).toLocaleDateString('id-ID', {
+    day: 'numeric',
+    month: 'short',
+    year: 'numeric',
     timeZone: 'UTC',
   });
 }
@@ -119,11 +156,27 @@ function LaporanContent() {
   const stationId = searchParams.get('station') ?? stations[0]?.id ?? '';
   const station = stations.find((s) => s.id === stationId) ?? stations[0];
 
+  const defaultRange = defaultDateRange(station?.firstMeasurementAt, station?.lastMeasurementAt);
+  const queryStart = searchParams.get('start');
+  const queryEnd = searchParams.get('end');
+  const selectedStart = isDateInput(queryStart) ? queryStart : defaultRange.start;
+  const selectedEnd = isDateInput(queryEnd) ? queryEnd : defaultRange.end;
+  const reportStartDate = selectedStart <= selectedEnd ? selectedStart : selectedEnd;
+  const reportEndDate = selectedStart <= selectedEnd ? selectedEnd : selectedStart;
+  const reportPeriodLabel = `${formatReportDate(reportStartDate)} - ${formatReportDate(reportEndDate)}`;
+
   const fromPage = searchParams.get('from') ?? 'peta';
-  const backHref = fromPage === 'analisis' ? `/analisis?station=${stationId}` : fromPage === 'kalkulator' ? '/kalkulator' : '/peta';
+  const backHref = fromPage === 'analisis'
+    ? `/analisis?station=${stationId}&start=${reportStartDate}&end=${reportEndDate}`
+    : fromPage === 'kalkulator' ? '/kalkulator' : '/peta';
   const backLabel = fromPage === 'analisis' ? 'Kembali ke Analisis Lokasi' : fromPage === 'kalkulator' ? 'Kembali ke Kalkulator' : 'Kembali ke Peta';
 
-  const { measurements } = useMeasurements(stationId);
+  const { measurements } = useMeasurements(
+    stationId,
+    reportStartDate,
+    reportEndDate,
+    REPORT_MEASUREMENT_FETCH_LIMIT,
+  );
 
   const [dailyBaseline, setDailyBaseline] = useState<Map<number, DailyBaselineRow>>(new Map());
   useEffect(() => {
@@ -160,6 +213,26 @@ function LaporanContent() {
     measurements.forEach((m) => doys.add(getDoy(m.measured_at)));
     return [...doys].sort((a, b) => a - b);
   }, [measurements]);
+
+  const measurementDateKeys = useMemo(() => {
+    const days = new Set<string>();
+    measurements.forEach((m) => days.add(getJakartaDateKey(m.measured_at)));
+    return [...days].sort();
+  }, [measurements]);
+
+  const sampleCoverage = useMemo(() => {
+    const expected = measurementDateKeys.length * EXPECTED_SAMPLES_PER_DAY;
+    const pct = (valid: number) => (expected > 0 ? Math.round((valid / expected) * 100) : null);
+    const windValid = measurements.filter((m) => m.wind_speed != null).length;
+    const ghiValid = measurements.filter((m) => m.ghi != null).length;
+    return {
+      days: measurementDateKeys.length,
+      expected,
+      total: measurements.length,
+      wind: { valid: windValid, pct: pct(windValid) },
+      ghi: { valid: ghiValid, pct: pct(ghiValid) },
+    };
+  }, [measurements, measurementDateKeys]);
 
   const era5WindSummary = useMemo<Era5BaselineSummary | null>(() => {
     const periodVals = measurementDoys
@@ -248,9 +321,10 @@ function LaporanContent() {
     return [...groups.entries()]
       .sort(([a], [b]) => a.localeCompare(b))
       .filter(([, { values }]) => values.length > 0)
-      .map(([, { label, values, baselinesByDoy }]) => {
+      .map(([key, { label, values, baselinesByDoy }]) => {
         const baselineMean = average([...baselinesByDoy.values()]) ?? 0;
         return {
+          key,
           date: label,
           obs: sumToKwhPerDay
             ? roundNumber(values.reduce((a, b) => a + b, 0) / 60000, 2)
@@ -296,19 +370,19 @@ function LaporanContent() {
 
   // ─── Meteorological chart data ────────────────────────────────────────────
   const tempChartData = useMemo(
-    () => makeChartData(measurements, (m) => (m.temperature !== null ? m.temperature : -1), () => 0, chartGranularity).filter((d) => d.obs >= 0),
+    () => makeChartData(measurements, (m) => (m.temperature != null ? Number(m.temperature) : null), () => 0, chartGranularity),
     [measurements, chartGranularity],
   );
   const humChartData = useMemo(
-    () => makeChartData(measurements, (m) => (m.humidity !== null ? m.humidity : -1), () => 0, chartGranularity).filter((d) => d.obs >= 0),
+    () => makeChartData(measurements, (m) => (m.humidity != null ? Number(m.humidity) : null), () => 0, chartGranularity),
     [measurements, chartGranularity],
   );
   const presChartData = useMemo(
-    () => makeChartData(measurements, (m) => (m.pressure !== null ? m.pressure : -1), () => 0, chartGranularity).filter((d) => d.obs > 0),
+    () => makeChartData(measurements, (m) => (m.pressure != null ? Number(m.pressure) : null), () => 0, chartGranularity),
     [measurements, chartGranularity],
   );
   const windDirChartData = useMemo(
-    () => makeChartData(measurements, (m) => (m.wind_dir !== null ? m.wind_dir : -1), () => 0, chartGranularity).filter((d) => d.obs >= 0),
+    () => makeChartData(measurements, (m) => (m.wind_dir != null ? Number(m.wind_dir) : null), () => 0, chartGranularity),
     [measurements, chartGranularity],
   );
   const meteoHasData = [tempChartData, humChartData, presChartData, windDirChartData].some((d) => d.length > 0);
@@ -345,14 +419,102 @@ function LaporanContent() {
   const hasSolar = station.variables.toLowerCase().includes('iradiasi')
     || station.variables.toLowerCase().includes('surya')
     || station.variables.toLowerCase().includes('ghi');
-  const solarBiasVal = station.solarBias ?? station.bias;
   const obsWindMean = windChartData.length > 0
     ? roundNumber(average(windChartData.map((d) => d.obs)) ?? 0, 2)
     : (station.windSpeed ?? 0);
   const obsGhiMean = ghiChartData.length > 0
     ? roundNumber(average(ghiChartData.map((d) => d.obs)) ?? 0, 2)
     : (station.irradiation ?? 0);
-  const ktVal = obsGhiMean / 8.5;
+  const windRmseVal = station.windRmse ?? (station.rmse > 0 ? station.rmse : null);
+  const windBiasVal = station.windBias ?? station.bias;
+  const windR2Val = station.windR2 ?? (station.r2 > 0 ? station.r2 : null);
+  const solarRmseVal = station.solarRmse ?? null;
+  const solarBiasVal = station.solarBias ?? station.bias;
+  const solarR2Val = station.solarR2 ?? (station.r2 > 0 ? station.r2 : null);
+  const windMaeVal = windChartData.length > 0
+    ? roundNumber(windChartData.reduce((sum, d) => sum + Math.abs(d.obs - d.baseline), 0) / windChartData.length, 2)
+    : null;
+  const solarMaeVal = ghiChartData.length > 0
+    ? roundNumber(ghiChartData.reduce((sum, d) => sum + Math.abs(d.obs - d.baseline), 0) / ghiChartData.length, 2)
+    : null;
+  const windBiasGwa = station.windBaselineGwa != null && station.windBaselineGwa > 0
+    ? roundNumber(((obsWindMean - station.windBaselineGwa) / station.windBaselineGwa) * 100, 1)
+    : null;
+  const windBiasEra5 = windEra5ComparisonBaseline != null && windEra5ComparisonBaseline > 0
+    ? roundNumber(((obsWindMean - windEra5ComparisonBaseline) / windEra5ComparisonBaseline) * 100, 1)
+    : null;
+  const ghiBiasGsa = station.ghiBaselineGsa != null && station.ghiBaselineGsa > 0
+    ? roundNumber(((obsGhiMean - station.ghiBaselineGsa) / station.ghiBaselineGsa) * 100, 1)
+    : null;
+  const ghiBiasEra5 = ghiEra5ComparisonBaseline != null && ghiEra5ComparisonBaseline > 0
+    ? roundNumber(((obsGhiMean - ghiEra5ComparisonBaseline) / ghiEra5ComparisonBaseline) * 100, 1)
+    : null;
+  const ktVal = roundNumber(obsGhiMean / 8.5, 2);
+  const windAvailabilityText = sampleCoverage.expected > 0
+    ? `${sampleCoverage.wind.pct}% (${sampleCoverage.wind.valid}/${sampleCoverage.expected})`
+    : '–';
+  const ghiAvailabilityText = sampleCoverage.expected > 0
+    ? `${sampleCoverage.ghi.pct}% (${sampleCoverage.ghi.valid}/${sampleCoverage.expected})`
+    : '–';
+  const firstMeasurementAt = measurements[0]?.measured_at ?? null;
+  const lastMeasurementAt = measurements[measurements.length - 1]?.measured_at ?? null;
+  const windAepGross = station.aep != null && station.aep > 0
+    ? station.aep
+    : station.windAep != null && station.windAep > 0 ? station.windAep : null;
+  const windAepSource = station.aep != null && station.aep > 0 ? 'observasi/MCP' : station.windAep != null && station.windAep > 0 ? 'atlas GWA' : null;
+  const windAepP50 = windAepGross != null ? Math.round(windAepGross * 0.877) : null;
+  const windAepP90 = windAepGross != null ? Math.round(windAepGross * 0.767) : null;
+  const solarAep10Mwp = station.solarAep != null && station.solarAep > 0
+    ? Math.round(station.solarAep)
+    : Math.round(ghiBaselineVal * 365 * 10 * 0.78);
+  const solarSpecificYield = Math.round(ghiBaselineVal * 365 * 0.78);
+  const validationDailyRows = (() => {
+    const rows = new Map<string, {
+      key: string;
+      label: string;
+      windObs: number | null;
+      windBaseline: number | null;
+      ghiObs: number | null;
+      ghiBaseline: number | null;
+    }>();
+    const ensureRow = (point: ChartPoint) => {
+      if (!rows.has(point.key)) {
+        rows.set(point.key, {
+          key: point.key,
+          label: point.date,
+          windObs: null,
+          windBaseline: null,
+          ghiObs: null,
+          ghiBaseline: null,
+        });
+      }
+      return rows.get(point.key)!;
+    };
+    windChartData.forEach((point) => {
+      const row = ensureRow(point);
+      row.windObs = point.obs;
+      row.windBaseline = point.baseline;
+    });
+    ghiChartData.forEach((point) => {
+      const row = ensureRow(point);
+      row.ghiObs = point.obs;
+      row.ghiBaseline = point.baseline;
+    });
+    return [...rows.values()].sort((a, b) => a.key.localeCompare(b.key));
+  })();
+  const meteoSummary = (() => {
+    const tempVals = measurements.map((m) => m.temperature).filter((v): v is number => v != null);
+    const humVals = measurements.map((m) => m.humidity).filter((v): v is number => v != null);
+    const presVals = measurements.map((m) => m.pressure).filter((v): v is number => v != null);
+    const windDirVals = measurements.map((m) => m.wind_dir).filter((v): v is number => v != null);
+    return {
+      count: measurements.filter((m) => m.temperature != null || m.humidity != null || m.pressure != null || m.wind_dir != null).length,
+      tempAvg: average(tempVals),
+      humAvg: average(humVals),
+      presAvg: average(presVals),
+      windDirAvg: average(windDirVals),
+    };
+  })();
   const granularityLabel = chartGranularity === 'daily' ? 'Rata-rata Harian' : chartGranularity === 'weekly' ? 'Rata-rata Mingguan' : 'Rata-rata Bulanan';
   const gridColor = isDark ? '#2d3b4a' : '#e2e8f0';
   const tooltipBg = isDark ? '#1c2630' : '#ffffff';
@@ -443,17 +605,25 @@ function LaporanContent() {
       row('Koordinat', `${station.lat.toFixed(4)}, ${station.lon.toFixed(4)}`);
       row('Ketinggian', `${station.altitude.toLocaleString('id')} m dpl`);
       row('Periode', station.period);
+      row('Periode Data Laporan', reportPeriodLabel);
       row('Variabel', station.variables);
+      row('Jumlah Data Terambil', `${sampleCoverage.total.toLocaleString('id')} baris`);
+      row('Cakupan Hari Data', `${sampleCoverage.days} hari`);
+      row('Rentang Timestamp', firstMeasurementAt && lastMeasurementAt ? `${getJakartaDateKey(firstMeasurementAt)} s/d ${getJakartaDateKey(lastMeasurementAt)}` : '–');
       y += 3;
 
       // Metrik Validasi Angin
       sectionTitle('Metrik Validasi Angin (ERA5 DOY vs Observasi)');
       row('Kecepatan Angin Rata-rata Periode (Obs)', `${obsWindMean.toFixed(2)} m/s`);
-      row('RMSE', (station.windRmse ?? station.rmse) != null ? `${(station.windRmse ?? station.rmse)!.toFixed(2)} m/s` : '–');
-      row('Bias MBE vs ERA5', (station.windBias ?? station.bias) != null ? `${(station.windBias ?? station.bias)! > 0 ? '+' : ''}${(station.windBias ?? station.bias)!.toFixed(1)} %` : '–');
-      row('Skor Kesesuaian Baseline', (station.windR2 ?? station.r2) != null ? (station.windR2 ?? station.r2)!.toFixed(2) : '–');
-      row('AEP PLTB P50 (Bersih)', station.aep != null ? `${Math.round(station.aep * 0.877).toLocaleString('id')} MWh/thn` : '–');
-      row('AEP PLTB P90 (Bersih)', station.aep != null ? `${Math.round(station.aep * 0.767).toLocaleString('id')} MWh/thn` : '–');
+      row('RMSE', windRmseVal != null ? `${windRmseVal.toFixed(2)} m/s` : '–');
+      row('MAE Harian', windMaeVal != null ? `${windMaeVal.toFixed(2)} m/s` : '–');
+      row('Bias vs GWA LTA', windBiasGwa != null ? `${windBiasGwa >= 0 ? '+' : ''}${windBiasGwa.toFixed(1)} %` : '–');
+      row(`Bias vs ${windEra5Label}`, windBiasEra5 != null ? `${windBiasEra5 >= 0 ? '+' : ''}${windBiasEra5.toFixed(1)} %` : '–');
+      row('Bias MBE Tersimpan', windBiasVal != null ? `${windBiasVal > 0 ? '+' : ''}${windBiasVal.toFixed(1)} %` : '–');
+      row('Kelengkapan Sampel 1 Menit', windAvailabilityText);
+      row('Skor Kesesuaian Baseline', windR2Val != null ? windR2Val.toFixed(2) : '–');
+      row('AEP PLTB P50 (Bersih)', windAepP50 != null ? `${windAepP50.toLocaleString('id')} MWh/thn` : '–');
+      row('AEP PLTB P90 (Bersih)', windAepP90 != null ? `${windAepP90.toLocaleString('id')} MWh/thn` : '–');
       row('Skor Teknis Lokasi', `${station.score} / 100`);
       y += 3;
 
@@ -463,9 +633,13 @@ function LaporanContent() {
       row('GHI Baseline GSA (Solargis)', station.ghiBaselineGsa != null ? `${station.ghiBaselineGsa.toFixed(2)} kWh/m²/hari` : '—');
       row(`GHI Baseline ${ghiEra5Label}`, ghiEra5ComparisonBaseline != null ? `${ghiEra5ComparisonBaseline.toFixed(2)} kWh/m²/hari` : '—');
       row('GHI Best-Value', `${(station.ghiBaseline ?? (station.irradiation ?? 0) * 0.958).toFixed(2)} kWh/m²/hari`);
-      row('RMSE', station.solarRmse != null ? `${station.solarRmse.toFixed(2)} kWh/m²/hari` : '–');
-      row('Bias MBE vs ERA5', solarBiasVal != null ? `${solarBiasVal > 0 ? '+' : ''}${solarBiasVal.toFixed(1)} %` : '–');
-      row('Skor Kesesuaian Baseline', (station.solarR2 ?? station.r2) != null ? (station.solarR2 ?? station.r2)!.toFixed(2) : '–');
+      row('RMSE', solarRmseVal != null ? `${solarRmseVal.toFixed(2)} kWh/m²/hari` : '–');
+      row('MAE Harian', solarMaeVal != null ? `${solarMaeVal.toFixed(2)} kWh/m²/hari` : '–');
+      row('Bias vs GSA LTA', ghiBiasGsa != null ? `${ghiBiasGsa >= 0 ? '+' : ''}${ghiBiasGsa.toFixed(1)} %` : '–');
+      row(`Bias vs ${ghiEra5Label}`, ghiBiasEra5 != null ? `${ghiBiasEra5 >= 0 ? '+' : ''}${ghiBiasEra5.toFixed(1)} %` : '–');
+      row('Bias MBE Tersimpan', solarBiasVal != null ? `${solarBiasVal > 0 ? '+' : ''}${solarBiasVal.toFixed(1)} %` : '–');
+      row('Kelengkapan Sampel 1 Menit', ghiAvailabilityText);
+      row('Skor Kesesuaian Baseline', solarR2Val != null ? solarR2Val.toFixed(2) : '–');
       row('Clearness Index (Kt)', ktVal.toFixed(2));
       y += 3;
 
@@ -481,10 +655,11 @@ function LaporanContent() {
       sectionTitle('Potensi Energi');
       row('Kecepatan Angin LTA untuk AEP (GWA/ERA5)', `${windBaselineVal.toFixed(2)} m/s`);
       row('Iradiasi GHI LTA untuk AEP (GSA/ERA5)', `${ghiBaselineVal.toFixed(2)} kWh/m²/hari`);
-      row('AEP PLTB P50 Net (\u00d70.877)', station.aep != null ? `${Math.round(station.aep * 0.877).toLocaleString('id')} MWh/thn` : '–');
-      row('AEP PLTB P90 Net (\u00d70.767)', station.aep != null ? `${Math.round(station.aep * 0.767).toLocaleString('id')} MWh/thn` : '–');
-      row('AEP PLTS 10 MWp (PR=78%)', station.solarAep != null ? `${Math.round(station.solarAep).toLocaleString('id')} MWh/thn` : `${Math.round(ghiBaselineVal * 365 * 10 * 0.78).toLocaleString('id')} MWh/thn`);
-      row('Hasil Spesifik PLTS /MWp (kWh/kWp·thn)', `${Math.round(ghiBaselineVal * 365 * 0.78).toLocaleString('id')} kWh/kWp·thn`);
+      row('AEP PLTB Gross', windAepGross != null ? `${Math.round(windAepGross).toLocaleString('id')} MWh/thn (${windAepSource})` : '–');
+      row('AEP PLTB P50 Net (×0.877)', windAepP50 != null ? `${windAepP50.toLocaleString('id')} MWh/thn` : '–');
+      row('AEP PLTB P90 Net (×0.767)', windAepP90 != null ? `${windAepP90.toLocaleString('id')} MWh/thn` : '–');
+      row('AEP PLTS 10 MWp (PR=78%)', `${solarAep10Mwp.toLocaleString('id')} MWh/thn`);
+      row('Hasil Spesifik PLTS /MWp (kWh/kWp·thn)', `${solarSpecificYield.toLocaleString('id')} kWh/kWp·thn`);
       y += 3;
 
       // Prioritas GIS-MCDA
@@ -499,20 +674,15 @@ function LaporanContent() {
       y += 3;
 
       // Data Meteorologi — show if any sensor readings exist
-      const meteoMeas = measurements.filter(
-        (m) => m.temperature !== null || m.humidity !== null || m.pressure !== null,
-      );
-      if (meteoMeas.length > 0) {
-        const avgTemp = meteoMeas.filter((m) => m.temperature !== null).reduce((s, m) => s + m.temperature!, 0) / meteoMeas.filter((m) => m.temperature !== null).length;
-        const avgHum = meteoMeas.filter((m) => m.humidity !== null).reduce((s, m) => s + m.humidity!, 0) / meteoMeas.filter((m) => m.humidity !== null).length;
-        const avgPres = meteoMeas.filter((m) => m.pressure !== null).reduce((s, m) => s + m.pressure!, 0) / meteoMeas.filter((m) => m.pressure !== null).length;
-        const lastWindDir = [...meteoMeas].reverse().find((m) => m.wind_dir !== null)?.wind_dir ?? null;
+      if (meteoSummary.count > 0) {
+        const lastWindDir = [...measurements].reverse().find((m) => m.wind_dir !== null)?.wind_dir ?? null;
         sectionTitle('Data Meteorologi Rata-rata (Sensor Lapangan)');
-        row('Suhu Rata-rata (°C)', `${avgTemp.toFixed(1)} °C`);
-        row('Kelembapan Rata-rata (%)', `${avgHum.toFixed(1)} %`);
-        row('Tekanan Udara Rata-rata (hPa)', `${avgPres.toFixed(1)} hPa`);
+        row('Suhu Rata-rata (°C)', meteoSummary.tempAvg != null ? `${meteoSummary.tempAvg.toFixed(1)} °C` : '–');
+        row('Kelembapan Rata-rata (%)', meteoSummary.humAvg != null ? `${meteoSummary.humAvg.toFixed(1)} %` : '–');
+        row('Tekanan Udara Rata-rata (hPa)', meteoSummary.presAvg != null ? `${meteoSummary.presAvg.toFixed(1)} hPa` : '–');
+        row('Arah Angin Rata-rata (°)', meteoSummary.windDirAvg != null ? `${meteoSummary.windDirAvg.toFixed(0)}°` : '–');
         row('Arah Angin Terakhir (°)', lastWindDir != null ? `${lastWindDir.toFixed(0)}°` : '–');
-        row('Jumlah Pembacaan Sensor', `${meteoMeas.length} data`);
+        row('Jumlah Pembacaan Sensor', `${meteoSummary.count} data`);
         y += 3;
       }
 
@@ -522,7 +692,7 @@ function LaporanContent() {
       pdf.setTextColor(160, 160, 160);
       pdf.text('Sumber referensi: ERA5 (ECMWF) · GWA 3.0 · GSA/SOLARGIS · RE-Valid DSS', 10, y);
       y += 4;
-      pdf.text(`Periode: ${station.period}  ·  Referensi MCP: ERA5 (ECMWF)  ·  Atlas baseline: GWA/GSA`, 10, y);
+      pdf.text(`Periode data: ${reportPeriodLabel}  ·  Referensi MCP: ERA5 (ECMWF)  ·  Atlas baseline: GWA/GSA`, 10, y);
 
       // ── Page 2: Grafik Visualisasi & Korelasi ─────────────────────────────
       pdf.addPage();
@@ -694,7 +864,7 @@ function LaporanContent() {
         if (hasWind) {
           addChartSection(
             'Kecepatan Angin — ERA5 Harian (DOY) vs Observasi',
-            `${windEra5Label}: ${windEra5ComparisonBaseline != null ? windEra5ComparisonBaseline.toFixed(2) : '–'} m/s  ·  RMSE: ${(station.windRmse ?? station.rmse) != null ? (station.windRmse ?? station.rmse)!.toFixed(2) : '–'} m/s  ·  Bias: ${(station.windBias ?? station.bias) != null ? `${(station.windBias ?? station.bias)! > 0 ? '+' : ''}${(station.windBias ?? station.bias)!.toFixed(1)}` : '–'}%  ·  Skor: ${(station.windR2 ?? station.r2) != null ? (station.windR2 ?? station.r2)!.toFixed(2) : '–'}`,
+            `${windEra5Label}: ${windEra5ComparisonBaseline != null ? windEra5ComparisonBaseline.toFixed(2) : '–'} m/s  ·  RMSE: ${windRmseVal != null ? windRmseVal.toFixed(2) : '–'} m/s  ·  MAE: ${windMaeVal != null ? windMaeVal.toFixed(2) : '–'} m/s  ·  Bias ERA5: ${windBiasEra5 != null ? `${windBiasEra5 >= 0 ? '+' : ''}${windBiasEra5.toFixed(1)}` : '–'}%`,
             drawLineChart(windChartData, '#137fec', 'Terukur (Obs)', 'm/s', 'ERA5 DOY'),
             drawScatterChart(windScatterData, '#137fec', 'm/s'),
           );
@@ -702,7 +872,7 @@ function LaporanContent() {
         if (hasSolar) {
           addChartSection(
             'Iradiasi Matahari (GHI) — ERA5 Harian (DOY) vs Observasi',
-            `${ghiEra5Label}: ${ghiEra5ComparisonBaseline != null ? ghiEra5ComparisonBaseline.toFixed(2) : '–'} kWh/m²/hari  ·  RMSE: ${station.solarRmse != null ? station.solarRmse.toFixed(2) : '–'} kWh/m²/hari  ·  Kt: ${ktVal.toFixed(2)}`,
+            `${ghiEra5Label}: ${ghiEra5ComparisonBaseline != null ? ghiEra5ComparisonBaseline.toFixed(2) : '–'} kWh/m²/hari  ·  RMSE: ${solarRmseVal != null ? solarRmseVal.toFixed(2) : '–'}  ·  MAE: ${solarMaeVal != null ? solarMaeVal.toFixed(2) : '–'}  ·  Kt: ${ktVal.toFixed(2)}`,
             drawLineChart(ghiChartData, '#f59e0b', 'GHI Terukur (Obs)', 'kWh/m²/hari', 'ERA5 DOY'),
             drawScatterChart(ghiScatterData, '#f59e0b', 'kWh/m²/hari'),
           );
@@ -787,7 +957,7 @@ function LaporanContent() {
       };
 
       addTitle(`RE-Valid \u2014 Laporan Stasiun: ${station.name}`);
-      addMeta(`${station.id}  |  ${station.region}  |  Periode: ${station.period}`);
+      addMeta(`${station.id}  |  ${station.region}  |  Periode data: ${reportPeriodLabel}`);
       addMeta(`Diekspor: ${new Date().toLocaleString('id-ID')}  |  Sumber: ERA5 (ECMWF) / GWA 3.0 / GSA (Solargis)`);
 
       addSection('IDENTITAS STASIUN');
@@ -800,32 +970,42 @@ function LaporanContent() {
         ['Ketinggian (m dpl)', String(station.altitude)],
         ['Status', station.status],
         ['Periode', station.period],
+        ['Periode Data Laporan', reportPeriodLabel],
         ['Variabel', station.variables],
+        ['Jumlah Data Terambil', `${sampleCoverage.total.toLocaleString('id')} baris`],
+        ['Cakupan Hari Data', `${sampleCoverage.days} hari`],
+        ['Rentang Timestamp', firstMeasurementAt && lastMeasurementAt ? `${getJakartaDateKey(firstMeasurementAt)} s/d ${getJakartaDateKey(lastMeasurementAt)}` : '–'],
       ].forEach((pair, i) => addRow2(pair[0], pair[1], i));
 
       addSection('METRIK VALIDASI ANGIN (ERA5 DOY vs Observasi)');
-      const wBias = station.windBias ?? station.bias;
-      const wR2 = station.windR2 ?? station.r2;
       [
         ['Kecepatan Angin Rata-rata Periode (Obs)', `${obsWindMean.toFixed(2)} m/s`],
-        ['RMSE Angin (m/s)', (station.windRmse ?? station.rmse) != null ? `${(station.windRmse ?? station.rmse)!.toFixed(2)} m/s` : '\u2013'],
-        ['Bias MBE vs ERA5 (%)', wBias != null ? `${wBias > 0 ? '+' : ''}${wBias.toFixed(1)} %` : '\u2013'],
-        ['Skor Kesesuaian Baseline', wR2 != null ? wR2.toFixed(2) : '\u2013'],
-        ['AEP PLTB P50 Net (MWh/thn)', station.aep != null ? Math.round(station.aep * 0.877).toLocaleString('id') : '\u2013'],
-        ['AEP PLTB P90 Net (MWh/thn)', station.aep != null ? Math.round(station.aep * 0.767).toLocaleString('id') : '\u2013'],
+        ['RMSE Angin (m/s)', windRmseVal != null ? `${windRmseVal.toFixed(2)} m/s` : '\u2013'],
+        ['MAE Harian Angin (m/s)', windMaeVal != null ? `${windMaeVal.toFixed(2)} m/s` : '\u2013'],
+        ['Bias vs GWA LTA (%)', windBiasGwa != null ? `${windBiasGwa >= 0 ? '+' : ''}${windBiasGwa.toFixed(1)} %` : '\u2013'],
+        [`Bias vs ${windEra5Label} (%)`, windBiasEra5 != null ? `${windBiasEra5 >= 0 ? '+' : ''}${windBiasEra5.toFixed(1)} %` : '\u2013'],
+        ['Bias MBE Tersimpan (%)', windBiasVal != null ? `${windBiasVal > 0 ? '+' : ''}${windBiasVal.toFixed(1)} %` : '\u2013'],
+        ['Kelengkapan Sampel 1 Menit', windAvailabilityText],
+        ['Skor Kesesuaian Baseline', windR2Val != null ? windR2Val.toFixed(2) : '\u2013'],
+        ['AEP PLTB Gross (MWh/thn)', windAepGross != null ? `${Math.round(windAepGross).toLocaleString('id')} (${windAepSource})` : '\u2013'],
+        ['AEP PLTB P50 Net (MWh/thn)', windAepP50 != null ? windAepP50.toLocaleString('id') : '\u2013'],
+        ['AEP PLTB P90 Net (MWh/thn)', windAepP90 != null ? windAepP90.toLocaleString('id') : '\u2013'],
         ['Skor Teknis Lokasi (/100)', `${station.score} / 100`],
       ].forEach((pair, i) => addRow2(pair[0], pair[1], i));
 
       addSection('VALIDASI SURYA \u2014 GHI (ERA5 DOY/GSA vs Observasi)');
-      const sR2 = station.solarR2 ?? station.r2;
       [
         ['GHI Observasi Rata-rata Periode (kWh/m\u00b2/hari)', `${obsGhiMean.toFixed(2)} kWh/m\u00b2/hari`],
         ['GHI Baseline GSA/Solargis', station.ghiBaselineGsa != null ? `${station.ghiBaselineGsa.toFixed(2)} kWh/m\u00b2/hari` : '\u2014'],
         [`GHI Baseline ${ghiEra5Label}`, ghiEra5ComparisonBaseline != null ? `${ghiEra5ComparisonBaseline.toFixed(2)} kWh/m\u00b2/hari` : '\u2014'],
         ['GHI Best-Value (dipakai)', `${ghiBaselineVal.toFixed(2)} kWh/m\u00b2/hari`],
-        ['RMSE Surya (kWh/m\u00b2/hari)', station.solarRmse != null ? `${station.solarRmse.toFixed(2)} kWh/m\u00b2/hari` : '\u2013'],
-        ['Bias MBE Surya vs ERA5 (%)', solarBiasVal != null ? `${solarBiasVal > 0 ? '+' : ''}${solarBiasVal.toFixed(1)} %` : '\u2013'],
-        ['Skor Kesesuaian Baseline', sR2 != null ? sR2.toFixed(2) : '\u2013'],
+        ['RMSE Surya (kWh/m\u00b2/hari)', solarRmseVal != null ? `${solarRmseVal.toFixed(2)} kWh/m\u00b2/hari` : '\u2013'],
+        ['MAE Harian Surya (kWh/m\u00b2/hari)', solarMaeVal != null ? `${solarMaeVal.toFixed(2)} kWh/m\u00b2/hari` : '\u2013'],
+        ['Bias vs GSA LTA (%)', ghiBiasGsa != null ? `${ghiBiasGsa >= 0 ? '+' : ''}${ghiBiasGsa.toFixed(1)} %` : '\u2013'],
+        [`Bias vs ${ghiEra5Label} (%)`, ghiBiasEra5 != null ? `${ghiBiasEra5 >= 0 ? '+' : ''}${ghiBiasEra5.toFixed(1)} %` : '\u2013'],
+        ['Bias MBE Surya Tersimpan (%)', solarBiasVal != null ? `${solarBiasVal > 0 ? '+' : ''}${solarBiasVal.toFixed(1)} %` : '\u2013'],
+        ['Kelengkapan Sampel 1 Menit', ghiAvailabilityText],
+        ['Skor Kesesuaian Baseline', solarR2Val != null ? solarR2Val.toFixed(2) : '\u2013'],
         ['Clearness Index (Kt)', ktVal.toFixed(2)],
       ].forEach((pair, i) => addRow2(pair[0], pair[1], i));
 
@@ -841,10 +1021,11 @@ function LaporanContent() {
       [
         ['Kecepatan Angin LTA untuk AEP (GWA/ERA5)', `${windBaselineVal.toFixed(2)} m/s`],
         ['Iradiasi GHI LTA untuk AEP (GSA/ERA5)', `${ghiBaselineVal.toFixed(2)} kWh/m\u00b2/hari`],
-        ['AEP PLTB P50 Net (MWh/thn)', station.aep != null ? Math.round(station.aep * 0.877).toLocaleString('id') : '\u2013'],
-        ['AEP PLTB P90 Net (MWh/thn)', station.aep != null ? Math.round(station.aep * 0.767).toLocaleString('id') : '\u2013'],
-        ['AEP PLTS 10 MWp PR=78% (MWh/thn)', (station.solarAep != null ? Math.round(station.solarAep) : Math.round(ghiBaselineVal * 365 * 10 * 0.78)).toLocaleString('id')],
-        ['Hasil Spesifik PLTS /MWp PR=78%', `${Math.round(ghiBaselineVal * 365 * 0.78).toLocaleString('id')} kWh/kWp\u00b7thn`],
+        ['AEP PLTB Gross (MWh/thn)', windAepGross != null ? `${Math.round(windAepGross).toLocaleString('id')} (${windAepSource})` : '\u2013'],
+        ['AEP PLTB P50 Net (MWh/thn)', windAepP50 != null ? windAepP50.toLocaleString('id') : '\u2013'],
+        ['AEP PLTB P90 Net (MWh/thn)', windAepP90 != null ? windAepP90.toLocaleString('id') : '\u2013'],
+        ['AEP PLTS 10 MWp PR=78% (MWh/thn)', solarAep10Mwp.toLocaleString('id')],
+        ['Hasil Spesifik PLTS /MWp PR=78%', `${solarSpecificYield.toLocaleString('id')} kWh/kWp\u00b7thn`],
       ].forEach((pair, i) => addRow2(pair[0], pair[1], i));
 
       addSection('PRIORITAS GIS-MCDA');
@@ -861,49 +1042,130 @@ function LaporanContent() {
           addRow2('Jarak ke Transmisi Terdekat', `${gisMcda.power_dist_km.toFixed(1)} km`, mcdaFactors.length + 2);
         }
       }
-      // DATA METEOROLOGI — raw sensor readings if available
-      const meteoRows = measurements.filter(
-        (m) => m.temperature !== null || m.humidity !== null || m.pressure !== null || m.wind_dir !== null,
-      );
-      if (meteoRows.length > 0) {
-        ws.addRow([]);
-        const meteoSection = ws.addRow(['DATA METEOROLOGI (SENSOR LAPANGAN)']);
-        ws.mergeCells(`A${meteoSection.number}:B${meteoSection.number}`);
-        const msCell = meteoSection.getCell(1);
-        msCell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FF0F2D57' } };
-        msCell.font = { bold: true, size: 9, color: { argb: C_WHITE }, name: 'Calibri' };
-        msCell.alignment = { horizontal: 'left', vertical: 'middle', indent: 1 };
-        meteoSection.height = 16;
+      addSection('RINGKASAN KUALITAS DATA');
+      [
+        ['Jumlah Sampling Terambil', `${sampleCoverage.total.toLocaleString('id')} baris`],
+        ['Jumlah Hari Tercakup', `${sampleCoverage.days} hari`],
+        ['Target Sampling 1 Menit', `${sampleCoverage.expected.toLocaleString('id')} baris`],
+        ['Sampling Angin Valid', windAvailabilityText],
+        ['Sampling GHI Valid', ghiAvailabilityText],
+        ['Titik Validasi Harian Angin', `${windChartData.length} hari`],
+        ['Titik Validasi Harian GHI', `${ghiChartData.length} hari`],
+      ].forEach((pair, i) => addRow2(pair[0], pair[1], i));
 
-        // Expand to 5 columns for meteo table
-        ws.columns = [
-          { key: 'a', width: 26 },
-          { key: 'b', width: 14 },
-          { key: 'c', width: 14 },
-          { key: 'd', width: 14 },
-          { key: 'e', width: 14 },
-        ];
-        const meteoHdr = ws.addRow(['Tanggal/Waktu', 'Suhu (°C)', 'Kelembapan (%)', 'Tekanan (hPa)', 'Arah Angin (°)']);
-        meteoHdr.eachCell({ includeEmpty: true }, (c: import('exceljs').Cell, ci: number) => {
-          if (ci > 5) return;
-          c.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: C_BLUE } };
-          c.font = { bold: true, size: 9, color: { argb: C_WHITE }, name: 'Calibri' };
-          c.alignment = { horizontal: 'center', vertical: 'middle' };
-        });
-        meteoHdr.height = 15;
-        meteoRows.forEach((m, i) => {
-          const xr = ws.addRow([m.measured_at, m.temperature, m.humidity, m.pressure, m.wind_dir]);
-          const isAlt = i % 2 === 1;
-          xr.eachCell({ includeEmpty: true }, (c: import('exceljs').Cell, ci: number) => {
-            if (ci > 5) return;
-            c.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: isAlt ? C_ALT : 'FFFFFFFF' } };
-            c.font = { size: 9, color: { argb: C_TEXT }, name: 'Calibri' };
-            c.alignment = { horizontal: ci === 1 ? 'left' : 'center', vertical: 'middle', indent: ci === 1 ? 1 : 0 };
-            c.border = { bottom: { style: 'hair', color: { argb: 'FFE5E7EB' } } };
-          });
-          xr.height = 14;
-        });
+      if (meteoSummary.count > 0) {
+        addSection('RINGKASAN METEOROLOGI');
+        [
+          ['Jumlah Pembacaan Sensor', `${meteoSummary.count.toLocaleString('id')} baris`],
+          ['Suhu Rata-rata', meteoSummary.tempAvg != null ? `${meteoSummary.tempAvg.toFixed(1)} °C` : '\u2013'],
+          ['Kelembapan Rata-rata', meteoSummary.humAvg != null ? `${meteoSummary.humAvg.toFixed(1)} %` : '\u2013'],
+          ['Tekanan Udara Rata-rata', meteoSummary.presAvg != null ? `${meteoSummary.presAvg.toFixed(1)} hPa` : '\u2013'],
+          ['Arah Angin Rata-rata', meteoSummary.windDirAvg != null ? `${meteoSummary.windDirAvg.toFixed(0)}°` : '\u2013'],
+        ].forEach((pair, i) => addRow2(pair[0], pair[1], i));
       }
+
+      const styleHeaderRow = (row: import('exceljs').Row, maxCols: number) => {
+        row.eachCell({ includeEmpty: true }, (cell: import('exceljs').Cell, col: number) => {
+          if (col > maxCols) return;
+          cell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: C_BLUE } };
+          cell.font = { bold: true, size: 9, color: { argb: C_WHITE }, name: 'Calibri' };
+          cell.alignment = { horizontal: 'center', vertical: 'middle', wrapText: true };
+          cell.border = { bottom: { style: 'thin', color: { argb: C_NAVY } } };
+        });
+        row.height = 18;
+      };
+
+      const styleDataRow = (row: import('exceljs').Row, index: number, maxCols: number) => {
+        const isAlt = index % 2 === 1;
+        row.eachCell({ includeEmpty: true }, (cell: import('exceljs').Cell, col: number) => {
+          if (col > maxCols) return;
+          cell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: isAlt ? C_ALT : C_WHITE } };
+          cell.font = { size: 9, color: { argb: C_TEXT }, name: 'Calibri' };
+          cell.alignment = { horizontal: col <= 2 ? 'left' : 'center', vertical: 'middle', wrapText: true };
+          cell.border = { bottom: { style: 'hair', color: { argb: 'FFE5E7EB' } } };
+        });
+        row.height = 15;
+      };
+
+      const dailyWs = wb.addWorksheet('Validasi Harian');
+      dailyWs.columns = [
+        { key: 'date', width: 16 },
+        { key: 'label', width: 14 },
+        { key: 'wind_obs', width: 18 },
+        { key: 'wind_baseline', width: 18 },
+        { key: 'wind_dev', width: 16 },
+        { key: 'ghi_obs', width: 18 },
+        { key: 'ghi_baseline', width: 18 },
+        { key: 'ghi_dev', width: 16 },
+      ];
+      const dailyHeader = dailyWs.addRow([
+        'Tanggal WIB',
+        'Label',
+        'Angin Obs (m/s)',
+        'Angin ERA5 DOY (m/s)',
+        'Deviasi Angin (m/s)',
+        'GHI Obs (kWh/m²/hari)',
+        'GHI ERA5 DOY (kWh/m²/hari)',
+        'Deviasi GHI (kWh/m²/hari)',
+      ]);
+      styleHeaderRow(dailyHeader, 8);
+      validationDailyRows.forEach((row, index) => {
+        const windDev = row.windObs != null && row.windBaseline != null ? roundNumber(row.windObs - row.windBaseline, 3) : null;
+        const ghiDev = row.ghiObs != null && row.ghiBaseline != null ? roundNumber(row.ghiObs - row.ghiBaseline, 3) : null;
+        styleDataRow(dailyWs.addRow([
+          row.key,
+          row.label,
+          row.windObs,
+          row.windBaseline,
+          windDev,
+          row.ghiObs,
+          row.ghiBaseline,
+          ghiDev,
+        ]), index, 8);
+      });
+      dailyWs.views = [{ state: 'frozen', ySplit: 1 }];
+
+      const rawWs = wb.addWorksheet('Data Mentah');
+      rawWs.columns = [
+        { key: 'measured_at', width: 28 },
+        { key: 'tanggal_wib', width: 14 },
+        { key: 'station_id', width: 12 },
+        { key: 'wind_speed', width: 14 },
+        { key: 'wind_dir', width: 14 },
+        { key: 'ghi', width: 14 },
+        { key: 'dni', width: 14 },
+        { key: 'temperature', width: 14 },
+        { key: 'humidity', width: 14 },
+        { key: 'pressure', width: 14 },
+      ];
+      const rawHeader = rawWs.addRow([
+        'Timestamp ISO',
+        'Tanggal WIB',
+        'Station ID',
+        'Wind Speed (m/s)',
+        'Wind Direction (°)',
+        'GHI (W/m²)',
+        'DNI (W/m²)',
+        'Temperature (°C)',
+        'Humidity (%)',
+        'Pressure (hPa)',
+      ]);
+      styleHeaderRow(rawHeader, 10);
+      measurements.forEach((m, index) => {
+        styleDataRow(rawWs.addRow([
+          m.measured_at,
+          getJakartaDateKey(m.measured_at),
+          m.station_id,
+          m.wind_speed,
+          m.wind_dir,
+          m.ghi,
+          m.dni,
+          m.temperature,
+          m.humidity,
+          m.pressure,
+        ]), index, 10);
+      });
+      rawWs.views = [{ state: 'frozen', ySplit: 1 }];
 
       ws.addRow([]);
       const fxr = ws.addRow(['Sumber: RE-Valid DSS \u2014 ERA5 (ECMWF) / GWA 3.0 / GSA (Solargis). Simulasi screening awal, bukan studi kelayakan.']);
@@ -939,29 +1201,60 @@ function LaporanContent() {
             altitude_m: station.altitude,
             status: station.status,
             score: station.score,
+            variables: station.variables,
+            mcp_status: station.mcpStatus,
+            station_period_label: station.period,
+            report_start_date_wib: reportStartDate,
+            report_end_date_wib: reportEndDate,
+            report_period_label: reportPeriodLabel,
+            measurement_count: sampleCoverage.total,
+            covered_days: sampleCoverage.days,
+            expected_1min_samples: sampleCoverage.expected,
+            wind_valid_samples: sampleCoverage.wind.valid,
+            wind_sample_completeness_pct: sampleCoverage.wind.pct,
+            ghi_valid_samples: sampleCoverage.ghi.valid,
+            ghi_sample_completeness_pct: sampleCoverage.ghi.pct,
+            first_measurement_at: firstMeasurementAt,
+            latest_measurement_at: latestMeasurement?.measured_at ?? null,
             wind_speed_period_avg_ms: obsWindMean,
             wind_baseline_gwa_ms: station.windBaselineGwa ?? null,
             wind_baseline_era5_period_ms: windEra5ComparisonBaseline,
-            wind_baseline_best_ms: station.windBaseline ?? null,
-            wind_rmse: station.windRmse ?? station.rmse,
-            wind_bias_pct: station.windBias ?? station.bias,
-            wind_r2: station.windR2 ?? station.r2,
+            wind_baseline_best_ms: windBaselineVal,
+            wind_rmse_ms: windRmseVal,
+            wind_mae_ms: windMaeVal,
+            wind_bias_gwa_pct: windBiasGwa,
+            wind_bias_era5_pct: windBiasEra5,
+            wind_bias_stored_pct: windBiasVal,
+            wind_r2: windR2Val,
             ghi_period_avg_kwh_m2_day: obsGhiMean,
             ghi_baseline_gsa_kwh: station.ghiBaselineGsa ?? null,
             ghi_baseline_era5_period_kwh: ghiEra5ComparisonBaseline,
-            ghi_baseline_best_kwh: station.ghiBaseline ?? null,
-            solar_rmse: station.solarRmse ?? null,
-            solar_bias_pct: station.solarBias ?? null,
-            solar_r2: station.solarR2 ?? null,
-            aep_pltb_p50_net_mwh_yr: station.aep != null ? Math.round(station.aep * 0.877) : null,
-            aep_pltb_p90_net_mwh_yr: station.aep != null ? Math.round(station.aep * 0.767) : null,
-            solar_aep_mwh_yr: station.solarAep ?? null,
-            period: station.period,
+            ghi_baseline_best_kwh: ghiBaselineVal,
+            solar_rmse_kwh_m2_day: solarRmseVal,
+            solar_mae_kwh_m2_day: solarMaeVal,
+            solar_bias_gsa_pct: ghiBiasGsa,
+            solar_bias_era5_pct: ghiBiasEra5,
+            solar_bias_stored_pct: solarBiasVal,
+            solar_r2: solarR2Val,
+            clearness_index_kt: ktVal,
+            aep_pltb_gross_mwh_yr: windAepGross != null ? Math.round(windAepGross) : null,
+            aep_pltb_source: windAepSource,
+            aep_pltb_p50_net_mwh_yr: windAepP50,
+            aep_pltb_p90_net_mwh_yr: windAepP90,
+            solar_aep_10mwp_mwh_yr: solarAep10Mwp,
+            solar_specific_yield_kwh_kwp_yr: solarSpecificYield,
+            gis_mcda_source: gisMcda?.data_source ?? 'fallback',
+            gis_mcda_road_dist_km: gisMcda?.road_dist_km ?? null,
+            gis_mcda_power_dist_km: gisMcda?.power_dist_km ?? null,
+            gis_mcda_factors: mcdaFactors,
+            meteo_temperature_avg_c: meteoSummary.tempAvg != null ? roundNumber(meteoSummary.tempAvg, 2) : null,
+            meteo_humidity_avg_pct: meteoSummary.humAvg != null ? roundNumber(meteoSummary.humAvg, 2) : null,
+            meteo_pressure_avg_hpa: meteoSummary.presAvg != null ? roundNumber(meteoSummary.presAvg, 2) : null,
+            meteo_wind_dir_avg_deg: meteoSummary.windDirAvg != null ? roundNumber(meteoSummary.windDirAvg, 1) : null,
             latest_temperature_c: latestMeasurement?.temperature ?? null,
             latest_humidity_pct: latestMeasurement?.humidity ?? null,
             latest_pressure_hpa: latestMeasurement?.pressure ?? null,
             latest_wind_dir_deg: latestMeasurement?.wind_dir ?? null,
-            latest_measurement_at: latestMeasurement?.measured_at ?? null,
             exported_at: new Date().toISOString(),
             source: 'RE-Valid DSS',
           },
@@ -1033,7 +1326,7 @@ function LaporanContent() {
             <span className="material-symbols-outlined text-primary text-[18px] shrink-0">info</span>
             <p className="text-xs text-slate-600 dark:text-blue-100/70 leading-relaxed">
               <span className="font-bold text-slate-900 dark:text-white">Catatan: </span>
-              Referensi MCP: ERA5 (ECMWF) · Atlas: GWA/GSA · Periode: {station.period}
+              Referensi MCP: ERA5 (ECMWF) · Atlas: GWA/GSA · Periode data: {reportPeriodLabel}
             </p>
           </div>
         </div>
@@ -1099,13 +1392,13 @@ function LaporanContent() {
               <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
                 {[
                   { label: 'Kec. Angin (Obs)', value: obsWindMean.toFixed(2), unit: 'm/s', color: 'text-blue-400' },
-                  { label: 'RMSE', value: (station.windRmse ?? station.rmse) != null ? (station.windRmse ?? station.rmse)!.toFixed(2) : '–', unit: (station.windRmse ?? station.rmse) != null ? 'm/s' : '', color: 'text-slate-200' },
-                  { label: 'Skor Baseline', value: (station.windR2 ?? station.r2) != null ? (station.windR2 ?? station.r2)!.toFixed(2) : '–', unit: '', color: baselineSkillColor(station.windR2 ?? station.r2) },
+                  { label: 'RMSE', value: windRmseVal != null ? windRmseVal.toFixed(2) : '–', unit: windRmseVal != null ? 'm/s' : '', color: 'text-slate-200' },
+                  { label: 'Skor Baseline', value: windR2Val != null ? windR2Val.toFixed(2) : '–', unit: '', color: baselineSkillColor(windR2Val) },
                   {
-                    label: 'Bias MBE (ERA5)',
-                    value: (station.windBias ?? station.bias) != null ? `${(station.windBias ?? station.bias)! > 0 ? '+' : ''}${(station.windBias ?? station.bias)!.toFixed(1)}` : '–',
-                    unit: (station.windBias ?? station.bias) != null ? '%' : '',
-                    color: (station.windBias ?? station.bias) != null && Math.abs((station.windBias ?? station.bias)!) <= 5 ? 'text-green-400' : 'text-amber-400',
+                    label: 'Bias ERA5 DOY',
+                    value: windBiasEra5 != null ? `${windBiasEra5 >= 0 ? '+' : ''}${windBiasEra5.toFixed(1)}` : '–',
+                    unit: windBiasEra5 != null ? '%' : '',
+                    color: windBiasEra5 != null && Math.abs(windBiasEra5) <= 5 ? 'text-green-400' : 'text-amber-400',
                   },
                 ].map((m) => (
                   <div
@@ -1132,13 +1425,13 @@ function LaporanContent() {
               <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
                 {[
                   { label: 'GHI Observasi', value: obsGhiMean.toFixed(2), unit: 'kWh/m²/hari', color: 'text-amber-400' },
-                  { label: 'RMSE', value: (station.solarRmse) != null ? station.solarRmse!.toFixed(2) : '–', unit: station.solarRmse != null ? 'kWh/m²' : '', color: 'text-slate-200' },
-                  { label: 'Skor Baseline', value: (station.solarR2 ?? station.r2) != null ? (station.solarR2 ?? station.r2)!.toFixed(2) : '–', unit: '', color: baselineSkillColor(station.solarR2 ?? station.r2) },
+                  { label: 'RMSE', value: solarRmseVal != null ? solarRmseVal.toFixed(2) : '–', unit: solarRmseVal != null ? 'kWh/m²' : '', color: 'text-slate-200' },
+                  { label: 'Skor Baseline', value: solarR2Val != null ? solarR2Val.toFixed(2) : '–', unit: '', color: baselineSkillColor(solarR2Val) },
                   {
-                    label: 'Bias MBE (ERA5)',
-                    value: solarBiasVal != null ? `${solarBiasVal > 0 ? '+' : ''}${solarBiasVal.toFixed(1)}` : '–',
-                    unit: solarBiasVal != null ? '%' : '',
-                    color: solarBiasVal != null && Math.abs(solarBiasVal) <= 10 ? 'text-amber-400' : 'text-red-400',
+                    label: 'Bias ERA5 DOY',
+                    value: ghiBiasEra5 != null ? `${ghiBiasEra5 >= 0 ? '+' : ''}${ghiBiasEra5.toFixed(1)}` : '–',
+                    unit: ghiBiasEra5 != null ? '%' : '',
+                    color: ghiBiasEra5 != null && Math.abs(ghiBiasEra5) <= 10 ? 'text-amber-400' : 'text-red-400',
                   },
                 ].map((m) => (
                   <div
@@ -1422,18 +1715,18 @@ function LaporanContent() {
                   <span className="material-symbols-outlined text-green-400 text-[24px] mb-1 block">electric_bolt</span>
                   <p className="text-[10px] text-slate-400 uppercase tracking-wide">AEP PLTB</p>
                   <p className="text-2xl font-bold text-green-400">
-                    {Math.round((station.aep ?? 0) * 0.877).toLocaleString('id')}
+                    {windAepP50 != null ? windAepP50.toLocaleString('id') : '–'}
                     <span className="text-sm font-medium text-slate-400 ml-1">MWh/thn</span>
                   </p>
                   <p className="text-[10px] text-slate-400 mt-1.5">
-                    P50 Net · P90: {Math.round((station.aep ?? 0) * 0.767).toLocaleString('id')} MWh/thn
+                    P50 Net · P90: {windAepP90 != null ? `${windAepP90.toLocaleString('id')} MWh/thn` : '–'}
                   </p>
                 </div>
                 <div className="bg-amber-50 dark:bg-amber-900/10 border border-amber-100 dark:border-amber-800/30 rounded-xl p-4 text-center">
                   <span className="material-symbols-outlined text-amber-400 text-[24px] mb-1 block">solar_power</span>
                   <p className="text-[10px] text-slate-400 uppercase tracking-wide">Hasil Spesifik PLTS</p>
                   <p className="text-2xl font-bold text-amber-400">
-                    {Math.round(ghiBaselineVal * 365 * 0.78).toLocaleString('id')}
+                    {solarSpecificYield.toLocaleString('id')}
                     <span className="text-sm font-medium text-slate-400 ml-1">kWh/kWp·thn</span>
                   </p>
                   <p className="text-[10px] text-slate-400 mt-1.5">PR = 78% (IEC tropik)</p>
@@ -1516,7 +1809,7 @@ function LaporanContent() {
                   iconColor: 'text-red-500',
                   bgColor: 'bg-red-50 dark:bg-red-900/20',
                   title: 'Laporan Presentasi (PDF)',
-                  desc: 'Dokumen siap cetak berisi ringkasan eksekutif, peta potensi, grafik validasi, dan rekomendasi strategis. Cocok untuk presentasi ke pemangku kepentingan.',
+                  desc: 'Dokumen siap cetak berisi identitas stasiun, metrik validasi, baseline, potensi energi, GIS-MCDA, meteorologi, dan grafik validasi.',
                   btnClass: 'bg-primary hover:bg-blue-600 text-white shadow-lg shadow-blue-500/20',
                   hoverBorder: 'hover:border-primary/50',
                   onClick: handleExportPDF,

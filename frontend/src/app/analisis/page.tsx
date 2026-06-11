@@ -53,6 +53,10 @@ function toJakartaDateInput(value: string | null | undefined): string | null {
   return getJakartaDateKey(value);
 }
 
+function isDateInput(value: string | null | undefined): value is string {
+  return !!value && /^\d{4}-\d{2}-\d{2}$/.test(value);
+}
+
 function defaultDateRange(
   firstMeasAt: string | null | undefined,
   lastMeasAt: string | null | undefined,
@@ -170,16 +174,18 @@ function AnalisisContent() {
   const router = useRouter();
   const stationId = searchParams.get('station') ?? stations[0]?.id ?? '';
   const station = stations.find((s) => s.id === stationId) ?? stations[0];
+  const queryStartDate = searchParams.get('start');
+  const queryEndDate = searchParams.get('end');
 
   const [energyType, setEnergyType] = useState<'wind' | 'solar'>('wind');
   const [taskState, setTaskState] = useState<'idle' | 'loading' | 'success' | 'error'>('idle');
   const [taskMsg, setTaskMsg] = useState('');
 
   const [startDate, setStartDate] = useState(
-    () => defaultDateRange(station?.firstMeasurementAt, station?.lastMeasurementAt).start,
+    () => isDateInput(queryStartDate) ? queryStartDate : defaultDateRange(station?.firstMeasurementAt, station?.lastMeasurementAt).start,
   );
   const [endDate, setEndDate] = useState(
-    () => defaultDateRange(station?.firstMeasurementAt, station?.lastMeasurementAt).end,
+    () => isDateInput(queryEndDate) ? queryEndDate : defaultDateRange(station?.firstMeasurementAt, station?.lastMeasurementAt).end,
   );
   const prevStationIdRef = useRef<string | null>(null);
 
@@ -188,9 +194,9 @@ function AnalisisContent() {
     if (prevStationIdRef.current === station?.id) return;
     prevStationIdRef.current = station?.id ?? null;
     const { start, end } = defaultDateRange(station?.firstMeasurementAt, station?.lastMeasurementAt);
-    setStartDate(start);
-    setEndDate(end);
-  }, [station?.id, station?.firstMeasurementAt, station?.lastMeasurementAt]);
+    setStartDate(isDateInput(queryStartDate) ? queryStartDate : start);
+    setEndDate(isDateInput(queryEndDate) ? queryEndDate : end);
+  }, [station?.id, station?.firstMeasurementAt, station?.lastMeasurementAt, queryStartDate, queryEndDate]);
 
   const [exportingXlsx, setExportingXlsx] = useState(false);
 
@@ -888,7 +894,7 @@ function AnalisisContent() {
             <div className="flex flex-col items-end gap-2">
               <div className="flex gap-2">
                 <Link
-                  href={`/laporan?station=${station.id}&from=analisis`}
+                  href={`/laporan?station=${station.id}&from=analisis&start=${startDate}&end=${endDate}`}
                   className="flex items-center gap-1.5 px-3 py-2 bg-transparent border border-gray-300 dark:border-gray-600 text-slate-700 dark:text-white rounded-lg hover:bg-gray-50 dark:hover:bg-white/5 transition-all text-xs font-medium"
                 >
                   <span className="material-symbols-outlined text-[16px]">description</span>
@@ -1275,7 +1281,7 @@ function AnalisisContent() {
               <h3 className="text-sm font-bold text-slate-900 dark:text-white">
                 Parameter Validasi {isWind ? 'Angin' : 'Surya'}
               </h3>
-              <Link href={`/laporan?station=${station.id}&from=analisis`} className="text-xs text-primary font-medium hover:underline">
+              <Link href={`/laporan?station=${station.id}&from=analisis&start=${startDate}&end=${endDate}`} className="text-xs text-primary font-medium hover:underline">
                 Lihat Laporan Lengkap
               </Link>
             </div>
