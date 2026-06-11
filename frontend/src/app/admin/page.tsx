@@ -26,7 +26,18 @@ type AdminStation = {
   altitude: number;
   status: 'prioritas' | 'kandidat' | 'tidak_sesuai';
   score: number;
+  period: string;
+  variables: string;
   mcpStatus: string;
+  rmse: number;
+  bias: number;
+  r2: number;
+  windRmse: number | null;
+  windBias: number | null;
+  windR2: number | null;
+  solarRmse: number | null;
+  solarBias: number | null;
+  solarR2: number | null;
   windSpeed: number;
   irradiation: number;
   windBaseline: number | null;
@@ -35,10 +46,31 @@ type AdminStation = {
   ghiBaselineGsa: number | null;
   windBaselineNasa: number | null;
   ghiBaselineNasa: number | null;
+  aep: number;
+  windAep: number | null;
+  solarAep: number | null;
   lastUpdate: string;
   lastMeasurementAt: string | null;
   firstMeasurementAt: string | null;
 };
+
+type StationFormData = Pick<
+  AdminStation,
+  | 'id'
+  | 'name'
+  | 'lat'
+  | 'lon'
+  | 'region'
+  | 'altitude'
+  | 'status'
+  | 'score'
+  | 'windBaseline'
+  | 'ghiBaseline'
+  | 'windBaselineGwa'
+  | 'ghiBaselineGsa'
+  | 'windBaselineNasa'
+  | 'ghiBaselineNasa'
+>;
 
 // Status badge
 function StatusBadge({ status }: { status: string }) {
@@ -91,7 +123,7 @@ function formatLastUpdate(ts: string): string {
 type ModalProps = {
   station: AdminStation | null; // null = add mode
   onClose: () => void;
-  onSave: (data: Omit<AdminStation, 'score' | 'windSpeed' | 'irradiation' | 'lastUpdate' | 'lastMeasurementAt' | 'firstMeasurementAt' | 'mcpStatus'> & { score: number }) => Promise<string | undefined>;
+  onSave: (data: StationFormData) => Promise<string | undefined>;
   onRefresh: () => void; // Dipanggil setelah fetch-atlas agar SWR tabel terupdate
 };
 
@@ -592,7 +624,18 @@ export default function AdminPage() {
     altitude: s.altitude,
     status: s.status as AdminStation['status'],
     score: s.score,
+    period: s.period,
+    variables: s.variables,
     mcpStatus: s.mcpStatus,
+    rmse: s.rmse,
+    bias: s.bias,
+    r2: s.r2,
+    windRmse: s.windRmse ?? null,
+    windBias: s.windBias ?? null,
+    windR2: s.windR2 ?? null,
+    solarRmse: s.solarRmse ?? null,
+    solarBias: s.solarBias ?? null,
+    solarR2: s.solarR2 ?? null,
     windSpeed: s.windSpeed,
     irradiation: s.irradiation,
     windBaseline: s.windBaseline ?? null,
@@ -601,6 +644,9 @@ export default function AdminPage() {
     ghiBaselineGsa: s.ghiBaselineGsa ?? null,
     windBaselineNasa: s.windBaselineNasa ?? null,
     ghiBaselineNasa: s.ghiBaselineNasa ?? null,
+    aep: s.aep,
+    windAep: s.windAep ?? null,
+    solarAep: s.solarAep ?? null,
     lastUpdate: s.lastUpdate,
     lastMeasurementAt: s.lastMeasurementAt ?? null,
     firstMeasurementAt: s.firstMeasurementAt ?? null,
@@ -612,6 +658,7 @@ export default function AdminPage() {
   const [editStation, setEditStation] = useState<AdminStation | null>(null);
   const [deleteId, setDeleteId] = useState<string | null>(null);
   const [crudError, setCrudError] = useState<string | null>(null);
+  const [exportingData, setExportingData] = useState(false);
 
   // CSV upload state
   const [csvStation, setCsvStation] = useState('');
@@ -713,19 +760,313 @@ export default function AdminPage() {
     }
   }
 
-  function handleExport() {
-    const header = ['id', 'name', 'lat', 'lon', 'region', 'altitude', 'status', 'score'];
-    const rows = filtered.map((s) =>
-      [s.id, `"${s.name}"`, s.lat, s.lon, `"${s.region}"`, s.altitude, s.status, s.score].join(',')
-    );
-    const csv = [header.join(','), ...rows].join('\n');
-    const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement('a');
-    a.href = url;
-    a.download = 'stasiun_re-valid.csv';
-    a.click();
-    URL.revokeObjectURL(url);
+  async function handleExport() {
+    setExportingData(true);
+    setCrudError(null);
+    try {
+      const { Workbook } = await import('exceljs');
+      const wb = new Workbook();
+      const exportedAt = new Date();
+      const exportedAtLabel = exportedAt.toLocaleString('id-ID', { timeZone: 'Asia/Jakarta' }) + ' WIB';
+      const rowsToExport = filtered;
+
+      wb.creator = 'RE-Valid DSS';
+      wb.created = exportedAt;
+      wb.modified = exportedAt;
+
+      const C_BLUE = 'FF137FEC';
+      const C_NAVY = 'FF0F2D57';
+      const C_WHITE = 'FFFFFFFF';
+      const C_ALT = 'FFF0F5FF';
+      const C_HDR = 'FFE8EFF9';
+      const C_TEXT = 'FF111827';
+      const C_GRAY = 'FF6B7280';
+      const dash = '—';
+
+      const statusLabel = (status: AdminStation['status']) => {
+        if (status === 'prioritas') return 'Prioritas';
+        if (status === 'kandidat') return 'Kandidat';
+        return 'Tidak Sesuai';
+      };
+      const mcpLabel = (status: string) => {
+        if (status === 'selesai') return 'Selesai';
+        if (status === 'berjalan') return 'Berjalan';
+        return 'Pending';
+      };
+      const scoreClass = (score: number) => {
+        if (score >= 70) return 'Prioritas tinggi';
+        if (score >= 50) return 'Kandidat';
+        return 'Perlu evaluasi';
+      };
+      const asNumber = (value: number | null | undefined, digits = 2) =>
+        value == null || !Number.isFinite(value) ? null : Number(value.toFixed(digits));
+      const asTextDate = (value: string | null | undefined) => value ? formatLastUpdate(value) : dash;
+      const parseDate = (value: string | null | undefined) => {
+        if (!value) return null;
+        const parsed = new Date(value);
+        return Number.isNaN(parsed.getTime()) ? null : parsed;
+      };
+      const daysBetween = (start: string | null, end: string | null) => {
+        const s = parseDate(start);
+        const e = parseDate(end);
+        if (!s || !e) return null;
+        return Number(((e.getTime() - s.getTime()) / 86_400_000).toFixed(1));
+      };
+      const ageHours = (value: string | null | undefined) => {
+        const parsed = parseDate(value);
+        if (!parsed) return null;
+        return Number(((Date.now() - parsed.getTime()) / 3_600_000).toFixed(1));
+      };
+      const bestWindBaseline = (s: AdminStation) =>
+        s.windBaseline ?? s.windBaselineGwa ?? s.windBaselineNasa ?? (s.windSpeed > 0 ? s.windSpeed : null);
+      const bestGhiBaseline = (s: AdminStation) =>
+        s.ghiBaseline ?? s.ghiBaselineGsa ?? s.ghiBaselineNasa ?? (s.irradiation > 0 ? s.irradiation : null);
+      const windAepGross = (s: AdminStation) =>
+        s.aep > 0 ? s.aep : s.windAep != null && s.windAep > 0 ? s.windAep : null;
+      const windAepSource = (s: AdminStation) =>
+        s.aep > 0 ? 'AEP utama/MCP' : s.windAep != null && s.windAep > 0 ? 'windAep fallback' : dash;
+      const solarAepValue = (s: AdminStation) =>
+        s.solarAep != null && s.solarAep > 0
+          ? s.solarAep
+          : bestGhiBaseline(s) != null ? bestGhiBaseline(s)! * 365 * 10 * 0.78 : null;
+      const solarSpecificYield = (s: AdminStation) =>
+        bestGhiBaseline(s) != null ? bestGhiBaseline(s)! * 365 * 0.78 : null;
+
+      const styleTitle = (ws: import('exceljs').Worksheet, title: string, subtitle: string, maxCols: number) => {
+        ws.mergeCells(1, 1, 1, maxCols);
+        ws.mergeCells(2, 1, 2, maxCols);
+        const titleCell = ws.getCell(1, 1);
+        titleCell.value = title;
+        titleCell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: C_BLUE } };
+        titleCell.font = { bold: true, size: 14, color: { argb: C_WHITE }, name: 'Calibri' };
+        titleCell.alignment = { horizontal: 'left', vertical: 'middle', indent: 1 };
+        ws.getRow(1).height = 24;
+
+        const metaCell = ws.getCell(2, 1);
+        metaCell.value = subtitle;
+        metaCell.font = { italic: true, size: 9, color: { argb: C_GRAY }, name: 'Calibri' };
+        metaCell.alignment = { horizontal: 'left', vertical: 'middle', indent: 1 };
+        ws.getRow(2).height = 16;
+      };
+
+      const styleHeaderRow = (row: import('exceljs').Row, maxCols: number) => {
+        row.eachCell({ includeEmpty: true }, (cell: import('exceljs').Cell, col: number) => {
+          if (col > maxCols) return;
+          cell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: C_NAVY } };
+          cell.font = { bold: true, size: 9, color: { argb: C_WHITE }, name: 'Calibri' };
+          cell.alignment = { horizontal: 'center', vertical: 'middle', wrapText: true };
+          cell.border = { bottom: { style: 'thin', color: { argb: C_BLUE } } };
+        });
+        row.height = 24;
+      };
+
+      const styleDataRow = (row: import('exceljs').Row, index: number, maxCols: number) => {
+        const isAlt = index % 2 === 1;
+        row.eachCell({ includeEmpty: true }, (cell: import('exceljs').Cell, col: number) => {
+          if (col > maxCols) return;
+          cell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: isAlt ? C_ALT : C_WHITE } };
+          cell.font = { size: 9, color: { argb: C_TEXT }, name: 'Calibri' };
+          cell.alignment = { horizontal: col <= 3 ? 'left' : 'center', vertical: 'middle', wrapText: true };
+          cell.border = { bottom: { style: 'hair', color: { argb: 'FFE5E7EB' } } };
+        });
+        row.height = 17;
+      };
+
+      type ExportColumn = {
+        header: string;
+        width: number;
+        value: (station: AdminStation, index: number) => string | number | null;
+        numFmt?: string;
+        align?: 'left' | 'center' | 'right';
+      };
+
+      const addTableSheet = (name: string, subtitle: string, columns: ExportColumn[]) => {
+        const ws = wb.addWorksheet(name);
+        ws.columns = columns.map((col, index) => ({
+          key: `c${index}`,
+          width: col.width,
+        }));
+        styleTitle(ws, `RE-Valid — ${name}`, subtitle, columns.length);
+        ws.addRow([]);
+        const headerRow = ws.addRow(columns.map((col) => col.header));
+        styleHeaderRow(headerRow, columns.length);
+        rowsToExport.forEach((station, index) => {
+          const row = ws.addRow(columns.map((col) => col.value(station, index) ?? dash));
+          styleDataRow(row, index, columns.length);
+          columns.forEach((col, colIndex) => {
+            const cell = row.getCell(colIndex + 1);
+            if (col.numFmt && typeof cell.value === 'number') cell.numFmt = col.numFmt;
+            if (col.align) cell.alignment = { ...cell.alignment, horizontal: col.align };
+          });
+        });
+        ws.views = [{ state: 'frozen', ySplit: 4 }];
+        ws.autoFilter = {
+          from: { row: 4, column: 1 },
+          to: { row: 4, column: columns.length },
+        };
+      };
+
+      const summary = wb.addWorksheet('Ringkasan');
+      summary.columns = [
+        { key: 'metric', width: 38 },
+        { key: 'value', width: 28 },
+        { key: 'note', width: 45 },
+      ];
+      styleTitle(
+        summary,
+        'RE-Valid — Ekspor Data Admin',
+        `Diekspor: ${exportedAtLabel} | Baris ekspor: ${rowsToExport.length} dari ${stationList.length} stasiun`,
+        3,
+      );
+      const addSection = (label: string) => {
+        summary.addRow([]);
+        const row = summary.addRow([label]);
+        summary.mergeCells(row.number, 1, row.number, 3);
+        const cell = row.getCell(1);
+        cell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: C_NAVY } };
+        cell.font = { bold: true, size: 9, color: { argb: C_WHITE }, name: 'Calibri' };
+        cell.alignment = { horizontal: 'left', vertical: 'middle', indent: 1 };
+        row.height = 17;
+      };
+      const addSummaryRow = (label: string, value: string | number, note = '', index = 0) => {
+        const row = summary.addRow([label, value, note]);
+        row.eachCell({ includeEmpty: true }, (cell: import('exceljs').Cell, col: number) => {
+          cell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: index % 2 ? C_ALT : col === 1 ? C_HDR : C_WHITE } };
+          cell.font = { bold: col === 1, size: 9, color: { argb: C_TEXT }, name: 'Calibri' };
+          cell.alignment = { horizontal: col === 1 ? 'left' : 'center', vertical: 'middle', indent: col === 1 ? 1 : 0, wrapText: true };
+          cell.border = { bottom: { style: 'hair', color: { argb: 'FFE5E7EB' } } };
+        });
+        row.height = 17;
+      };
+
+      const filteredCounts = {
+        prioritas: rowsToExport.filter((s) => s.status === 'prioritas').length,
+        kandidat: rowsToExport.filter((s) => s.status === 'kandidat').length,
+        tidak: rowsToExport.filter((s) => s.status === 'tidak_sesuai').length,
+        active: rowsToExport.filter((s) => isRecentlyActive(s.lastMeasurementAt ?? s.lastUpdate)).length,
+        mcpDone: rowsToExport.filter((s) => s.mcpStatus === 'selesai').length,
+        mcpRunning: rowsToExport.filter((s) => s.mcpStatus === 'berjalan').length,
+        mcpPending: rowsToExport.filter((s) => s.mcpStatus === 'pending').length,
+      };
+      const avg = (values: number[]) => values.length ? Number((values.reduce((a, b) => a + b, 0) / values.length).toFixed(2)) : dash;
+
+      addSection('FILTER EKSPOR');
+      [
+        ['Pencarian Aktif', query || dash, 'Nama/ID stasiun yang sedang difilter di halaman admin.'],
+        ['Filter Status Aktif', filterStatus ? statusLabel(filterStatus as AdminStation['status']) : 'Semua status', 'Ekspor mengikuti filter yang sedang tampil.'],
+        ['Jumlah Baris Diekspor', rowsToExport.length, `${stationList.length} total stasiun tersedia.`],
+      ].forEach(([label, value, note], index) => addSummaryRow(String(label), value, String(note), index));
+
+      addSection('RINGKASAN STATUS');
+      [
+        ['Prioritas', filteredCounts.prioritas, 'Stasiun dengan status prioritas.'],
+        ['Kandidat', filteredCounts.kandidat, 'Stasiun kandidat pengembangan.'],
+        ['Tidak Sesuai', filteredCounts.tidak, 'Stasiun yang tidak memenuhi kriteria saat ini.'],
+        ['Aktif <24 Jam', filteredCounts.active, 'Berdasarkan last measurement atau last update.'],
+        ['MCP Selesai', filteredCounts.mcpDone, 'Status proses validasi MCP selesai.'],
+        ['MCP Berjalan', filteredCounts.mcpRunning, 'Status proses validasi MCP berjalan.'],
+        ['MCP Pending', filteredCounts.mcpPending, 'Status proses validasi MCP pending.'],
+      ].forEach(([label, value, note], index) => addSummaryRow(String(label), value, String(note), index));
+
+      addSection('RINGKASAN NILAI');
+      [
+        ['Rata-rata Skor GIS', avg(rowsToExport.map((s) => s.score)), 'Skala 0-100.'],
+        ['Rata-rata Angin Observasi', avg(rowsToExport.map((s) => s.windSpeed).filter((v) => v > 0)), 'm/s. Nilai 0 tidak dihitung.'],
+        ['Rata-rata GHI Observasi', avg(rowsToExport.map((s) => s.irradiation).filter((v) => v > 0)), 'kWh/m²/hari. Nilai 0 tidak dihitung.'],
+        ['Stasiun dengan AEP PLTB', rowsToExport.filter((s) => windAepGross(s) != null).length, 'Memakai aep utama atau windAep fallback.'],
+        ['Stasiun dengan AEP PLTS', rowsToExport.filter((s) => solarAepValue(s) != null).length, 'Memakai solarAep atau estimasi GHI x 365 x 10 MWp x PR 78%.'],
+      ].forEach(([label, value, note], index) => addSummaryRow(String(label), value, String(note), index));
+      summary.views = [{ state: 'frozen', ySplit: 2 }];
+
+      addTableSheet('Data Stasiun', 'Identitas lokasi, status, skor, periode, variabel, dan timestamp monitoring.', [
+        { header: 'No', width: 6, value: (_s, i) => i + 1, align: 'center' },
+        { header: 'Station ID', width: 14, value: (s) => s.id },
+        { header: 'Nama Stasiun', width: 26, value: (s) => s.name },
+        { header: 'Wilayah', width: 28, value: (s) => s.region },
+        { header: 'Latitude', width: 13, value: (s) => s.lat, numFmt: '0.000000' },
+        { header: 'Longitude', width: 13, value: (s) => s.lon, numFmt: '0.000000' },
+        { header: 'Ketinggian (m dpl)', width: 16, value: (s) => s.altitude, numFmt: '0' },
+        { header: 'Status', width: 15, value: (s) => statusLabel(s.status) },
+        { header: 'Skor GIS', width: 10, value: (s) => s.score, numFmt: '0' },
+        { header: 'Kategori Skor', width: 18, value: (s) => scoreClass(s.score) },
+        { header: 'Status MCP', width: 14, value: (s) => mcpLabel(s.mcpStatus) },
+        { header: 'Periode Data', width: 26, value: (s) => s.period },
+        { header: 'Variabel', width: 22, value: (s) => s.variables },
+        { header: 'First Measurement (WIB)', width: 24, value: (s) => asTextDate(s.firstMeasurementAt) },
+        { header: 'Last Measurement (WIB)', width: 24, value: (s) => asTextDate(s.lastMeasurementAt) },
+        { header: 'Last Update (WIB)', width: 24, value: (s) => asTextDate(s.lastUpdate) },
+        { header: 'Status Data', width: 18, value: (s) => isRecentlyActive(s.lastMeasurementAt ?? s.lastUpdate) ? 'Aktif <24 jam' : 'Tidak aktif/belum ada data' },
+      ]);
+
+      addTableSheet('Baseline Atlas', 'Observasi lapangan dan baseline atlas GWA/GSA/ERA5 yang dipakai sistem.', [
+        { header: 'Station ID', width: 14, value: (s) => s.id },
+        { header: 'Nama Stasiun', width: 26, value: (s) => s.name },
+        { header: 'Angin Obs (m/s)', width: 15, value: (s) => asNumber(s.windSpeed), numFmt: '0.00' },
+        { header: 'Wind Baseline Best (m/s)', width: 20, value: (s) => asNumber(bestWindBaseline(s)), numFmt: '0.00' },
+        { header: 'GWA 3.0 (m/s)', width: 15, value: (s) => asNumber(s.windBaselineGwa), numFmt: '0.00' },
+        { header: 'ERA5 Angin (m/s)', width: 16, value: (s) => asNumber(s.windBaselineNasa), numFmt: '0.00' },
+        { header: 'Baseline Angin Legacy (m/s)', width: 23, value: (s) => asNumber(s.windBaseline), numFmt: '0.00' },
+        { header: 'GHI Obs (kWh/m²/hari)', width: 20, value: (s) => asNumber(s.irradiation), numFmt: '0.00' },
+        { header: 'GHI Best (kWh/m²/hari)', width: 20, value: (s) => asNumber(bestGhiBaseline(s)), numFmt: '0.00' },
+        { header: 'GSA/Solargis (kWh/m²/hari)', width: 24, value: (s) => asNumber(s.ghiBaselineGsa), numFmt: '0.00' },
+        { header: 'ERA5 GHI (kWh/m²/hari)', width: 22, value: (s) => asNumber(s.ghiBaselineNasa), numFmt: '0.00' },
+        { header: 'Baseline GHI Legacy', width: 18, value: (s) => asNumber(s.ghiBaseline), numFmt: '0.00' },
+      ]);
+
+      addTableSheet('Potensi Energi', 'AEP angin dan surya, termasuk fallback agar nilai tidak kosong saat field utama belum tersedia.', [
+        { header: 'Station ID', width: 14, value: (s) => s.id },
+        { header: 'Nama Stasiun', width: 26, value: (s) => s.name },
+        { header: 'AEP PLTB Gross (MWh/thn)', width: 24, value: (s) => asNumber(windAepGross(s), 0), numFmt: '#,##0' },
+        { header: 'Sumber AEP PLTB', width: 18, value: (s) => windAepSource(s) },
+        { header: 'AEP PLTB P50 Net (MWh/thn)', width: 26, value: (s) => windAepGross(s) != null ? Math.round(windAepGross(s)! * 0.877) : null, numFmt: '#,##0' },
+        { header: 'AEP PLTB P90 Net (MWh/thn)', width: 26, value: (s) => windAepGross(s) != null ? Math.round(windAepGross(s)! * 0.767) : null, numFmt: '#,##0' },
+        { header: 'AEP PLTS 10 MWp PR 78% (MWh/thn)', width: 32, value: (s) => asNumber(solarAepValue(s), 0), numFmt: '#,##0' },
+        { header: 'Sumber AEP PLTS', width: 20, value: (s) => s.solarAep != null && s.solarAep > 0 ? 'solarAep' : bestGhiBaseline(s) != null ? 'estimasi GHI' : dash },
+        { header: 'Hasil Spesifik PLTS (kWh/kWp/thn)', width: 31, value: (s) => asNumber(solarSpecificYield(s), 0), numFmt: '#,##0' },
+        { header: 'WindAEP Raw (MWh/thn)', width: 22, value: (s) => asNumber(s.windAep, 0), numFmt: '#,##0' },
+        { header: 'SolarAEP Raw (MWh/thn)', width: 22, value: (s) => asNumber(s.solarAep, 0), numFmt: '#,##0' },
+      ]);
+
+      addTableSheet('Validasi MCP', 'Metrik validasi umum dan per variabel yang disimpan dari proses MCP.', [
+        { header: 'Station ID', width: 14, value: (s) => s.id },
+        { header: 'Nama Stasiun', width: 26, value: (s) => s.name },
+        { header: 'Status MCP', width: 14, value: (s) => mcpLabel(s.mcpStatus) },
+        { header: 'RMSE Umum', width: 13, value: (s) => asNumber(s.rmse), numFmt: '0.00' },
+        { header: 'Bias Umum (%)', width: 14, value: (s) => asNumber(s.bias, 1), numFmt: '0.0' },
+        { header: 'R² Umum', width: 11, value: (s) => asNumber(s.r2), numFmt: '0.00' },
+        { header: 'Wind RMSE (m/s)', width: 17, value: (s) => asNumber(s.windRmse), numFmt: '0.00' },
+        { header: 'Wind Bias (%)', width: 15, value: (s) => asNumber(s.windBias, 1), numFmt: '0.0' },
+        { header: 'Wind R²', width: 11, value: (s) => asNumber(s.windR2), numFmt: '0.00' },
+        { header: 'Solar RMSE (kWh/m²/hari)', width: 25, value: (s) => asNumber(s.solarRmse), numFmt: '0.00' },
+        { header: 'Solar Bias (%)', width: 16, value: (s) => asNumber(s.solarBias, 1), numFmt: '0.0' },
+        { header: 'Solar R²', width: 11, value: (s) => asNumber(s.solarR2), numFmt: '0.00' },
+      ]);
+
+      addTableSheet('MQTT Monitoring', 'Topic MQTT dan timestamp data untuk memeriksa aktivitas stasiun lapangan.', [
+        { header: 'Station ID', width: 14, value: (s) => s.id },
+        { header: 'Nama Stasiun', width: 26, value: (s) => s.name },
+        { header: 'MQTT Topic', width: 26, value: (s) => `stations/${s.id}/data` },
+        { header: 'First Measurement (WIB)', width: 24, value: (s) => asTextDate(s.firstMeasurementAt) },
+        { header: 'Last Measurement (WIB)', width: 24, value: (s) => asTextDate(s.lastMeasurementAt) },
+        { header: 'Last Update (WIB)', width: 24, value: (s) => asTextDate(s.lastUpdate) },
+        { header: 'Rentang Data (hari)', width: 18, value: (s) => daysBetween(s.firstMeasurementAt, s.lastMeasurementAt), numFmt: '0.0' },
+        { header: 'Umur Data Terakhir (jam)', width: 22, value: (s) => ageHours(s.lastMeasurementAt ?? s.lastUpdate), numFmt: '0.0' },
+        { header: 'Status Aktivitas', width: 20, value: (s) => isRecentlyActive(s.lastMeasurementAt ?? s.lastUpdate) ? 'Aktif <24 jam' : 'Tidak aktif/belum ada data' },
+      ]);
+
+      const buf = await wb.xlsx.writeBuffer();
+      const blob = new Blob([buf], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = `RE-Valid_Admin_Stasiun_${new Date().toISOString().slice(0, 10)}.xlsx`;
+      a.click();
+      URL.revokeObjectURL(url);
+    } catch {
+      setCrudError('Gagal mengekspor data admin. Coba ulangi beberapa saat lagi.');
+    } finally {
+      setExportingData(false);
+    }
   }
 
   function handleLogout() {
@@ -858,10 +1199,13 @@ export default function AdminPage() {
               <div className="flex gap-3">
                 <button
                   onClick={handleExport}
-                  className="inline-flex items-center gap-2 px-4 py-2 bg-white dark:bg-surface-dark border border-gray-300 dark:border-border-dark rounded-lg text-sm font-medium text-gray-700 dark:text-gray-200 hover:bg-gray-50 dark:hover:bg-gray-800 transition-colors"
+                  disabled={exportingData}
+                  className="inline-flex items-center gap-2 px-4 py-2 bg-white dark:bg-surface-dark border border-gray-300 dark:border-border-dark rounded-lg text-sm font-medium text-gray-700 dark:text-gray-200 hover:bg-gray-50 dark:hover:bg-gray-800 transition-colors disabled:opacity-60 disabled:cursor-wait"
                 >
-                  <span className="material-symbols-outlined text-[20px]">download</span>
-                  Ekspor Data
+                  <span className={`material-symbols-outlined text-[20px] ${exportingData ? 'animate-spin' : ''}`}>
+                    {exportingData ? 'refresh' : 'download'}
+                  </span>
+                  {exportingData ? 'Memproses...' : 'Ekspor Data'}
                 </button>
                 <button
                   onClick={() => setShowAddModal(true)}
