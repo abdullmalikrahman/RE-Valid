@@ -32,6 +32,7 @@ const mcpIcon: Record<string, string> = {
 // Fungsi murni — dideklarasikan di luar komponen agar tidak di-recreate tiap render
 const DISPLAY_TIME_ZONE = 'Asia/Jakarta';
 const EXPECTED_SAMPLES_PER_DAY = 1440;
+const MEASUREMENT_FETCH_LIMIT = 20_000;
 const jakartaDateFormatter = new Intl.DateTimeFormat('en-CA', {
   timeZone: DISPLAY_TIME_ZONE,
   year: 'numeric',
@@ -43,6 +44,28 @@ function getJakartaDateKey(isoDate: string): string {
   const parts = jakartaDateFormatter.formatToParts(new Date(isoDate));
   const part = (type: string) => parts.find((p) => p.type === type)?.value ?? '00';
   return `${part('year')}-${part('month')}-${part('day')}`;
+}
+
+function toJakartaDateInput(value: string | null | undefined): string | null {
+  if (!value) return null;
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime()) || date.getUTCFullYear() < 2024) return null;
+  return getJakartaDateKey(value);
+}
+
+function defaultDateRange(
+  firstMeasAt: string | null | undefined,
+  lastMeasAt: string | null | undefined,
+): { start: string; end: string } {
+  const start = toJakartaDateInput(firstMeasAt);
+  const end = toJakartaDateInput(lastMeasAt);
+  if (start && end && start <= end) return { start, end };
+  if (start) return { start, end: start };
+  if (end) return { start: end, end };
+
+  const today = new Date();
+  const fallbackStart = new Date(today.getTime() - 30 * 86_400_000).toISOString().slice(0, 10);
+  return { start: fallbackStart, end: today.toISOString().slice(0, 10) };
 }
 
 function dateKeyToUtcDate(dateKey: string): Date {
@@ -152,36 +175,22 @@ function AnalisisContent() {
   const [taskState, setTaskState] = useState<'idle' | 'loading' | 'success' | 'error'>('idle');
   const [taskMsg, setTaskMsg] = useState('');
 
-  // Compute default date range: first measurement → first + 10 days.
-  // Falls back to last 30 days when a station has no data yet.
-  // PENTING: first_measurement_at dikirim backend sebagai UTC. ESP32 memakai RTC WIB (UTC+7),
-  // sehingga tanggal harus diekstrak dalam WIB agar tidak off-by-one (mis. 26 Mei vs 27 Mei).
-  function defaultDateRange(firstMeasAt: string | null | undefined): { start: string; end: string } {
-    if (firstMeasAt) {
-      const first = new Date(firstMeasAt);
-      // Ekstrak tanggal dalam WIB (UTC+7) menggunakan en-CA locale (format YYYY-MM-DD)
-      const start = first.toLocaleDateString('en-CA', { timeZone: 'Asia/Jakarta' });
-      const end = new Date(first.getTime() + 10 * 86_400_000)
-        .toLocaleDateString('en-CA', { timeZone: 'Asia/Jakarta' });
-      return { start, end };
-    }
-    const today = new Date();
-    const start = new Date(today.getTime() - 30 * 86_400_000).toISOString().slice(0, 10);
-    return { start, end: today.toISOString().slice(0, 10) };
-  }
-
-  const [startDate, setStartDate] = useState(() => defaultDateRange(station?.firstMeasurementAt).start);
-  const [endDate, setEndDate] = useState(() => defaultDateRange(station?.firstMeasurementAt).end);
+  const [startDate, setStartDate] = useState(
+    () => defaultDateRange(station?.firstMeasurementAt, station?.lastMeasurementAt).start,
+  );
+  const [endDate, setEndDate] = useState(
+    () => defaultDateRange(station?.firstMeasurementAt, station?.lastMeasurementAt).end,
+  );
   const prevStationIdRef = useRef<string | null>(null);
 
-  // When station changes, reset dates to that station's first-measurement window
+  // When station changes, reset dates to that station's measurement window.
   useEffect(() => {
     if (prevStationIdRef.current === station?.id) return;
     prevStationIdRef.current = station?.id ?? null;
-    const { start, end } = defaultDateRange(station?.firstMeasurementAt);
+    const { start, end } = defaultDateRange(station?.firstMeasurementAt, station?.lastMeasurementAt);
     setStartDate(start);
     setEndDate(end);
-  }, [station?.id, station?.firstMeasurementAt]);
+  }, [station?.id, station?.firstMeasurementAt, station?.lastMeasurementAt]);
 
   const [exportingXlsx, setExportingXlsx] = useState(false);
 
@@ -320,7 +329,12 @@ function AnalisisContent() {
   }
 
   // ─── Hook: Measurements (harus dipanggil sebelum early return) ────────────
-  const { measurements, isLoading: measLoading } = useMeasurements(station?.id ?? '', startDate, endDate);
+  const { measurements, isLoading: measLoading } = useMeasurements(
+    station?.id ?? '',
+    startDate,
+    endDate,
+    MEASUREMENT_FETCH_LIMIT,
+  );
 
   // ─── Memoized computations (HARUS sebelum early return — Rules of Hooks) ──────
   // isWind harus dideklarasikan sebelum useMemo yang menggunakannya
@@ -936,9 +950,9 @@ function AnalisisContent() {
             <div>
               <button
                 onClick={() => {
-                  const d = new Date(); d.setFullYear(d.getFullYear() - 1); d.setDate(d.getDate() + 1);
-                  setStartDate(d.toISOString().slice(0, 10));
-                  setEndDate(new Date().toISOString().slice(0, 10));
+                  const { start, end } = defaultDateRange(station.firstMeasurementAt, station.lastMeasurementAt);
+                  setStartDate(start);
+                  setEndDate(end);
                 }}
                 className="w-full py-2 text-primary hover:text-white border border-primary/30 hover:bg-primary rounded-lg text-xs font-medium transition-all"
               >

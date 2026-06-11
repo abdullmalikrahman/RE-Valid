@@ -1,3 +1,5 @@
+from datetime import datetime, timezone
+
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -5,13 +7,17 @@ from app.models.measurement import Measurement
 from app.models.station import Station
 from app.schemas.station import StationCreate, StationUpdate
 
+MIN_REASONABLE_MEASUREMENT_AT = datetime(2024, 1, 1, tzinfo=timezone.utc)
+
 
 async def get_all_stations(db: AsyncSession) -> list[Station]:
     result = await db.execute(select(Station).order_by(Station.name))
     stations = list(result.scalars().all())
 
     if stations:
-        # Attach first_measurement_at (MIN) and last_measurement_at (MAX) per station
+        # Attach first/last measurement timestamps for sane sensor data only.
+        # RTC/NTP failures can create ISO-valid rows around year 2000; those
+        # must not become the default analysis period.
         station_ids = [s.id for s in stations]
         meas_result = await db.execute(
             select(
@@ -19,7 +25,10 @@ async def get_all_stations(db: AsyncSession) -> list[Station]:
                 func.min(Measurement.measured_at).label("first_meas"),
                 func.max(Measurement.measured_at).label("last_meas"),
             )
-            .where(Measurement.station_id.in_(station_ids))
+            .where(
+                Measurement.station_id.in_(station_ids),
+                Measurement.measured_at >= MIN_REASONABLE_MEASUREMENT_AT,
+            )
             .group_by(Measurement.station_id)
         )
         meas_map = {row.station_id: row for row in meas_result}
