@@ -69,8 +69,8 @@ export default function LoginPage() {
   }
 
   return (
-    <div className="bg-background-light dark:bg-background-dark text-gray-900 dark:text-gray-100 h-screen overflow-hidden flex flex-col antialiased font-display">
-      <main className="w-full h-screen grid grid-cols-1 lg:grid-cols-2">
+    <div className="bg-background-light dark:bg-background-dark text-gray-900 dark:text-gray-100 min-h-dvh overflow-x-hidden flex flex-col antialiased font-display">
+      <main className="w-full min-h-dvh grid grid-cols-1 lg:grid-cols-2">
 
         {/* Left — hero panel (CSS gradient, no external image dependency) */}
         <div className="relative hidden lg:flex flex-col justify-end h-full w-full overflow-hidden bg-[#071526]">

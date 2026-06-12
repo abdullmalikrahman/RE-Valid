@@ -417,8 +417,8 @@ function StationModal({ station, onClose, onSave, onRefresh }: ModalProps) {
                 </div>
                 <span className="ml-auto text-[11px] text-gray-400 italic shrink-0">{atlasSuccessCount}/6 berhasil · menutup otomatis...</span>
               </div>
-              <div className="rounded-lg border border-green-200 dark:border-green-800 overflow-hidden text-[11px]">
-                <table className="w-full">
+              <div className="rounded-lg border border-green-200 dark:border-green-800 overflow-x-auto text-[11px]">
+                <table className="min-w-[420px] w-full">
                   <thead>
                     <tr className="bg-green-100 dark:bg-green-900/30">
                       <th className="text-left px-3 py-1.5 text-green-700 dark:text-green-400 font-semibold">Sumber</th>
@@ -445,7 +445,7 @@ function StationModal({ station, onClose, onSave, onRefresh }: ModalProps) {
                   </tbody>
                 </table>
               </div>
-              <div className="grid grid-cols-2 gap-3">
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                 <div className="flex flex-col gap-1">
                   <label className="text-[11px] text-gray-500 dark:text-gray-400">Angin 100m · m/s (best: GWA &gt; ERA5)</label>
                   <div className="bg-white dark:bg-input-bg-dark border border-gray-200 dark:border-border-dark rounded-lg px-3 py-2 text-sm font-mono text-gray-900 dark:text-white">
@@ -487,8 +487,8 @@ function StationModal({ station, onClose, onSave, onRefresh }: ModalProps) {
               )}
               {/* Tabel perbandingan 3 sumber */}
               {(form.windBaselineGwa || form.ghiBaselineGsa || form.windBaselineNasa) && (
-                <div className="rounded-lg border border-blue-200 dark:border-blue-800 overflow-hidden text-[11px]">
-                  <table className="w-full">
+                <div className="rounded-lg border border-blue-200 dark:border-blue-800 overflow-x-auto text-[11px]">
+                  <table className="min-w-[420px] w-full">
                     <thead>
                       <tr className="bg-blue-100 dark:bg-blue-900/30">
                         <th className="text-left px-3 py-1.5 text-blue-700 dark:text-blue-400 font-semibold">Sumber</th>
@@ -516,7 +516,7 @@ function StationModal({ station, onClose, onSave, onRefresh }: ModalProps) {
                   </table>
                 </div>
               )}
-              <div className="grid grid-cols-2 gap-3">
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                 <div className="flex flex-col gap-1">
                   <label className="text-[11px] text-gray-500 dark:text-gray-400">Angin 100m · m/s (best: GWA &gt; ERA5)</label>
                   <input
@@ -1147,6 +1147,53 @@ export default function AdminPage() {
 
       {/* Main content */}
       <div className="flex-1 flex flex-col min-w-0 md:ml-64">
+        {/* Mobile header */}
+        <header className="fixed top-0 left-0 right-0 z-20 md:hidden bg-white dark:bg-surface-dark border-b border-gray-200 dark:border-border-dark">
+          <div className="h-14 px-4 flex items-center justify-between gap-3">
+            <Link href="/" className="flex items-center gap-2 min-w-0">
+              <span className="material-symbols-outlined text-primary text-[21px] shrink-0">bolt</span>
+              <span className="text-base font-bold text-gray-900 dark:text-white truncate">RE-Valid</span>
+            </Link>
+            <div className="flex items-center gap-1.5 shrink-0">
+              <button
+                onClick={toggleTheme}
+                className="p-2 rounded-lg text-gray-500 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-800 transition-colors"
+                aria-label="Toggle theme"
+              >
+                <span className="material-symbols-outlined text-[20px]">{isDark ? 'light_mode' : 'dark_mode'}</span>
+              </button>
+              <button
+                onClick={handleLogout}
+                className="p-2 rounded-lg text-gray-500 dark:text-gray-300 hover:text-red-500 hover:bg-red-50 dark:hover:bg-red-900/20 transition-colors"
+                aria-label="Keluar"
+              >
+                <span className="material-symbols-outlined text-[20px]">logout</span>
+              </button>
+            </div>
+          </div>
+          <nav className="px-3 pb-3 flex gap-2 overflow-x-auto no-scrollbar">
+            {[
+              { href: '/', label: 'Dashboard', icon: 'dashboard' },
+              { href: '/admin', label: 'Data Lokasi', icon: 'location_on' },
+              { href: '/analisis', label: 'Validasi', icon: 'bar_chart' },
+              { href: '/peta', label: 'Peta GIS', icon: 'map' },
+            ].map((item) => (
+              <Link
+                key={item.href}
+                href={item.href}
+                className={`inline-flex items-center gap-1.5 rounded-lg border px-3 py-2 text-xs font-medium whitespace-nowrap ${
+                  item.href === '/admin'
+                    ? 'bg-primary text-white border-primary'
+                    : 'bg-gray-50 dark:bg-input-bg-dark text-gray-600 dark:text-gray-300 border-gray-200 dark:border-border-dark'
+                }`}
+              >
+                <span className="material-symbols-outlined text-[16px]">{item.icon}</span>
+                {item.label}
+              </Link>
+            ))}
+          </nav>
+        </header>
+
         {/* Top header */}
         <header className="h-16 fixed top-0 left-64 right-0 z-10 hidden md:flex items-center justify-between px-4 sm:px-6 lg:px-8 bg-white dark:bg-surface-dark border-b border-gray-200 dark:border-border-dark">
           <div className="flex items-center gap-4">
@@ -1175,7 +1222,7 @@ export default function AdminPage() {
         </header>
 
         {/* Page content */}
-        <main className="flex-1 overflow-auto mt-16 p-4 sm:p-6 lg:p-8">
+        <main className="flex-1 overflow-auto mt-28 md:mt-16 p-4 sm:p-6 lg:p-8">
           <div className="max-w-7xl mx-auto space-y-6">
             {/* CRUD error banner */}
             {crudError && (
@@ -1193,11 +1240,11 @@ export default function AdminPage() {
                 <h1 className="text-xl font-bold text-gray-900 dark:text-white">Pengelolaan Lokasi</h1>
                 <p className="mt-0.5 text-xs text-gray-500 dark:text-gray-400">Kelola daftar stasiun meteorologi dan parameter geografis.</p>
               </div>
-              <div className="flex gap-3">
+              <div className="flex flex-col sm:flex-row gap-3 w-full sm:w-auto">
                 <button
                   onClick={handleExport}
                   disabled={exportingData}
-                  className="inline-flex items-center gap-2 px-4 py-2 bg-white dark:bg-surface-dark border border-gray-300 dark:border-border-dark rounded-lg text-sm font-medium text-gray-700 dark:text-gray-200 hover:bg-gray-50 dark:hover:bg-gray-800 transition-colors disabled:opacity-60 disabled:cursor-wait"
+                  className="inline-flex items-center justify-center gap-2 px-4 py-2 bg-white dark:bg-surface-dark border border-gray-300 dark:border-border-dark rounded-lg text-sm font-medium text-gray-700 dark:text-gray-200 hover:bg-gray-50 dark:hover:bg-gray-800 transition-colors disabled:opacity-60 disabled:cursor-wait"
                 >
                   <span className={`material-symbols-outlined text-[20px] ${exportingData ? 'animate-spin' : ''}`}>
                     {exportingData ? 'refresh' : 'download'}
@@ -1206,7 +1253,7 @@ export default function AdminPage() {
                 </button>
                 <button
                   onClick={() => setShowAddModal(true)}
-                  className="inline-flex items-center gap-2 px-4 py-2 bg-primary hover:bg-blue-600 text-white rounded-lg text-sm font-medium shadow-sm transition-colors"
+                  className="inline-flex items-center justify-center gap-2 px-4 py-2 bg-primary hover:bg-blue-600 text-white rounded-lg text-sm font-medium shadow-sm transition-colors"
                 >
                   <span className="material-symbols-outlined text-[20px]">add</span>
                   Tambah Lokasi
@@ -1215,7 +1262,7 @@ export default function AdminPage() {
             </div>
 
             {/* Stats cards */}
-            <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
+            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
               {[
                 { label: 'Total Stasiun', value: counts.total, icon: 'sensors', color: 'text-primary', bg: 'bg-primary/10' },
                 { label: 'Prioritas', value: counts.prioritas, icon: 'check_circle', color: 'text-green-500', bg: 'bg-green-500/10' },
@@ -1274,7 +1321,7 @@ export default function AdminPage() {
             {/* Stations table */}
             <div className="bg-white dark:bg-surface-dark rounded-xl border border-gray-200 dark:border-border-dark overflow-hidden shadow-sm">
               <div className="overflow-x-auto">
-                <table className="min-w-full divide-y divide-gray-200 dark:divide-border-dark">
+                <table className="min-w-[960px] divide-y divide-gray-200 dark:divide-border-dark">
                   <thead className="bg-gray-50 dark:bg-black/20">
                     <tr>
                       {['Nama Stasiun', 'Wilayah', 'Koordinat', 'Angin', 'GHI', 'Skor', 'Status', 'Aksi'].map((col, i) => (
@@ -1383,7 +1430,7 @@ export default function AdminPage() {
                   </tbody>
                 </table>
               </div>
-              <div className="px-5 py-3 flex items-center justify-between border-t border-gray-200 dark:border-border-dark bg-white dark:bg-surface-dark">
+              <div className="px-5 py-3 flex flex-col sm:flex-row sm:items-center justify-between gap-1 border-t border-gray-200 dark:border-border-dark bg-white dark:bg-surface-dark">
                 <p className="text-xs text-gray-500 dark:text-gray-400">
                   Menampilkan <span className="font-semibold text-gray-900 dark:text-white">{filtered.length}</span> dari{' '}
                   <span className="font-semibold text-gray-900 dark:text-white">{stationList.length}</span> stasiun
@@ -1394,7 +1441,7 @@ export default function AdminPage() {
 
             {/* MQTT Status table */}
             <div className="bg-white dark:bg-surface-dark rounded-xl border border-gray-200 dark:border-border-dark overflow-hidden shadow-sm">
-              <div className="px-6 py-4 border-b border-gray-200 dark:border-border-dark flex items-center justify-between">
+              <div className="px-4 sm:px-6 py-4 border-b border-gray-200 dark:border-border-dark flex flex-col sm:flex-row sm:items-center justify-between gap-2">
                 <div className="flex items-center gap-2">
                   <span className="material-symbols-outlined text-primary text-[20px]">sensors</span>
                   <h2 className="text-base font-bold text-gray-900 dark:text-white">Status MQTT Stasiun</h2>
@@ -1402,7 +1449,7 @@ export default function AdminPage() {
                 <span className="text-xs text-gray-400">Live dari database</span>
               </div>
               <div className="overflow-x-auto">
-                <table className="min-w-full divide-y divide-gray-200 dark:divide-border-dark text-sm">
+                <table className="min-w-[760px] divide-y divide-gray-200 dark:divide-border-dark text-sm">
                   <thead className="bg-gray-50 dark:bg-black/20">
                     <tr>
                       {['Stasiun', 'Topik MQTT', 'Data Terakhir', 'Frekuensi', 'Status'].map((col) => (
@@ -1445,11 +1492,11 @@ export default function AdminPage() {
 
             {/* Measurement Upload */}
             <div className="bg-white dark:bg-surface-dark rounded-xl border border-gray-200 dark:border-border-dark overflow-hidden shadow-sm">
-              <div className="px-6 py-4 border-b border-gray-200 dark:border-border-dark flex items-center gap-2">
+              <div className="px-4 sm:px-6 py-4 border-b border-gray-200 dark:border-border-dark flex items-center gap-2">
                 <span className="material-symbols-outlined text-green-400 text-[20px]">upload_file</span>
                 <h2 className="text-base font-bold text-gray-900 dark:text-white">Upload Data CSV / JSON</h2>
               </div>
-              <div className="p-6 grid grid-cols-1 md:grid-cols-2 gap-6">
+              <div className="p-4 sm:p-6 grid grid-cols-1 lg:grid-cols-2 gap-6">
                 {/* Left: form */}
                 <div className="flex flex-col gap-4">
                   <div className="flex flex-col gap-1.5">

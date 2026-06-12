@@ -891,11 +891,11 @@ function AnalisisContent() {
                   : 'Validasi iradiasi surya observasi vs GSA/ERA5, Clearness Index (Kt), dan estimasi AEP PLTS.'}
               </p>
             </div>
-            <div className="flex flex-col items-end gap-2">
-              <div className="flex gap-2">
+            <div className="flex flex-col items-start sm:items-end gap-2 w-full sm:w-auto">
+              <div className="flex flex-wrap gap-2 w-full sm:w-auto">
                 <Link
                   href={`/laporan?station=${station.id}&from=analisis&start=${startDate}&end=${endDate}`}
-                  className="flex items-center gap-1.5 px-3 py-2 bg-transparent border border-gray-300 dark:border-gray-600 text-slate-700 dark:text-white rounded-lg hover:bg-gray-50 dark:hover:bg-white/5 transition-all text-xs font-medium"
+                  className="flex flex-1 sm:flex-none items-center justify-center gap-1.5 px-3 py-2 bg-transparent border border-gray-300 dark:border-gray-600 text-slate-700 dark:text-white rounded-lg hover:bg-gray-50 dark:hover:bg-white/5 transition-all text-xs font-medium"
                 >
                   <span className="material-symbols-outlined text-[16px]">description</span>
                   Lihat Laporan
@@ -903,7 +903,7 @@ function AnalisisContent() {
                 <button
                   onClick={exportXlsx}
                   disabled={exportingXlsx}
-                  className="flex items-center gap-1.5 px-3 py-2 bg-transparent border border-gray-300 dark:border-gray-600 text-slate-700 dark:text-white rounded-lg hover:bg-gray-50 dark:hover:bg-white/5 transition-all text-xs font-medium disabled:opacity-60 disabled:cursor-wait"
+                  className="flex flex-1 sm:flex-none items-center justify-center gap-1.5 px-3 py-2 bg-transparent border border-gray-300 dark:border-gray-600 text-slate-700 dark:text-white rounded-lg hover:bg-gray-50 dark:hover:bg-white/5 transition-all text-xs font-medium disabled:opacity-60 disabled:cursor-wait"
                   title="Download hasil analisis sebagai Excel (XLSX)"
                 >
                   <span className={`material-symbols-outlined text-[16px] ${exportingXlsx ? 'animate-spin' : ''}`}>{exportingXlsx ? 'refresh' : 'download'}</span>
@@ -912,7 +912,7 @@ function AnalisisContent() {
                 <button
                   onClick={runAnalysis}
                   disabled={taskState === 'loading'}
-                  className="flex items-center gap-1.5 px-3 py-2 bg-primary text-white rounded-lg hover:bg-blue-600 disabled:opacity-60 disabled:cursor-not-allowed transition-all text-xs font-medium shadow-md shadow-blue-500/20"
+                  className="flex flex-1 sm:flex-none items-center justify-center gap-1.5 px-3 py-2 bg-primary text-white rounded-lg hover:bg-blue-600 disabled:opacity-60 disabled:cursor-not-allowed transition-all text-xs font-medium shadow-md shadow-blue-500/20"
                 >
                   <span className={`material-symbols-outlined text-[16px] ${taskState === 'loading' ? 'animate-spin' : ''}`}>
                     {taskState === 'loading' ? 'progress_activity' : isWind ? 'science' : 'wb_sunny'}
@@ -921,7 +921,7 @@ function AnalisisContent() {
                 </button>
               </div>
               {taskMsg && (
-                <p className={`text-[11px] max-w-xs text-right wrap-break-word whitespace-normal leading-relaxed ${taskState === 'error' ? 'text-red-400' : 'text-green-400'}`}>{taskMsg}</p>
+                <p className={`text-[11px] max-w-xs text-left sm:text-right wrap-break-word whitespace-normal leading-relaxed ${taskState === 'error' ? 'text-red-400' : 'text-green-400'}`}>{taskMsg}</p>
               )}
             </div>
           </div>
@@ -947,7 +947,7 @@ function AnalisisContent() {
             </div>
             <div className="flex flex-col gap-1.5">
               <label className="text-[10px] font-bold text-slate-500 dark:text-slate-400 uppercase tracking-wider">Periode Data</label>
-              <div className="flex items-center gap-1">
+              <div className="flex flex-col sm:flex-row sm:items-center gap-1">
                 <input className="flex-1 min-w-0 bg-gray-50 dark:bg-[#111a22] border border-gray-200 dark:border-border-dark rounded-lg px-2 py-2 text-xs font-medium text-slate-900 dark:text-white focus:outline-none focus:border-primary focus:ring-1 focus:ring-primary" type="date" value={startDate} onChange={(e) => setStartDate(e.target.value)} />
                 <span className="text-slate-500 text-[10px] shrink-0">&ndash;</span>
                 <input className="flex-1 min-w-0 bg-gray-50 dark:bg-[#111a22] border border-gray-200 dark:border-border-dark rounded-lg px-2 py-2 text-xs font-medium text-slate-900 dark:text-white focus:outline-none focus:border-primary focus:ring-1 focus:ring-primary" type="date" value={endDate} onChange={(e) => setEndDate(e.target.value)} />
@@ -969,7 +969,7 @@ function AnalisisContent() {
         </div>
 
         {/* Energy type toggle */}
-        <div className="flex items-center gap-3 mb-4">
+        <div className="flex flex-wrap items-center gap-3 mb-4">
           <p className="text-xs font-bold text-slate-500 dark:text-slate-400 uppercase tracking-wide shrink-0">Jenis Energi:</p>
           <div className="flex bg-gray-100 dark:bg-[#111a22] rounded-lg p-1 gap-1 border border-gray-200 dark:border-border-dark">
             <button
@@ -995,7 +995,7 @@ function AnalisisContent() {
               Surya (PLTS)
             </button>
           </div>
-          <div className="flex items-center gap-1.5 text-[11px] text-slate-400">
+          <div className="flex items-start sm:items-center gap-1.5 text-[11px] text-slate-400 min-w-0">
             <span className="material-symbols-outlined text-[14px]">info</span>
             {isWind ? 'Baseline: GWA 3.0 + ERA5 · Metode: MCP' : 'Baseline: GSA + ERA5 · Metode: Validasi Langsung + Kt'}
           </div>

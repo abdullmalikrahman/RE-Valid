@@ -758,11 +758,11 @@ export default function KalkulatorPage() {
                   : 'Simulasi estimasi AEP PLTS dan kelayakan ekonomi (LCOE, NPV, ROI) berdasarkan data iradiasi surya tervalidasi.'}
               </p>
             </div>
-            <div className="flex gap-3 shrink-0">
+            <div className="flex gap-3 w-full sm:w-auto sm:shrink-0">
               <button
                 onClick={handleExportPDF}
                 disabled={exportingPDF}
-                className="flex items-center gap-2 px-4 py-2 bg-slate-200 dark:bg-card-dark text-slate-700 dark:text-white rounded-lg hover:bg-slate-300 dark:hover:bg-border-dark transition-all text-sm font-medium disabled:opacity-60 disabled:cursor-wait"
+                className="flex w-full sm:w-auto items-center justify-center gap-2 px-4 py-2 bg-slate-200 dark:bg-card-dark text-slate-700 dark:text-white rounded-lg hover:bg-slate-300 dark:hover:bg-border-dark transition-all text-sm font-medium disabled:opacity-60 disabled:cursor-wait"
               >
                 {exportingPDF
                   ? <><span className="material-symbols-outlined text-[18px] animate-spin">refresh</span>Memproses...</>
@@ -784,7 +784,7 @@ export default function KalkulatorPage() {
         </div>
 
         {/* Energy type toggle */}
-        <div className="flex items-center gap-3 mb-5">
+        <div className="flex flex-wrap items-center gap-3 mb-5">
           <p className="text-xs font-bold text-slate-500 dark:text-slate-400 uppercase tracking-wide shrink-0">Jenis Proyek:</p>
           <div className="flex bg-gray-100 dark:bg-[#111a22] rounded-lg p-1 gap-1 border border-gray-200 dark:border-border-dark">
             <button
@@ -810,7 +810,7 @@ export default function KalkulatorPage() {
               PLTS (Surya)
             </button>
           </div>
-          <p className="text-[11px] text-slate-400">
+          <p className="text-[11px] text-slate-400 min-w-0">
             {isWind ? 'CF pre-fill dari AEP validasi/GWA/ERA5 jika tersedia · simulasi screening ekonomi' : 'AEP pre-fill dari solar AEP/GHI GSA/ERA5 jika tersedia · simulasi screening ekonomi'}
           </p>
         </div>

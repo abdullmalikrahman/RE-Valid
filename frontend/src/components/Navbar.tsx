@@ -16,8 +16,12 @@ export default function Navbar() {
   const router = useRouter();
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
   const [isLoggedIn, setIsLoggedIn] = useState(false);
-  const [isDark, setIsDark] = useState(true);
-  const [loginHref, setLoginHref] = useState('/login');
+  const [isDark, setIsDark] = useState(() => {
+    if (typeof window === 'undefined') return true;
+    return localStorage.getItem('re_valid_theme') !== 'light';
+  });
+  const loginReturnTo = pathname === '/login' ? '/admin' : pathname;
+  const loginHref = `/login?returnTo=${encodeURIComponent(loginReturnTo)}`;
 
   useEffect(() => {
     const check = () => {
@@ -28,14 +32,6 @@ export default function Navbar() {
     window.addEventListener('storage', check);
     // Tangkap perubahan auth dari tab yang sama (login/logout/401)
     window.addEventListener('re_valid_auth_change', check);
-
-    // Read initial theme
-    const saved = localStorage.getItem('re_valid_theme');
-    setIsDark(saved !== 'light');
-
-    const current = `${window.location.pathname}${window.location.search}`;
-    const returnTo = current.startsWith('/login') ? '/admin' : current;
-    setLoginHref(`/login?returnTo=${encodeURIComponent(returnTo)}`);
 
     return () => {
       window.removeEventListener('storage', check);

@@ -1335,7 +1335,7 @@ function LaporanContent() {
         <div className="flex flex-col gap-5">
           {/* Station identity full-width */}
           <div className="bg-white dark:bg-card-dark border border-gray-200 dark:border-border-dark rounded-xl p-5 shadow-sm">
-            <div className="flex items-start justify-between gap-4 mb-4">
+            <div className="flex flex-col sm:flex-row sm:items-start justify-between gap-4 mb-4">
               <div>
                   <div className="flex items-center gap-2 mb-1">
                     <span

@@ -46,9 +46,20 @@
 
 body {
   color: #0f172a;
+  max-width: 100vw;
+  overflow-x: hidden;
 }
 .dark body {
   color: #f8fafc;
+}
+
+html {
+  max-width: 100vw;
+  overflow-x: hidden;
+}
+
+* {
+  min-width: 0;
 }
 
 /* ===== Light mode: boost low-contrast text utilities ===== */
