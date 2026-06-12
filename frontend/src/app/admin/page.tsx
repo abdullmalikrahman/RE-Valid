@@ -5,6 +5,7 @@ import { useRouter } from 'next/navigation';
 import Link from 'next/link';
 import { useStations } from '@/hooks/useStations';
 import { apiFetch } from '@/lib/api';
+import { BrandMark } from '@/components/BrandMark';
 
 function getToken(): string {
   if (typeof window === 'undefined') return '';
@@ -1116,8 +1117,8 @@ export default function AdminPage() {
       {/* Sidebar */}
       <aside className="fixed top-0 left-0 h-screen w-64 bg-white dark:bg-surface-dark border-r border-gray-200 dark:border-border-dark hidden md:flex flex-col z-20">
         <div className="h-16 flex items-center px-6 border-b border-gray-200 dark:border-border-dark">
-          <Link href="/" className="flex items-center gap-0">
-            <span className="material-symbols-outlined text-primary mr-2">bolt</span>
+          <Link href="/" className="flex items-center gap-2">
+            <BrandMark className="size-8 rounded-lg" iconClassName="size-5" />
             <span className="text-lg font-bold tracking-tight text-gray-900 dark:text-white">RE-Valid</span>
           </Link>
         </div>
@@ -1160,7 +1161,7 @@ export default function AdminPage() {
         <header className="fixed top-0 left-0 right-0 z-20 md:hidden bg-white dark:bg-surface-dark border-b border-gray-200 dark:border-border-dark">
           <div className="h-14 px-4 flex items-center justify-between gap-3">
             <Link href="/" className="flex items-center gap-2 min-w-0">
-              <span className="material-symbols-outlined text-primary text-[21px] shrink-0">bolt</span>
+              <BrandMark className="size-8 rounded-lg" iconClassName="size-5" />
               <span className="text-base font-bold text-gray-900 dark:text-white truncate">RE-Valid</span>
             </Link>
             <div className="flex items-center gap-1.5 shrink-0">

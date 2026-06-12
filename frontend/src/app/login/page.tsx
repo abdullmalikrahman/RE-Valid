@@ -2,6 +2,7 @@
 
 import { useState, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
+import { BrandMark } from '@/components/BrandMark';
 
 function getSafeReturnTo(): string {
   if (typeof window === 'undefined') return '/admin';
@@ -115,7 +116,7 @@ export default function LoginPage() {
 
           <div className="relative z-10 p-10 w-full">
             <div className="flex items-center gap-2 mb-6">
-              <span className="material-symbols-outlined text-primary text-[24px]">bolt</span>
+              <BrandMark className="size-8 rounded-lg bg-white/10 text-primary ring-white/10" iconClassName="size-5" />
               <span className="text-white font-bold text-lg tracking-tight">RE-Valid</span>
             </div>
             <h1 className="text-3xl font-bold text-white mb-3 leading-tight">
@@ -148,9 +149,7 @@ export default function LoginPage() {
 
             {/* Logo */}
             <div className="flex items-center gap-3 mb-8">
-              <div className="size-9 flex items-center justify-center rounded-xl bg-primary/10">
-                <span className="material-symbols-outlined text-[24px] text-primary">bolt</span>
-              </div>
+              <BrandMark className="size-9" iconClassName="size-6" />
               <span className="text-xl font-bold tracking-tight text-slate-900 dark:text-white">
                 RE-Valid
               </span>

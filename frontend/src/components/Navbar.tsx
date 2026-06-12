@@ -3,6 +3,7 @@
 import Link from 'next/link';
 import { usePathname, useRouter } from 'next/navigation';
 import { useState, useEffect } from 'react';
+import { BrandMark } from './BrandMark';
 
 const navItems = [
   { href: '/', label: 'Beranda' },
@@ -63,9 +64,7 @@ export default function Navbar() {
   return (
     <header className="relative h-14 flex-none flex items-center justify-between whitespace-nowrap border-b border-slate-300 dark:border-[#233648] bg-white dark:bg-[#111a22] px-4 lg:px-8 z-50">
       <Link href="/" className="flex items-center gap-2.5">
-        <div className="size-7 flex items-center justify-center rounded-lg bg-primary/10">
-          <span className="material-symbols-outlined text-[18px] text-primary">bolt</span>
-        </div>
+        <BrandMark className="size-7 rounded-lg" iconClassName="size-5" />
         <h2 className="text-slate-900 dark:text-white text-sm font-bold leading-tight tracking-tight">
           RE-Valid
         </h2>
