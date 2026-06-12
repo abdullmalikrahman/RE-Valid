@@ -72,6 +72,14 @@ type StationFormData = Pick<
   | 'ghiBaselineNasa'
 >;
 
+const adminNavItems = [
+  { href: '/', label: 'Beranda', icon: 'dashboard' },
+  { href: '/admin', label: 'Pengelolaan Lokasi', icon: 'location_on' },
+  { href: '/analisis', label: 'Analisis Lokasi', icon: 'bar_chart' },
+  { href: '/peta', label: 'Peta Potensi', icon: 'map' },
+  { href: '/kalkulator', label: 'Kalkulator', icon: 'calculate' },
+];
+
 // Status badge
 function StatusBadge({ status }: { status: string }) {
   if (status === 'prioritas') {
@@ -1113,23 +1121,24 @@ export default function AdminPage() {
             <span className="text-lg font-bold tracking-tight text-gray-900 dark:text-white">RE-Valid</span>
           </Link>
         </div>
-        <nav className="flex-1 overflow-y-auto py-4 px-3 space-y-1">
-          <Link href="/" className="group flex items-center px-3 py-2.5 text-sm font-medium text-gray-600 dark:text-gray-400 rounded-lg hover:bg-gray-100 dark:hover:bg-gray-800 hover:text-gray-900 dark:hover:text-white transition-all">
-            <span className="material-symbols-outlined mr-3 text-[20px]">dashboard</span>
-            Dashboard
-          </Link>
-          <Link href="/admin" className="group flex items-center px-3 py-2.5 text-sm font-medium bg-primary/10 text-primary rounded-lg transition-all">
-            <span className="material-symbols-outlined mr-3 text-[20px]">location_on</span>
-            Data Lokasi
-          </Link>
-          <Link href="/analisis" className="group flex items-center px-3 py-2.5 text-sm font-medium text-gray-600 dark:text-gray-400 rounded-lg hover:bg-gray-100 dark:hover:bg-gray-800 hover:text-gray-900 dark:hover:text-white transition-all">
-            <span className="material-symbols-outlined mr-3 text-[20px]">bar_chart</span>
-            Metrik Validasi
-          </Link>
-          <Link href="/peta" className="group flex items-center px-3 py-2.5 text-sm font-medium text-gray-600 dark:text-gray-400 rounded-lg hover:bg-gray-100 dark:hover:bg-gray-800 hover:text-gray-900 dark:hover:text-white transition-all">
-            <span className="material-symbols-outlined mr-3 text-[20px]">map</span>
-            Peta Potensi (GIS)
-          </Link>
+        <nav className="flex-1 overflow-y-auto py-4 px-3 space-y-1" aria-label="Navigasi admin">
+          {adminNavItems.map((item) => {
+            const isActive = item.href === '/admin';
+            return (
+              <Link
+                key={item.href}
+                href={item.href}
+                className={`group flex min-w-0 items-center px-3 py-2.5 text-sm font-medium rounded-lg transition-all ${
+                  isActive
+                    ? 'bg-primary/10 text-primary'
+                    : 'text-gray-600 dark:text-gray-400 hover:bg-gray-100 dark:hover:bg-gray-800 hover:text-gray-900 dark:hover:text-white'
+                }`}
+              >
+                <span className="material-symbols-outlined mr-3 text-[20px] shrink-0">{item.icon}</span>
+                <span className="truncate">{item.label}</span>
+              </Link>
+            );
+          })}
         </nav>
         <div className="p-4 border-t border-gray-200 dark:border-border-dark">
           <div className="flex items-center gap-3">
@@ -1171,17 +1180,12 @@ export default function AdminPage() {
               </button>
             </div>
           </div>
-          <nav className="px-3 pb-3 flex gap-2 overflow-x-auto no-scrollbar">
-            {[
-              { href: '/', label: 'Dashboard', icon: 'dashboard' },
-              { href: '/admin', label: 'Data Lokasi', icon: 'location_on' },
-              { href: '/analisis', label: 'Validasi', icon: 'bar_chart' },
-              { href: '/peta', label: 'Peta GIS', icon: 'map' },
-            ].map((item) => (
+          <nav className="px-3 pb-3 flex gap-2 overflow-x-auto no-scrollbar" aria-label="Navigasi admin mobile">
+            {adminNavItems.map((item) => (
               <Link
                 key={item.href}
                 href={item.href}
-                className={`inline-flex items-center gap-1.5 rounded-lg border px-3 py-2 text-xs font-medium whitespace-nowrap ${
+                className={`inline-flex shrink-0 items-center gap-1.5 rounded-lg border px-3 py-2 text-xs font-medium whitespace-nowrap ${
                   item.href === '/admin'
                     ? 'bg-primary text-white border-primary'
                     : 'bg-gray-50 dark:bg-input-bg-dark text-gray-600 dark:text-gray-300 border-gray-200 dark:border-border-dark'
@@ -1204,7 +1208,7 @@ export default function AdminPage() {
               <ol className="flex items-center space-x-2" role="list">
                 <li><span className="text-sm font-medium text-gray-500 dark:text-gray-400">Admin</span></li>
                 <li><span className="text-gray-300 dark:text-gray-600">/</span></li>
-                <li><span className="text-sm font-medium text-primary" aria-current="page">Lokasi Pengukuran</span></li>
+                <li><span className="text-sm font-medium text-primary" aria-current="page">Pengelolaan Lokasi</span></li>
               </ol>
             </nav>
           </div>
