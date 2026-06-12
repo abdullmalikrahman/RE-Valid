@@ -127,7 +127,7 @@ function MapPreview({ stations, latestStation }: { stations: Station[]; latestSt
         </Link>
       </div>
 
-      <div className="relative h-[220px] bg-[#edf4f8] dark:bg-[#111a22] sm:h-[260px] lg:h-[270px] xl:h-[290px]">
+      <div className="relative h-[230px] bg-[#edf4f8] dark:bg-[#111a22] sm:h-[270px] lg:h-[290px] xl:h-[310px]">
         <div
           className="absolute inset-0 opacity-70 dark:opacity-35"
           style={{
@@ -209,19 +209,19 @@ export default function Home() {
           }}
         />
 
-        <div className="relative mx-auto flex w-full max-w-7xl flex-col gap-5 px-4 py-6 sm:px-6 sm:py-7 lg:px-8 lg:py-5">
-          <section className="grid w-full gap-8 lg:grid-cols-[minmax(0,1fr)_480px] xl:grid-cols-[minmax(0,1fr)_520px]">
+        <div className="relative mx-auto flex w-full max-w-[1500px] flex-col gap-5 px-4 py-6 sm:px-6 sm:py-7 lg:px-8 lg:py-5">
+          <section className="grid w-full gap-8 lg:grid-cols-[minmax(0,1fr)_520px] xl:grid-cols-[minmax(0,1fr)_580px]">
             <div className="flex flex-col justify-center">
               <div className="inline-flex w-fit items-center gap-2 rounded-lg border border-primary/25 bg-primary/10 px-3 py-1.5 text-xs font-semibold text-primary">
                 <span className="material-symbols-outlined text-[15px]">verified</span>
                 SPK EBT - Jawa Barat
               </div>
 
-              <h1 className="mt-4 max-w-3xl text-3xl font-black leading-tight tracking-tight sm:text-4xl lg:text-[44px]">
+              <h1 className="mt-4 max-w-[780px] text-3xl font-black leading-tight tracking-tight sm:text-4xl lg:text-[44px]">
                 Sistem Pendukung Keputusan Potensi EBT Berbasis WebGIS.
               </h1>
 
-              <p className="mt-3 max-w-2xl text-sm leading-7 text-slate-600 dark:text-text-secondary sm:text-base lg:leading-6">
+              <p className="mt-3 max-w-[760px] text-sm leading-7 text-slate-600 dark:text-text-secondary sm:text-base lg:leading-6">
                 Validasi potensi angin dan surya menggunakan data lapangan, baseline GWA/GSA/ERA5,
                 analisis MCP, GIS-MCDA, dan simulasi ekonomi untuk perencanaan EBT di Jawa Barat.
               </p>
@@ -243,7 +243,7 @@ export default function Home() {
                 </Link>
               </div>
 
-              <dl className="mt-6 grid max-w-2xl grid-cols-2 overflow-hidden rounded-xl border border-slate-200 bg-white/88 dark:border-border-dark dark:bg-card-dark/90 sm:grid-cols-4">
+              <dl className="mt-6 grid max-w-[760px] grid-cols-2 overflow-hidden rounded-xl border border-slate-200 bg-white/88 dark:border-border-dark dark:bg-card-dark/90 sm:grid-cols-4">
                 {summary.map((item, index) => (
                   <div
                     key={item.label}
