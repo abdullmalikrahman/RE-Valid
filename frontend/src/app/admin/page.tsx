@@ -660,7 +660,7 @@ export default function AdminPage() {
   const [crudError, setCrudError] = useState<string | null>(null);
   const [exportingData, setExportingData] = useState(false);
 
-  // CSV upload state
+  // Measurement file upload state (CSV / JSON)
   const [csvStation, setCsvStation] = useState('');
   const [csvFile, setCsvFile] = useState<File | null>(null);
   const [csvUploading, setCsvUploading] = useState(false);
@@ -900,10 +900,6 @@ export default function AdminPage() {
           });
         });
         ws.views = [{ state: 'frozen', ySplit: 4 }];
-        ws.autoFilter = {
-          from: { row: 4, column: 1 },
-          to: { row: 4, column: columns.length },
-        };
       };
 
       const summary = wb.addWorksheet('Ringkasan');
@@ -1092,9 +1088,10 @@ export default function AdminPage() {
         const detail = json.detail?.message ?? json.detail ?? 'Upload gagal';
         setCsvResult({ type: 'error', message: typeof detail === 'string' ? detail : JSON.stringify(detail) });
       } else {
+        const uploadedType = json.file_type ? String(json.file_type).toUpperCase() : 'FILE';
         setCsvResult({
           type: 'success',
-          message: `Berhasil: ${json.inserted} baris dimasukkan, ${json.skipped} baris dilewati (duplikat).${json.parse_errors?.length ? ` ${json.parse_errors.length} baris error.` : ''}`,
+          message: `${uploadedType} berhasil: ${json.inserted} baris dimasukkan, ${json.skipped} baris dilewati (duplikat).${json.parse_errors?.length ? ` ${json.parse_errors.length} baris error.` : ''}`,
         });
         setCsvFile(null);
         if (csvInputRef.current) csvInputRef.current.value = '';
@@ -1446,11 +1443,11 @@ export default function AdminPage() {
               </div>
             </div>
 
-            {/* CSV Upload */}
+            {/* Measurement Upload */}
             <div className="bg-white dark:bg-surface-dark rounded-xl border border-gray-200 dark:border-border-dark overflow-hidden shadow-sm">
               <div className="px-6 py-4 border-b border-gray-200 dark:border-border-dark flex items-center gap-2">
                 <span className="material-symbols-outlined text-green-400 text-[20px]">upload_file</span>
-                <h2 className="text-base font-bold text-gray-900 dark:text-white">Upload Data CSV</h2>
+                <h2 className="text-base font-bold text-gray-900 dark:text-white">Upload Data CSV / JSON</h2>
               </div>
               <div className="p-6 grid grid-cols-1 md:grid-cols-2 gap-6">
                 {/* Left: form */}
@@ -1469,11 +1466,11 @@ export default function AdminPage() {
                     </select>
                   </div>
                   <div className="flex flex-col gap-1.5">
-                    <label className="text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wide">File CSV</label>
+                    <label className="text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wide">File CSV / JSON</label>
                     <input
                       ref={csvInputRef}
                       type="file"
-                      accept=".csv"
+                      accept=".csv,.json,text/csv,application/json"
                       onChange={(e) => { setCsvFile(e.target.files?.[0] ?? null); setCsvResult(null); }}
                       className="block w-full text-sm text-gray-600 dark:text-gray-300 file:mr-3 file:py-2 file:px-4 file:rounded-lg file:border-0 file:text-xs file:font-medium file:bg-primary/10 file:text-primary hover:file:bg-primary/20 cursor-pointer bg-gray-50 dark:bg-input-bg-dark border border-gray-300 dark:border-border-dark rounded-lg"
                     />
@@ -1500,14 +1497,30 @@ export default function AdminPage() {
                 </div>
                 {/* Right: format guide */}
                 <div className="flex flex-col gap-3">
-                  <p className="text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wide">Format CSV yang Diterima</p>
+                  <p className="text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wide">Format CSV / JSON yang Diterima</p>
                   <div className="bg-gray-50 dark:bg-input-bg-dark rounded-lg p-4 border border-gray-200 dark:border-border-dark overflow-x-auto">
-                    <pre className="text-[11px] text-gray-600 dark:text-green-400 font-mono leading-relaxed whitespace-pre">{`measured_at,wind_speed,wind_dir,ghi,dni,temperature,humidity,pressure
+                    <pre className="text-[11px] text-gray-600 dark:text-green-400 font-mono leading-relaxed whitespace-pre">{`CSV:
+measured_at,wind_speed,wind_dir,ghi,dni,temperature,humidity,pressure
 2024-01-01T00:00:00,5.2,180,350.5,290.0,25.3,78.0,1012.5
-2024-01-02T00:00:00,6.1,175,380.0,310.0,26.1,75.0,1011.0`}</pre>
+2024-01-02T00:00:00,6.1,175,380.0,310.0,26.1,75.0,1011.0
+
+JSON:
+[
+  {
+    "measured_at": "2024-01-01T00:00:00",
+    "wind_speed": 5.2,
+    "wind_dir": 180,
+    "ghi": 350.5,
+    "dni": 290.0,
+    "temperature": 25.3,
+    "humidity": 78.0,
+    "pressure": 1012.5
+  }
+]`}</pre>
                   </div>
                   <ul className="space-y-1.5 text-xs text-gray-500 dark:text-gray-400">
                     <li className="flex items-start gap-1.5"><span className="text-primary font-bold shrink-0">•</span><span><code className="text-primary">measured_at</code> — wajib, format ISO-8601 (misal <code>2024-01-01T00:00:00</code>)</span></li>
+                    <li className="flex items-start gap-1.5"><span className="text-primary font-bold shrink-0">•</span><span>JSON boleh berupa satu object, array langsung, atau object dengan key <code className="text-primary">measurements</code>, <code className="text-primary">rows</code>, atau <code className="text-primary">data</code></span></li>
                     <li className="flex items-start gap-1.5"><span className="text-gray-400 font-bold shrink-0">•</span><span><code className="text-gray-400">wind_speed</code> m/s · <code className="text-gray-400">wind_dir</code> derajat (0–360)</span></li>
                     <li className="flex items-start gap-1.5"><span className="text-gray-400 font-bold shrink-0">•</span><span><code className="text-gray-400">ghi</code> / <code className="text-gray-400">dni</code> W/m² · <code className="text-gray-400">temperature</code> °C · <code className="text-gray-400">humidity</code> % · <code className="text-gray-400">pressure</code> hPa</span></li>
                     <li className="flex items-start gap-1.5"><span className="text-gray-400 font-bold shrink-0">•</span><span>Kolom numerik bersifat opsional — kosongkan jika tidak ada data</span></li>

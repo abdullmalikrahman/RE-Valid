@@ -11,7 +11,7 @@ async def bulk_insert_measurements(
     db: AsyncSession,
     rows: list[dict],
 ) -> dict[str, int]:
-    """Insert measurement rows from CSV upload. Skips duplicates (same station_id + measured_at)."""
+    """Insert measurement rows from file upload. Skips duplicates (same station_id + measured_at)."""
     if not rows:
         return {"inserted": 0, "skipped": 0}
 
