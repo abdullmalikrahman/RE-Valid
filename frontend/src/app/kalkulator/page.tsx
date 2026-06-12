@@ -1254,7 +1254,7 @@ export default function KalkulatorPage() {
                 </span>
               </div>
               <div className="overflow-x-auto no-scrollbar">
-                <table className="w-full text-sm text-left">
+                <table className="w-full min-w-[760px] text-sm text-left">
                   <thead className="text-xs text-slate-500 dark:text-text-secondary uppercase bg-gray-50 dark:bg-[#1a232c] border-b border-gray-200 dark:border-border-dark">
                     <tr>
                       <th className="px-5 py-3 font-bold">Tahun</th>

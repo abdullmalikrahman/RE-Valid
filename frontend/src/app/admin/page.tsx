@@ -418,7 +418,7 @@ function StationModal({ station, onClose, onSave, onRefresh }: ModalProps) {
                 <span className="ml-auto text-[11px] text-gray-400 italic shrink-0">{atlasSuccessCount}/6 berhasil · menutup otomatis...</span>
               </div>
               <div className="rounded-lg border border-green-200 dark:border-green-800 overflow-x-auto text-[11px]">
-                <table className="min-w-[420px] w-full">
+                <table className="w-full min-w-[420px]">
                   <thead>
                     <tr className="bg-green-100 dark:bg-green-900/30">
                       <th className="text-left px-3 py-1.5 text-green-700 dark:text-green-400 font-semibold">Sumber</th>
@@ -488,7 +488,7 @@ function StationModal({ station, onClose, onSave, onRefresh }: ModalProps) {
               {/* Tabel perbandingan 3 sumber */}
               {(form.windBaselineGwa || form.ghiBaselineGsa || form.windBaselineNasa) && (
                 <div className="rounded-lg border border-blue-200 dark:border-blue-800 overflow-x-auto text-[11px]">
-                  <table className="min-w-[420px] w-full">
+                  <table className="w-full min-w-[420px]">
                     <thead>
                       <tr className="bg-blue-100 dark:bg-blue-900/30">
                         <th className="text-left px-3 py-1.5 text-blue-700 dark:text-blue-400 font-semibold">Sumber</th>
@@ -1321,7 +1321,7 @@ export default function AdminPage() {
             {/* Stations table */}
             <div className="bg-white dark:bg-surface-dark rounded-xl border border-gray-200 dark:border-border-dark overflow-hidden shadow-sm">
               <div className="overflow-x-auto">
-                <table className="min-w-[960px] divide-y divide-gray-200 dark:divide-border-dark">
+                <table className="w-full min-w-[960px] divide-y divide-gray-200 dark:divide-border-dark">
                   <thead className="bg-gray-50 dark:bg-black/20">
                     <tr>
                       {['Nama Stasiun', 'Wilayah', 'Koordinat', 'Angin', 'GHI', 'Skor', 'Status', 'Aksi'].map((col, i) => (
@@ -1449,7 +1449,7 @@ export default function AdminPage() {
                 <span className="text-xs text-gray-400">Live dari database</span>
               </div>
               <div className="overflow-x-auto">
-                <table className="min-w-[760px] divide-y divide-gray-200 dark:divide-border-dark text-sm">
+                <table className="w-full min-w-[760px] divide-y divide-gray-200 dark:divide-border-dark text-sm">
                   <thead className="bg-gray-50 dark:bg-black/20">
                     <tr>
                       {['Stasiun', 'Topik MQTT', 'Data Terakhir', 'Frekuensi', 'Status'].map((col) => (

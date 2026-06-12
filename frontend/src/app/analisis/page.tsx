@@ -1286,7 +1286,7 @@ function AnalisisContent() {
               </Link>
             </div>
             <div className="overflow-x-auto flex-1">
-              <table className="w-full text-xs text-left">
+              <table className="w-full min-w-[560px] text-xs text-left">
                 <thead className="text-[10px] text-slate-500 dark:text-text-secondary uppercase bg-gray-50 dark:bg-[#1a232c] border-b border-gray-200 dark:border-border-dark">
                   <tr>
                     <th className="px-4 py-3 font-semibold">Metrik</th>
@@ -1468,7 +1468,7 @@ function AnalisisContent() {
             </span>
           </div>
           <div className="overflow-x-auto">
-            <table className="w-full text-xs">
+            <table className="w-full min-w-[760px] text-xs">
               <thead className="text-[10px] text-slate-500 dark:text-text-secondary uppercase bg-gray-50 dark:bg-[#1a232c] border-b border-gray-200 dark:border-border-dark">
                 <tr>
                   <th className="px-4 py-3 font-semibold text-left">Sumber Atlas</th>
