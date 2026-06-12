@@ -127,7 +127,7 @@ function MapPreview({ stations, latestStation }: { stations: Station[]; latestSt
         </Link>
       </div>
 
-      <div className="relative h-[220px] bg-[#edf4f8] dark:bg-[#111a22] sm:h-[260px] lg:h-[260px] xl:h-[280px]">
+      <div className="relative h-[220px] bg-[#edf4f8] dark:bg-[#111a22] sm:h-[260px] lg:h-[270px] xl:h-[290px]">
         <div
           className="absolute inset-0 opacity-70 dark:opacity-35"
           style={{
@@ -199,7 +199,7 @@ export default function Home() {
     <div className="flex min-h-screen bg-background-light text-slate-900 dark:bg-background-dark dark:text-white flex-col font-display lg:h-dvh lg:min-h-0">
       <Navbar />
 
-      <main className="relative flex-1 overflow-hidden lg:min-h-0">
+      <main className="relative flex-1 overflow-hidden lg:flex lg:min-h-0 lg:items-center">
         <div
           className="pointer-events-none absolute inset-0 opacity-50 dark:opacity-15"
           style={{
@@ -209,58 +209,58 @@ export default function Home() {
           }}
         />
 
-        <section className="relative mx-auto grid w-full max-w-6xl gap-7 px-4 py-7 sm:px-6 sm:py-8 lg:grid-cols-[minmax(0,1fr)_420px] lg:px-8 lg:py-8 xl:grid-cols-[minmax(0,1fr)_440px]">
-          <div className="flex flex-col justify-center">
-            <div className="inline-flex w-fit items-center gap-2 rounded-lg border border-primary/25 bg-primary/10 px-3 py-1.5 text-xs font-semibold text-primary">
-              <span className="material-symbols-outlined text-[15px]">verified</span>
-              SPK EBT - Jawa Barat
-            </div>
+        <div className="relative mx-auto flex w-full max-w-7xl flex-col gap-5 px-4 py-6 sm:px-6 sm:py-7 lg:px-8 lg:py-5">
+          <section className="grid w-full gap-8 lg:grid-cols-[minmax(0,1fr)_480px] xl:grid-cols-[minmax(0,1fr)_520px]">
+            <div className="flex flex-col justify-center">
+              <div className="inline-flex w-fit items-center gap-2 rounded-lg border border-primary/25 bg-primary/10 px-3 py-1.5 text-xs font-semibold text-primary">
+                <span className="material-symbols-outlined text-[15px]">verified</span>
+                SPK EBT - Jawa Barat
+              </div>
 
-            <h1 className="mt-4 max-w-2xl text-3xl font-black leading-tight tracking-tight sm:text-4xl lg:text-[42px]">
-              Sistem Pendukung Keputusan Potensi EBT Berbasis WebGIS.
-            </h1>
+              <h1 className="mt-4 max-w-3xl text-3xl font-black leading-tight tracking-tight sm:text-4xl lg:text-[44px]">
+                Sistem Pendukung Keputusan Potensi EBT Berbasis WebGIS.
+              </h1>
 
-            <p className="mt-3 max-w-xl text-sm leading-7 text-slate-600 dark:text-text-secondary sm:text-base lg:leading-6">
-              Validasi potensi angin dan surya menggunakan data lapangan, baseline GWA/GSA/ERA5,
-              analisis MCP, GIS-MCDA, dan simulasi ekonomi untuk perencanaan EBT di Jawa Barat.
-            </p>
+              <p className="mt-3 max-w-2xl text-sm leading-7 text-slate-600 dark:text-text-secondary sm:text-base lg:leading-6">
+                Validasi potensi angin dan surya menggunakan data lapangan, baseline GWA/GSA/ERA5,
+                analisis MCP, GIS-MCDA, dan simulasi ekonomi untuk perencanaan EBT di Jawa Barat.
+              </p>
 
-            <div className="mt-5 flex flex-col gap-3 sm:flex-row">
-              <Link
-                href="/peta"
-                className="inline-flex h-11 items-center justify-center gap-2 rounded-lg bg-primary px-5 text-sm font-bold text-white shadow-lg shadow-blue-900/20 transition-colors hover:bg-blue-600"
-              >
-                <span className="material-symbols-outlined text-[19px]">map</span>
-                Buka Peta
-              </Link>
-              <Link
-                href="/analisis"
-                className="inline-flex h-11 items-center justify-center gap-2 rounded-lg border border-slate-300 bg-white px-5 text-sm font-bold text-slate-900 transition-colors hover:bg-slate-50 dark:border-border-dark dark:bg-card-dark dark:text-white dark:hover:bg-panel-dark"
-              >
-                <span className="material-symbols-outlined text-[19px]">analytics</span>
-                Mulai Analisis
-              </Link>
-            </div>
-
-            <dl className="mt-6 grid max-w-xl grid-cols-2 overflow-hidden rounded-xl border border-slate-200 bg-white/88 dark:border-border-dark dark:bg-card-dark/90 sm:grid-cols-4">
-              {summary.map((item, index) => (
-                <div
-                  key={item.label}
-                  className={`px-3 py-2.5 ${index > 0 ? 'border-l border-slate-200 dark:border-border-dark' : ''} ${index === 2 ? 'max-sm:border-l-0 max-sm:border-t max-sm:border-slate-200 max-sm:dark:border-border-dark' : ''} ${index === 3 ? 'max-sm:border-t max-sm:border-slate-200 max-sm:dark:border-border-dark' : ''}`}
+              <div className="mt-5 flex flex-col gap-3 sm:flex-row">
+                <Link
+                  href="/peta"
+                  className="inline-flex h-11 items-center justify-center gap-2 rounded-lg bg-primary px-5 text-sm font-bold text-white shadow-lg shadow-blue-900/20 transition-colors hover:bg-blue-600"
                 >
-                  <dt className="text-[11px] font-bold uppercase tracking-wide text-slate-500 dark:text-text-secondary">
-                    {item.label}
-                  </dt>
-                  <dd className="mt-1 text-lg font-black text-slate-950 dark:text-white">{item.value}</dd>
-                </div>
-              ))}
-            </dl>
-          </div>
+                  <span className="material-symbols-outlined text-[19px]">map</span>
+                  Buka Peta
+                </Link>
+                <Link
+                  href="/analisis"
+                  className="inline-flex h-11 items-center justify-center gap-2 rounded-lg border border-slate-300 bg-white px-5 text-sm font-bold text-slate-900 transition-colors hover:bg-slate-50 dark:border-border-dark dark:bg-card-dark dark:text-white dark:hover:bg-panel-dark"
+                >
+                  <span className="material-symbols-outlined text-[19px]">analytics</span>
+                  Mulai Analisis
+                </Link>
+              </div>
 
-          <MapPreview stations={stations} latestStation={latestStation} />
-        </section>
+              <dl className="mt-6 grid max-w-2xl grid-cols-2 overflow-hidden rounded-xl border border-slate-200 bg-white/88 dark:border-border-dark dark:bg-card-dark/90 sm:grid-cols-4">
+                {summary.map((item, index) => (
+                  <div
+                    key={item.label}
+                    className={`px-3 py-2.5 ${index > 0 ? 'border-l border-slate-200 dark:border-border-dark' : ''} ${index === 2 ? 'max-sm:border-l-0 max-sm:border-t max-sm:border-slate-200 max-sm:dark:border-border-dark' : ''} ${index === 3 ? 'max-sm:border-t max-sm:border-slate-200 max-sm:dark:border-border-dark' : ''}`}
+                  >
+                    <dt className="text-[11px] font-bold uppercase tracking-wide text-slate-500 dark:text-text-secondary">
+                      {item.label}
+                    </dt>
+                    <dd className="mt-1 text-lg font-black text-slate-950 dark:text-white">{item.value}</dd>
+                  </div>
+                ))}
+              </dl>
+            </div>
 
-        <section className="relative mx-auto max-w-6xl px-4 pb-6 sm:px-6 lg:px-8 lg:pb-5">
+            <MapPreview stations={stations} latestStation={latestStation} />
+          </section>
+
           <nav className="grid gap-2 rounded-xl border border-slate-200 bg-white/82 p-2 dark:border-border-dark dark:bg-card-dark/82 md:grid-cols-3" aria-label="Akses cepat">
             {quickLinks.map((item) => (
               <Link
@@ -277,7 +277,7 @@ export default function Home() {
               </Link>
             ))}
           </nav>
-        </section>
+        </div>
       </main>
 
       <Footer />
