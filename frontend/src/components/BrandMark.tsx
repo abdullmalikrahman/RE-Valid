@@ -22,15 +22,14 @@ export function BrandMark({
         fill="none"
         xmlns="http://www.w3.org/2000/svg"
       >
+        <circle cx="24" cy="24" r="15.5" stroke="currentColor" strokeWidth="3" opacity="0.22" />
+        <circle cx="24" cy="24" r="8.5" fill="currentColor" opacity="0.1" />
         <path
-          d="M24 4.8c-8 0-14.2 6.2-14.2 13.8 0 9.8 11.7 20.5 13.1 21.7.6.5 1.6.5 2.2 0 1.4-1.2 13.1-11.9 13.1-21.7C38.2 11 32 4.8 24 4.8Z"
+          d="M27.8 11.5 17.7 25.1h7.1l-2.7 11.4 10.2-15h-7l2.5-10Z"
           fill="currentColor"
         />
-        <circle cx="24" cy="18.8" r="8.2" fill="white" opacity="0.96" />
-        <path
-          d="M27 10.8 18.9 21.6h5.4l-2 8.8 7.9-11.7h-5.1l1.9-7.9Z"
-          fill="currentColor"
-        />
+        <circle cx="34.5" cy="33.5" r="2.7" fill="currentColor" />
+        <circle cx="34.5" cy="33.5" r="5.4" stroke="currentColor" strokeWidth="2" opacity="0.24" />
       </svg>
     </span>
   );
