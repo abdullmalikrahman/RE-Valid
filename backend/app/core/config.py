@@ -26,6 +26,11 @@ class Settings(BaseSettings):
     # CORS
     FRONTEND_URL: str = "http://localhost:3000"
 
+    # Wind calibration overlay. Stored measurements remain raw.
+    WIND_CALIBRATION_ENABLED: bool = True
+    WIND_CALIBRATION_CUTOFF: str = "2026-06-12T14:20:00+07:00"
+    WIND_CALIBRATION_STATIONS: str = "LOC-01"
+
     class Config:
         env_file = str(_ENV_FILE)
         extra = "ignore"
