@@ -12,7 +12,6 @@ from app.core.security import get_current_user
 from app.crud.measurement import bulk_insert_measurements, get_latest_per_station, get_measurements
 from app.crud.station import get_station_by_id
 from app.schemas.measurement import MeasurementResponse
-from app.services.wind_calibration import calibrated_wind_speed
 
 router = APIRouter()
 
@@ -20,19 +19,6 @@ router = APIRouter()
 _REQUIRED_COLS = {"measured_at"}
 _NUMERIC_COLS = {"wind_speed", "wind_dir", "ghi", "dni", "temperature", "humidity", "pressure"}
 _ALL_COLS = _REQUIRED_COLS | _NUMERIC_COLS
-
-
-def _to_response(row) -> MeasurementResponse:
-    data = MeasurementResponse.model_validate(row)
-    return data.model_copy(
-        update={
-            "wind_speed": calibrated_wind_speed(
-                data.station_id,
-                data.measured_at,
-                data.wind_speed,
-            )
-        }
-    )
 
 
 @router.post("/upload", status_code=status.HTTP_200_OK)
@@ -157,8 +143,7 @@ async def upload_measurements(
 
 @router.get("/latest", response_model=list[MeasurementResponse])
 async def latest_measurements(db: AsyncSession = Depends(get_db)):
-    rows = await get_latest_per_station(db)
-    return [_to_response(row) for row in rows]
+    return await get_latest_per_station(db)
 
 
 @router.get("", response_model=list[MeasurementResponse])
@@ -169,5 +154,4 @@ async def list_measurements(
     limit: int = Query(1000, ge=1, le=20000),
     db: AsyncSession = Depends(get_db),
 ):
-    rows = await get_measurements(db, station_id, start, end, limit)
-    return [_to_response(row) for row in rows]
+    return await get_measurements(db, station_id, start, end, limit)
