@@ -203,11 +203,11 @@ def validate_station_mcp(
 
         if variable == "wind":
             cur.execute(
-                """
+                f"""
                 SELECT
                     DATE(measured_at AT TIME ZONE 'Asia/Jakarta') AS obs_day,
                     COUNT(*) AS n_obs,
-                    AVG(({wind_speed_sql_expr()})::float) AS daily_avg_ms,
+                    AVG(({value_expr})::float) AS daily_avg_ms,
                     EXTRACT(DOY FROM DATE(measured_at AT TIME ZONE 'Asia/Jakarta'))::int AS doy
                 FROM measurements
                 WHERE station_id = %s AND wind_speed IS NOT NULL
