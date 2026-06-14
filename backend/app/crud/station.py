@@ -6,6 +6,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.models.measurement import Measurement
 from app.models.station import Station
 from app.schemas.station import StationCreate, StationUpdate
+from app.services.wind_calibration import calibrated_wind_speed
 
 MIN_REASONABLE_MEASUREMENT_AT = datetime(2024, 1, 1, tzinfo=timezone.utc)
 
@@ -32,10 +33,41 @@ async def get_all_stations(db: AsyncSession) -> list[Station]:
             .group_by(Measurement.station_id)
         )
         meas_map = {row.station_id: row for row in meas_result}
+        latest_subq = (
+            select(
+                Measurement.station_id,
+                func.max(Measurement.measured_at).label("max_at"),
+            )
+            .where(
+                Measurement.station_id.in_(station_ids),
+                Measurement.measured_at >= MIN_REASONABLE_MEASUREMENT_AT,
+            )
+            .group_by(Measurement.station_id)
+            .subquery()
+        )
+        latest_result = await db.execute(
+            select(
+                Measurement.station_id,
+                Measurement.measured_at,
+                Measurement.wind_speed,
+            ).join(
+                latest_subq,
+                (Measurement.station_id == latest_subq.c.station_id)
+                & (Measurement.measured_at == latest_subq.c.max_at),
+            )
+        )
+        latest_map = {row.station_id: row for row in latest_result}
         for s in stations:
             row = meas_map.get(s.id)
             s.first_measurement_at = row.first_meas if row else None  # type: ignore[attr-defined]
             s.last_measurement_at = row.last_meas if row else None  # type: ignore[attr-defined]
+            latest = latest_map.get(s.id)
+            if latest and latest.wind_speed is not None:
+                s.wind_speed = calibrated_wind_speed(  # type: ignore[assignment]
+                    latest.station_id,
+                    latest.measured_at,
+                    latest.wind_speed,
+                )
 
     return stations
 

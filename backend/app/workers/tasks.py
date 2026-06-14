@@ -13,6 +13,7 @@ Hasil ini tetap screening/pre-feasibility, bukan MCP/WRA/SRA final bankable.
 import logging
 import math
 
+from app.services.wind_calibration import wind_speed_sql_expr
 from app.workers.celery_app import celery_app
 
 logger = logging.getLogger(__name__)
@@ -158,10 +159,11 @@ def validate_station_mcp(
         has_daily_baseline = len(doy_baseline) >= 300
 
         value_col = "wind_speed" if variable == "wind" else "ghi"
+        value_expr = wind_speed_sql_expr() if variable == "wind" else value_col
         raw_params = [station_id, *date_params]
         cur.execute(
             f"""
-            SELECT COUNT(*), AVG({value_col}::float)
+            SELECT COUNT(*), AVG(({value_expr})::float)
             FROM measurements
             WHERE station_id = %s AND {value_col} IS NOT NULL{date_sql}
             """,
@@ -205,7 +207,7 @@ def validate_station_mcp(
                 SELECT
                     DATE(measured_at AT TIME ZONE 'Asia/Jakarta') AS obs_day,
                     COUNT(*) AS n_obs,
-                    AVG(wind_speed::float) AS daily_avg_ms,
+                    AVG(({wind_speed_sql_expr()})::float) AS daily_avg_ms,
                     EXTRACT(DOY FROM DATE(measured_at AT TIME ZONE 'Asia/Jakarta'))::int AS doy
                 FROM measurements
                 WHERE station_id = %s AND wind_speed IS NOT NULL
