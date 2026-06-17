@@ -123,13 +123,12 @@ def _store_measurement(record: dict) -> None:
                 )
                 session.add(obj)
 
-                # Also update stations.last_update (and current sensor values) so
-                # the peta/analisis pages show live data without running full analysis.
+                # Also update stations.last_update so the peta/analisis pages can
+                # show data freshness. Current sensor values stay in measurements;
+                # stations.wind_speed is a summary/analysis field and must not be
+                # overwritten by one live MQTT sample.
                 set_parts = ["last_update = NOW()"]
                 params: dict = {"station_id": record["station_id"]}
-                if record.get("wind_speed") is not None:
-                    set_parts.append("wind_speed = :wind_speed")
-                    params["wind_speed"] = record["wind_speed"]
                 # Catatan: kolom irradiation TIDAK diperbarui dari data MQTT langsung.
                 # Formula mean(GHI) × 24/1000 hanya valid untuk data 24 jam penuh.
                 # Nilai irradiation yang benar dihitung oleh Celery task validate_station_mcp
