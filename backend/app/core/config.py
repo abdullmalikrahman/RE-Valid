@@ -29,7 +29,7 @@ class Settings(BaseSettings):
     # Wind calibration overlay. Stored measurements remain raw.
     WIND_CALIBRATION_ENABLED: bool = True
     WIND_CALIBRATION_CUTOFF: str = "2026-06-12T14:20:00+07:00"
-    WIND_CALIBRATION_STATIONS: str = "LOC-01,LOC-02"
+    WIND_CALIBRATION_STATIONS: str = "LOC-01,LOC-02,LOC-03"
 
     class Config:
         env_file = str(_ENV_FILE)
