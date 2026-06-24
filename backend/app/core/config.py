@@ -31,6 +31,9 @@ class Settings(BaseSettings):
     WIND_CALIBRATION_CUTOFF: str = "2026-06-12T14:20:00+07:00"
     WIND_CALIBRATION_STATIONS: str = "LOC-01,LOC-02,LOC-03"
 
+    # BME280 calibration overlay for temperature/humidity only. Pressure stays raw.
+    BME280_CALIBRATION_ENABLED: bool = True
+
     class Config:
         env_file = str(_ENV_FILE)
         extra = "ignore"

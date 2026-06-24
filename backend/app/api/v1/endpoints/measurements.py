@@ -12,6 +12,7 @@ from app.core.security import get_current_user
 from app.crud.measurement import bulk_insert_measurements, get_latest_per_station, get_measurements
 from app.crud.station import get_station_by_id
 from app.schemas.measurement import MeasurementResponse
+from app.services.bme280_calibration import calibrate_humidity, calibrate_temperature
 from app.services.wind_calibration import calibrated_wind_speed
 
 router = APIRouter()
@@ -30,7 +31,9 @@ def _to_response(row) -> MeasurementResponse:
                 data.station_id,
                 data.measured_at,
                 data.wind_speed,
-            )
+            ),
+            "temperature": calibrate_temperature(data.temperature),
+            "humidity": calibrate_humidity(data.humidity),
         }
     )
 
