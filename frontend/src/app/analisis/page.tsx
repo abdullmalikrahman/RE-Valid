@@ -302,7 +302,7 @@ function AnalisisContent() {
           }
 
           const levelLabel = result.analysis_level === 'campaign_10_day'
-            ? 'Campaign 10 hari selesai'
+            ? 'Kampanye pengukuran selesai'
             : result.analysis_level === 'preliminary'
               ? 'Analisis preliminary selesai'
               : 'Perbandingan harian awal selesai';
@@ -887,7 +887,7 @@ function AnalisisContent() {
               </h1>
               <p className="text-slate-600 dark:text-text-secondary text-sm font-normal leading-normal">
                 {isWind
-                  ? 'Validasi kecepatan angin observasi vs GWA 3.0/ERA5 untuk screening kampanye 10 hari.'
+                  ? 'Validasi kecepatan angin observasi vs GWA 3.0/ERA5 untuk screening potensi lokasi.'
                   : 'Validasi iradiasi surya observasi vs GSA/ERA5, Clearness Index (Kt), dan estimasi AEP PLTS.'}
               </p>
             </div>
@@ -1665,7 +1665,7 @@ function AnalisisContent() {
               <span>
                 <strong className="text-slate-800 dark:text-slate-200">Durasi observasi:</strong>{' '}
                 {station.period}.{' '}
-                {isWind ? 'Target proyek: 10 hari per lokasi untuk screening awal.' : 'Target proyek: 10 hari per lokasi untuk validasi awal.'}
+                {isWind ? 'Periode analisis mengikuti rentang data terpilih dan ketersediaan sampling valid.' : 'Periode validasi mengikuti rentang data terpilih dan ketersediaan sampling valid.'}
               </span>
             </div>
             <div className="flex gap-2.5">
@@ -1683,7 +1683,7 @@ function AnalisisContent() {
                   {isWind ? 'Periode overlap MCP:' : 'Periode validasi GHI:'}
                 </strong>{' '}
                 {station.period}.{' '}
-                {isWind ? 'Quick check: 10 sampling; harian awal: 1 hari valid; preliminary: 5 hari valid; campaign selesai: 10 hari valid.' : 'Quick check: 10 sampling; validasi harian: 1 hari valid; campaign selesai: 10 hari valid.'}
+                {isWind ? 'Status analisis ditentukan dari jumlah sampling dan hari valid pada periode terpilih.' : 'Status validasi ditentukan dari jumlah sampling dan hari valid pada periode terpilih.'}
               </span>
             </div>
             <div className="flex gap-2.5">
