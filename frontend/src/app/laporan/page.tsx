@@ -1121,10 +1121,6 @@ function LaporanContent() {
         { key: 'ghi_obs', width: 18 },
         { key: 'ghi_baseline', width: 18 },
         { key: 'ghi_dev', width: 16 },
-        { key: 'temperature_avg', width: 18 },
-        { key: 'humidity_avg', width: 18 },
-        { key: 'pressure_avg', width: 18 },
-        { key: 'wind_dir_avg', width: 18 },
       ];
       const dailyHeader = dailyWs.addRow([
         'Tanggal WIB',
@@ -1135,12 +1131,8 @@ function LaporanContent() {
         'GHI Obs (kWh/m²/hari)',
         'GHI ERA5 DOY (kWh/m²/hari)',
         'Deviasi GHI (kWh/m²/hari)',
-        'Suhu BME280 Harian (\u00b0C)',
-        'Kelembapan BME280 Harian (%)',
-        'Tekanan BME280 Harian (hPa)',
-        'Arah Angin Harian (\u00b0)',
       ]);
-      styleHeaderRow(dailyHeader, 12);
+      styleHeaderRow(dailyHeader, 8);
       validationDailyRows.forEach((row, index) => {
         const windDev = row.windObs != null && row.windBaseline != null ? roundNumber(row.windObs - row.windBaseline, 3) : null;
         const ghiDev = row.ghiObs != null && row.ghiBaseline != null ? roundNumber(row.ghiObs - row.ghiBaseline, 3) : null;
@@ -1153,12 +1145,41 @@ function LaporanContent() {
           row.ghiObs,
           row.ghiBaseline,
           ghiDev,
-          row.tempAvg,
-          row.humAvg,
-          row.presAvg,
-          row.windDirAvg,
-        ]), index, 12);
+        ]), index, 8);
       });
+
+      if (meteoDailyPointCount > 0) {
+        dailyWs.addRow([]);
+        const meteoTitle = dailyWs.addRow(['DATA METEOROLOGI PENDUKUNG (RATA-RATA HARIAN)']);
+        dailyWs.mergeCells(`A${meteoTitle.number}:F${meteoTitle.number}`);
+        meteoTitle.getCell(1).fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: C_NAVY } };
+        meteoTitle.getCell(1).font = { bold: true, size: 9, color: { argb: C_WHITE }, name: 'Calibri' };
+        meteoTitle.getCell(1).alignment = { horizontal: 'left', vertical: 'middle' };
+        meteoTitle.height = 18;
+
+        const meteoHeader = dailyWs.addRow([
+          'Tanggal WIB',
+          'Label',
+          'Suhu BME280 Harian (\u00b0C)',
+          'Kelembapan BME280 Harian (%)',
+          'Tekanan BME280 Harian (hPa)',
+          'Arah Angin Harian (\u00b0)',
+        ]);
+        styleHeaderRow(meteoHeader, 6);
+
+        validationDailyRows
+          .filter((row) => row.tempAvg != null || row.humAvg != null || row.presAvg != null || row.windDirAvg != null)
+          .forEach((row, index) => {
+            styleDataRow(dailyWs.addRow([
+              row.key,
+              row.label,
+              row.tempAvg,
+              row.humAvg,
+              row.presAvg,
+              row.windDirAvg,
+            ]), index, 6);
+          });
+      }
       dailyWs.views = [{ state: 'frozen', ySplit: 1 }];
 
       const rawWs = wb.addWorksheet('Data Mentah');
