@@ -476,6 +476,10 @@ function LaporanContent() {
       windBaseline: number | null;
       ghiObs: number | null;
       ghiBaseline: number | null;
+      tempAvg: number | null;
+      humAvg: number | null;
+      presAvg: number | null;
+      windDirAvg: number | null;
     }>();
     const ensureRow = (point: ChartPoint) => {
       if (!rows.has(point.key)) {
@@ -486,6 +490,10 @@ function LaporanContent() {
           windBaseline: null,
           ghiObs: null,
           ghiBaseline: null,
+          tempAvg: null,
+          humAvg: null,
+          presAvg: null,
+          windDirAvg: null,
         });
       }
       return rows.get(point.key)!;
@@ -500,8 +508,23 @@ function LaporanContent() {
       row.ghiObs = point.obs;
       row.ghiBaseline = point.baseline;
     });
+    tempChartData.forEach((point) => {
+      ensureRow(point).tempAvg = point.obs;
+    });
+    humChartData.forEach((point) => {
+      ensureRow(point).humAvg = point.obs;
+    });
+    presChartData.forEach((point) => {
+      ensureRow(point).presAvg = point.obs;
+    });
+    windDirChartData.forEach((point) => {
+      ensureRow(point).windDirAvg = point.obs;
+    });
     return [...rows.values()].sort((a, b) => a.key.localeCompare(b.key));
   })();
+  const meteoDailyPointCount = validationDailyRows.filter((row) => (
+    row.tempAvg != null || row.humAvg != null || row.presAvg != null || row.windDirAvg != null
+  )).length;
   const meteoSummary = (() => {
     const tempVals = measurements.map((m) => m.temperature).filter((v): v is number => v != null);
     const humVals = measurements.map((m) => m.humidity).filter((v): v is number => v != null);
@@ -1051,6 +1074,7 @@ function LaporanContent() {
         ['Sampling GHI Valid', ghiAvailabilityText],
         ['Titik Validasi Harian Angin', `${windChartData.length} hari`],
         ['Titik Validasi Harian GHI', `${ghiChartData.length} hari`],
+        ['Titik Harian Meteorologi', `${meteoDailyPointCount} hari`],
       ].forEach((pair, i) => addRow2(pair[0], pair[1], i));
 
       if (meteoSummary.count > 0) {
@@ -1097,6 +1121,10 @@ function LaporanContent() {
         { key: 'ghi_obs', width: 18 },
         { key: 'ghi_baseline', width: 18 },
         { key: 'ghi_dev', width: 16 },
+        { key: 'temperature_avg', width: 18 },
+        { key: 'humidity_avg', width: 18 },
+        { key: 'pressure_avg', width: 18 },
+        { key: 'wind_dir_avg', width: 18 },
       ];
       const dailyHeader = dailyWs.addRow([
         'Tanggal WIB',
@@ -1107,8 +1135,12 @@ function LaporanContent() {
         'GHI Obs (kWh/m²/hari)',
         'GHI ERA5 DOY (kWh/m²/hari)',
         'Deviasi GHI (kWh/m²/hari)',
+        'Suhu BME280 Harian (\u00b0C)',
+        'Kelembapan BME280 Harian (%)',
+        'Tekanan BME280 Harian (hPa)',
+        'Arah Angin Harian (\u00b0)',
       ]);
-      styleHeaderRow(dailyHeader, 8);
+      styleHeaderRow(dailyHeader, 12);
       validationDailyRows.forEach((row, index) => {
         const windDev = row.windObs != null && row.windBaseline != null ? roundNumber(row.windObs - row.windBaseline, 3) : null;
         const ghiDev = row.ghiObs != null && row.ghiBaseline != null ? roundNumber(row.ghiObs - row.ghiBaseline, 3) : null;
@@ -1121,7 +1153,11 @@ function LaporanContent() {
           row.ghiObs,
           row.ghiBaseline,
           ghiDev,
-        ]), index, 8);
+          row.tempAvg,
+          row.humAvg,
+          row.presAvg,
+          row.windDirAvg,
+        ]), index, 12);
       });
       dailyWs.views = [{ state: 'frozen', ySplit: 1 }];
 
