@@ -1,8 +1,10 @@
 import asyncio
 import math
 import time
+from datetime import date
 
 import httpx
+import sqlalchemy as sa
 from fastapi import APIRouter, Depends, HTTPException, Query, status
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -429,6 +431,101 @@ async def get_gis_mcda(
 
     _GIS_CACHE[station_id] = (time.time(), result)
     return result
+
+
+# ---------------------------------------------------------------------------
+# Endpoint: ambil actual-period ERA5 baseline untuk satu stasiun
+# ---------------------------------------------------------------------------
+
+@router.get("/{station_id}/period-baseline")
+async def get_period_baseline(
+    station_id: str,
+    start: date = Query(..., description="Tanggal mulai periode pengukuran (YYYY-MM-DD, WIB)"),
+    end: date = Query(..., description="Tanggal akhir periode pengukuran (YYYY-MM-DD, WIB)"),
+    ensure: bool = Query(False, description="Fetch and cache ERA5 actual baseline if missing"),
+    db: AsyncSession = Depends(get_db),
+):
+    """
+    Kembalikan baseline ERA5 aktual per tanggal untuk periode pengukuran.
+
+    Response: list of {date, wind_era5_actual, ghi_era5_actual, source}
+    Digunakan ketika baseline harus memakai periode yang sama persis dengan
+    observasi lapangan, misalnya LOC-02 8-14 Juni 2026.
+    """
+    from sqlalchemy import select
+    from sqlalchemy.dialects.postgresql import insert as pg_insert
+    from app.models.period_baseline import StationPeriodBaseline
+
+    if start > end:
+        raise HTTPException(status_code=422, detail="start tidak boleh lebih besar dari end")
+
+    station = await get_station_by_id(db, station_id)
+    if not station:
+        raise HTTPException(status_code=404, detail="Stasiun tidak ditemukan")
+
+    async def _load_rows():
+        stmt = (
+            select(
+                StationPeriodBaseline.baseline_date,
+                StationPeriodBaseline.wind_era5_actual,
+                StationPeriodBaseline.ghi_era5_actual,
+                StationPeriodBaseline.source,
+            )
+            .where(
+                StationPeriodBaseline.station_id == station_id,
+                StationPeriodBaseline.baseline_date >= start,
+                StationPeriodBaseline.baseline_date <= end,
+            )
+            .order_by(StationPeriodBaseline.baseline_date)
+        )
+        result = await db.execute(stmt)
+        return result.fetchall()
+
+    rows = await _load_rows()
+    expected_days = (end - start).days + 1
+    valid_rows = sum(
+        1 for row in rows
+        if row.wind_era5_actual is not None or row.ghi_era5_actual is not None
+    )
+
+    if ensure and valid_rows < expected_days:
+        from app.workers.atlas_reader import fetch_era5_actual_period
+
+        actual = await fetch_era5_actual_period(float(station.lat), float(station.lon), start, end)
+        if actual:
+            values = [
+                {
+                    "station_id": station_id,
+                    "baseline_date": date.fromisoformat(baseline_date),
+                    "wind_era5_actual": vals.get("wind"),
+                    "ghi_era5_actual": vals.get("ghi"),
+                    "source": "era5_actual",
+                }
+                for baseline_date, vals in actual.items()
+            ]
+            stmt = pg_insert(StationPeriodBaseline).values(values)
+            stmt = stmt.on_conflict_do_update(
+                index_elements=["station_id", "baseline_date"],
+                set_={
+                    "wind_era5_actual": stmt.excluded.wind_era5_actual,
+                    "ghi_era5_actual": stmt.excluded.ghi_era5_actual,
+                    "source": stmt.excluded.source,
+                    "fetched_at": sa.func.now(),
+                },
+            )
+            await db.execute(stmt)
+            await db.commit()
+            rows = await _load_rows()
+
+    return [
+        {
+            "date": row.baseline_date.isoformat(),
+            "wind_era5_actual": float(row.wind_era5_actual) if row.wind_era5_actual is not None else None,
+            "ghi_era5_actual": float(row.ghi_era5_actual) if row.ghi_era5_actual is not None else None,
+            "source": row.source,
+        }
+        for row in rows
+    ]
 
 
 # ---------------------------------------------------------------------------

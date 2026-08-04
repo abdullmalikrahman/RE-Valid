@@ -202,7 +202,9 @@ function AnalisisContent() {
 
   // ─── Daily Climatology Baseline (ERA5 per DOY) ───────────────────────────
   type DailyBaselineRow = { doy: number; ghi_era5: number | null; wind_era5: number | null };
+  type PeriodBaselineRow = { date: string; ghi_era5_actual: number | null; wind_era5_actual: number | null; source: string };
   const [dailyBaseline, setDailyBaseline] = useState<Map<number, DailyBaselineRow>>(new Map());
+  const [periodBaseline, setPeriodBaseline] = useState<Map<string, PeriodBaselineRow>>(new Map());
 
   useEffect(() => {
     if (!station?.id) return;
@@ -215,6 +217,19 @@ function AnalisisContent() {
       })
       .catch(() => setDailyBaseline(new Map()));
   }, [station?.id]);
+
+  useEffect(() => {
+    if (!station?.id || !isDateInput(startDate) || !isDateInput(endDate)) return;
+    const params = new URLSearchParams({ start: startDate, end: endDate, ensure: 'true' });
+    apiFetch(`/api/v1/stations/${station.id}/period-baseline?${params.toString()}`)
+      .then((r) => (r.ok ? r.json() : []))
+      .then((rows: PeriodBaselineRow[]) => {
+        const map = new Map<string, PeriodBaselineRow>();
+        rows.forEach((row) => map.set(row.date, row));
+        setPeriodBaseline(map);
+      })
+      .catch(() => setPeriodBaseline(new Map()));
+  }, [station?.id, startDate, endDate]);
 
   // Reset task feedback whenever the user switches station or energy type
   useEffect(() => {
@@ -236,6 +251,16 @@ function AnalisisContent() {
     setTaskMsg('');
     const token = typeof window !== 'undefined' ? localStorage.getItem('re_valid_token') : null;
     try {
+      const baselineParams = new URLSearchParams({ start: startDate, end: endDate, ensure: 'true' });
+      const baselineRes = await apiFetch(`/api/v1/stations/${station.id}/period-baseline?${baselineParams.toString()}`);
+      const baselineRows: PeriodBaselineRow[] = baselineRes.ok ? await baselineRes.json() : [];
+      if (!baselineRes.ok || baselineRows.length === 0) {
+        throw new Error('Baseline ERA5 aktual periode belum tersedia. Pastikan koneksi API ERA5 aktif atau import CSV Copernicus terlebih dahulu.');
+      }
+      const baselineMap = new Map<string, PeriodBaselineRow>();
+      baselineRows.forEach((row) => baselineMap.set(row.date, row));
+      setPeriodBaseline(baselineMap);
+
       const res = await apiFetch('/api/v1/analyze', {
         method: 'POST',
         headers: {
@@ -245,7 +270,7 @@ function AnalisisContent() {
         body: JSON.stringify({
           station_id: station.id,
           variable: energyType,
-          n: 14400,
+          n: 10080,
           start: startDate,
           end: endDate,
         }),
@@ -301,7 +326,7 @@ function AnalisisContent() {
             return;
           }
 
-          const levelLabel = result.analysis_level === 'campaign_10_day'
+          const levelLabel = result.analysis_level === 'campaign_7_day' || result.analysis_level === 'campaign_10_day'
             ? 'Kampanye pengukuran selesai'
             : result.analysis_level === 'preliminary'
               ? 'Analisis preliminary selesai'
@@ -370,7 +395,24 @@ function AnalisisContent() {
     return { count, total: doys.length };
   }, [dailyBaseline, isWind, measurementDoys]);
 
+  const periodBaselineCoverage = useMemo(() => {
+    const dates = measurementDateKeys.length > 0 ? measurementDateKeys : [...periodBaseline.keys()].sort();
+    const count = dates.filter((dateKey) => {
+      const row = periodBaseline.get(dateKey);
+      const value = isWind ? row?.wind_era5_actual : row?.ghi_era5_actual;
+      return value != null && value > 0;
+    }).length;
+    return { count, total: dates.length };
+  }, [isWind, measurementDateKeys, periodBaseline]);
+
+  const hasPeriodBaseline = periodBaselineCoverage.count > 0 && measurements.length > 0;
   const hasDailyBaseline = dailyBaselineCoverage.count > 0 && measurements.length > 0;
+  const hasEra5Baseline = hasPeriodBaseline || hasDailyBaseline;
+  const era5ChartLabel = hasPeriodBaseline
+    ? 'ERA5 Aktual Periode'
+    : hasDailyBaseline
+      ? 'ERA5 Harian (DOY)'
+      : isWind ? 'GWA 3.0' : 'GSA (Solargis)';
 
   const chartGranularity = useMemo(() => {
     if (measurements.length < 2) return 'daily' as const;
@@ -389,7 +431,7 @@ function AnalisisContent() {
       windObs: number[];
       ghiSum: number;
       ghiSamples: number;
-      baselinesByDoy: Map<number, number>;
+      baselinesByDoy: Map<string, number>;
     }>();
 
     measurements.forEach((m) => {
@@ -415,14 +457,18 @@ function AnalisisContent() {
           windObs: [],
           ghiSum: 0,
           ghiSamples: 0,
-          baselinesByDoy: new Map<number, number>(),
+          baselinesByDoy: new Map<string, number>(),
         });
       }
       const g = groups.get(groupKey)!;
+      const actualRow = periodBaseline.get(dateKey);
+      const actualBaseline = isWind ? actualRow?.wind_era5_actual : actualRow?.ghi_era5_actual;
       const row = dailyBaseline.get(doy);
       const doyBaseline = isWind ? row?.wind_era5 : row?.ghi_era5;
-      const baseline = doyBaseline != null && doyBaseline > 0 ? doyBaseline : fallbackBaseline;
-      if (baseline > 0) g.baselinesByDoy.set(doy, baseline);
+      const baseline = actualBaseline != null && actualBaseline > 0
+        ? actualBaseline
+        : doyBaseline != null && doyBaseline > 0 ? doyBaseline : fallbackBaseline;
+      if (baseline > 0) g.baselinesByDoy.set(dateKey, baseline);
 
       if (isWind) {
         const wind = m.wind_speed != null ? Number(m.wind_speed) : null;
@@ -449,7 +495,7 @@ function AnalisisContent() {
           baseline: roundNumber(baselineMean, 3),
         };
       });
-  }, [measurements, dailyBaseline, isWind, chartGranularity, fallbackWindBaseline, fallbackGhiBaseline]);
+  }, [measurements, periodBaseline, dailyBaseline, isWind, chartGranularity, fallbackWindBaseline, fallbackGhiBaseline]);
 
   const [tempChartData, humChartData, presChartData, windDirChartData] = useMemo(() => [
     makeMeteoChartData(measurements, (m) => m.temperature, chartGranularity),
@@ -481,9 +527,16 @@ function AnalisisContent() {
     return { pct, valid, expected, days: measurementDateKeys.length };
   }, [measurements, measurementDateKeys, isWind]);
 
-  type Era5BaselineSummary = { value: number; mode: 'period' | 'annual'; count: number };
+  type Era5BaselineSummary = { value: number; mode: 'actual' | 'period' | 'annual'; count: number };
 
   const era5WindSummary = useMemo<Era5BaselineSummary | null>(() => {
+    const actualVals = measurementDateKeys
+      .map((dateKey) => periodBaseline.get(dateKey)?.wind_era5_actual)
+      .filter((v): v is number => v != null && v > 0);
+    if (actualVals.length > 0) {
+      return { value: roundNumber(average(actualVals) ?? 0, 2), mode: 'actual', count: actualVals.length };
+    }
+
     const periodVals = measurementDoys
       .map((doy) => dailyBaseline.get(doy)?.wind_era5)
       .filter((v): v is number => v != null && v > 0);
@@ -497,9 +550,16 @@ function AnalisisContent() {
     return annualVals.length > 0
       ? { value: roundNumber(average(annualVals) ?? 0, 2), mode: 'annual', count: annualVals.length }
       : null;
-  }, [dailyBaseline, measurementDoys]);
+  }, [dailyBaseline, measurementDateKeys, measurementDoys, periodBaseline]);
 
   const era5GhiSummary = useMemo<Era5BaselineSummary | null>(() => {
+    const actualVals = measurementDateKeys
+      .map((dateKey) => periodBaseline.get(dateKey)?.ghi_era5_actual)
+      .filter((v): v is number => v != null && v > 0);
+    if (actualVals.length > 0) {
+      return { value: roundNumber(average(actualVals) ?? 0, 2), mode: 'actual', count: actualVals.length };
+    }
+
     const periodVals = measurementDoys
       .map((doy) => dailyBaseline.get(doy)?.ghi_era5)
       .filter((v): v is number => v != null && v > 0);
@@ -513,20 +573,26 @@ function AnalisisContent() {
     return annualVals.length > 0
       ? { value: roundNumber(average(annualVals) ?? 0, 2), mode: 'annual', count: annualVals.length }
       : null;
-  }, [dailyBaseline, measurementDoys]);
+  }, [dailyBaseline, measurementDateKeys, measurementDoys, periodBaseline]);
 
   const era5WindPeriodAvg = era5WindSummary?.value ?? null;
   const era5GhiPeriodAvg = era5GhiSummary?.value ?? null;
   const era5WindLabel = era5WindSummary
-    ? era5WindSummary.mode === 'period'
+    ? era5WindSummary.mode === 'actual'
+      ? `ERA5 aktual - Rata-rata Periode (${era5WindSummary.count} hari)`
+      : era5WindSummary.mode === 'period'
       ? `ERA5 per-DOY · Rata-rata Periode (${era5WindSummary.count} hari)`
       : `ERA5 per-DOY · Rata-rata Tahunan (${era5WindSummary.count} DOY)`
     : 'Open-Meteo · 2014-2025 · LTA';
   const era5GhiLabel = era5GhiSummary
-    ? era5GhiSummary.mode === 'period'
+    ? era5GhiSummary.mode === 'actual'
+      ? `ERA5 aktual - Rata-rata Periode (${era5GhiSummary.count} hari)`
+      : era5GhiSummary.mode === 'period'
       ? `ERA5 per-DOY · Rata-rata Periode (${era5GhiSummary.count} hari)`
       : `ERA5 per-DOY · Rata-rata Tahunan (${era5GhiSummary.count} DOY)`
     : 'Open-Meteo · 2014-2025 · LTA';
+  const windEra5ShortLabel = era5WindSummary?.mode === 'actual' ? 'ERA5 Aktual Periode' : 'ERA5 DOY';
+  const ghiEra5ShortLabel = era5GhiSummary?.mode === 'actual' ? 'ERA5 Aktual Periode' : 'ERA5 DOY';
 
   // Jika belum ada stasiun di DB, tampilkan empty state
   if (!station) {
@@ -579,7 +645,11 @@ function AnalisisContent() {
   const aepGross = hasWindObs ? (station.aep ?? 0) : (station.windAep ?? 0);
   const aepNetP50 = Math.round(aepGross * 0.877);
   const aepNetP90 = Math.round(aepGross * 0.767);
-  const biasDisplay = station.bias != null ? (station.bias > 0 ? '+' : '') + station.bias.toFixed(1) + '%' : '–';
+  const biasDisplay = station.bias != null
+    ? (station.bias > 0 ? '+' : '') + station.bias.toFixed(1) + '%'
+    : windDiffEra5Period != null
+      ? (windDiffEra5Period >= 0 ? '+' : '') + windDiffEra5Period.toFixed(1) + '%'
+      : '–';
   // Wind-specific baseline skill score (stored in windR2 column for backward compatibility)
   const windR2Val = station.windR2 ?? station.r2 ?? 0;
   const windR2Quality = baselineSkillLabel(windR2Val);
@@ -611,6 +681,11 @@ function AnalisisContent() {
   const ghiDiffEra5Period = (era5GhiPeriodAvg != null && era5GhiPeriodAvg > 0)
     ? parseFloat((((obsGhiMean - era5GhiPeriodAvg) / era5GhiPeriodAvg) * 100).toFixed(1))
     : ghiDiffNasa;
+  const solarBiasDisplay = station.solarBias != null
+    ? `${station.solarBias > 0 ? '+' : ''}${station.solarBias.toFixed(1)}%`
+    : ghiDiffEra5Period != null
+      ? `${ghiDiffEra5Period >= 0 ? '+' : ''}${ghiDiffEra5Period.toFixed(1)}%`
+      : `${ghiDiff > 0 ? '+' : ''}${ghiDiff.toFixed(1)}%`;
   // Clearness Index: Kt = GHI_obs / GHI_extraterrestrial (≈ 8.5 kWh/m²/hari at 7°S lat)
   // Gunakan obsGhiMean (rata-rata periode aktif) bukan station.irradiation (DB stale)
   const ktIndex = parseFloat((obsGhiMean / 8.5).toFixed(2));
@@ -630,6 +705,13 @@ function AnalisisContent() {
     const doyValue = variable === 'wind' ? row?.wind_era5 : row?.ghi_era5;
     if (doyValue != null && doyValue > 0) return doyValue;
     return variable === 'wind' ? windBaselineVal : ghiBaseline;
+  };
+
+  const baselineForDate = (dateKey: string, variable: 'wind' | 'solar') => {
+    const row = periodBaseline.get(dateKey);
+    const actualValue = variable === 'wind' ? row?.wind_era5_actual : row?.ghi_era5_actual;
+    if (actualValue != null && actualValue > 0) return actualValue;
+    return baselineForDoy(getDoyFromDateKey(dateKey), variable);
   };
 
   // ─── XLSX Export ───────────────────────────────────────────────────────────
@@ -759,7 +841,7 @@ function AnalisisContent() {
           addColHeaders(['Tanggal/Waktu', 'Kec. Angin Obs (m/s)', 'Baseline Validasi (m/s)', 'Deviasi (m/s)']);
           measurements.forEach((m, i) => {
             const obs = m.wind_speed ?? 0;
-            const baseline = baselineForDoy(getDoy(m.measured_at), 'wind');
+            const baseline = baselineForDate(getJakartaDateKey(m.measured_at), 'wind');
             const dev = parseFloat((obs - baseline).toFixed(4));
             addDataRow([m.measured_at, obs, parseFloat(baseline.toFixed(4)), dev], i);
           });
@@ -775,7 +857,7 @@ function AnalisisContent() {
           addSection('DATA GHI HARIAN (Agregasi per Hari Kalender)');
           addColHeaders(['Tanggal', 'Total GHI Harian (kWh/m²/hari)', 'Baseline Validasi (kWh/m²/hari)', 'Deviasi (kWh/m²/hari)']);
           [...dayGhiMap.entries()].sort(([a], [b]) => a.localeCompare(b)).forEach(([day, ghiData], i) => {
-            const baseline = baselineForDoy(ghiData.doy, 'solar');
+            const baseline = baselineForDate(day, 'solar');
             const dailyTotal = parseFloat((ghiData.sum / 60000).toFixed(2));
             const dev = parseFloat((dailyTotal - baseline).toFixed(2));
             addDataRow([day, dailyTotal, parseFloat(baseline.toFixed(2)), dev], i);
@@ -859,7 +941,7 @@ function AnalisisContent() {
     { metric: 'MAE (m/s)', value: mae !== null ? mae.toFixed(2) : '–', target: '< 1.5', pass: mae !== null ? mae < 1.5 : null },
     { metric: 'Skor Kesesuaian Baseline', value: windR2Val > 0 ? windR2Val.toFixed(2) : '–', target: '> 0.70', pass: windR2Val > 0 ? windR2Val > 0.70 : null },
     { metric: 'Bias vs GWA LTA (%)', value: windDiffGwa !== null ? (windDiffGwa >= 0 ? '+' : '') + windDiffGwa + '%' : '–', target: '± 5%', pass: windDiffGwa !== null ? Math.abs(windDiffGwa) <= 5 : null },
-    { metric: 'Bias vs ERA5 DOY (%)', value: windDiffNasa !== null ? (windDiffNasa >= 0 ? '+' : '') + windDiffNasa + '%' : '–', target: '± 5%', pass: windDiffNasa !== null ? Math.abs(windDiffNasa) <= 5 : null },
+    { metric: `Bias vs ${windEra5ShortLabel} (%)`, value: windDiffEra5Period !== null ? (windDiffEra5Period >= 0 ? '+' : '') + windDiffEra5Period + '%' : '–', target: '± 5%', pass: windDiffEra5Period !== null ? Math.abs(windDiffEra5Period) <= 5 : null },
     { metric: 'Kelengkapan Sampel 1 Menit', value: availDisplay, target: '>= 90%', pass: availability.pct !== null ? availability.pct >= 90 : null },
   ];
   const solarRmseVal = station.solarRmse ?? null;
@@ -868,7 +950,7 @@ function AnalisisContent() {
     { metric: 'MAE (kWh/m²/hari)', value: mae !== null ? mae.toFixed(2) : '–', target: '< 1.0', pass: mae !== null ? mae < 1.0 : null },
     { metric: 'Skor Kesesuaian Baseline', value: solarR2Val > 0 ? solarR2Val.toFixed(2) : '–', target: '> 0.70', pass: solarR2Val > 0 ? solarR2Val > 0.70 : null },
     { metric: 'Bias vs GSA LTA (%)', value: ghiDiffGsa !== null ? (ghiDiffGsa >= 0 ? '+' : '') + ghiDiffGsa + '%' : '–', target: '± 5%', pass: ghiDiffGsa !== null ? Math.abs(ghiDiffGsa) <= 5 : null },
-    { metric: 'Bias vs ERA5 DOY (%)', value: ghiDiffNasa !== null ? (ghiDiffNasa >= 0 ? '+' : '') + ghiDiffNasa + '%' : '–', target: '± 5%', pass: ghiDiffNasa !== null ? Math.abs(ghiDiffNasa) <= 5 : null },
+    { metric: `Bias vs ${ghiEra5ShortLabel} (%)`, value: ghiDiffEra5Period !== null ? (ghiDiffEra5Period >= 0 ? '+' : '') + ghiDiffEra5Period + '%' : '–', target: '± 5%', pass: ghiDiffEra5Period !== null ? Math.abs(ghiDiffEra5Period) <= 5 : null },
     { metric: 'Clearness Index (Kt)', value: ktIndex.toFixed(2), target: '0.40–0.65', pass: ktIndex >= 0.40 && ktIndex <= 0.65 },
     { metric: 'Kelengkapan Sampel 1 Menit', value: availDisplay, target: '>= 90%', pass: availability.pct !== null ? availability.pct >= 90 : null },
   ];
@@ -1042,7 +1124,7 @@ function AnalisisContent() {
                     {obsWindMean >= 5 ? 'Kuat' : 'Moderat'}
                   </span>
                 </div>
-                <p className="text-[10px] text-slate-400 mt-1">vs GWA 3.0 LTA · ERA5 DOY</p>
+                <p className="text-[10px] text-slate-400 mt-1">vs GWA 3.0 LTA · {windEra5ShortLabel}</p>
               </div>
               <div className="bg-white dark:bg-card-dark rounded-xl p-4 border border-gray-200 dark:border-border-dark">
                 <div className="flex justify-between items-start mb-1.5">
@@ -1062,9 +1144,9 @@ function AnalisisContent() {
                 </div>
                 <div className="flex items-baseline gap-2">
                   <h3 className="text-2xl font-bold text-slate-900 dark:text-white">{biasDisplay}</h3>
-                  <span className="text-xs text-slate-500 dark:text-slate-400 uppercase font-medium">vs ERA5 DOY</span>
+                  <span className="text-xs text-slate-500 dark:text-slate-400 uppercase font-medium">vs {windEra5ShortLabel}</span>
                 </div>
-                <p className="text-[10px] text-slate-400 mt-1">MBE harian obs vs ERA5 DOY selama periode obs</p>
+                <p className="text-[10px] text-slate-400 mt-1">MBE harian obs vs {windEra5ShortLabel} selama periode obs</p>
               </div>
               <div className="bg-white dark:bg-card-dark rounded-xl p-4 border border-gray-200 dark:border-border-dark relative overflow-hidden group">
                 <div className="absolute right-0 top-0 p-3 opacity-10 group-hover:opacity-20 transition-opacity">
@@ -1117,13 +1199,11 @@ function AnalisisContent() {
                 </div>
                 <div className="flex items-baseline gap-2">
                   <h3 className="text-2xl font-bold text-slate-900 dark:text-white">
-                    {station.solarBias != null
-                      ? `${station.solarBias > 0 ? '+' : ''}${station.solarBias.toFixed(1)}%`
-                      : `${ghiDiff > 0 ? '+' : ''}${ghiDiff.toFixed(1)}%`}
+                    {solarBiasDisplay}
                   </h3>
-                  <span className="text-xs text-slate-500 dark:text-slate-400 uppercase font-medium">vs ERA5 DOY</span>
+                  <span className="text-xs text-slate-500 dark:text-slate-400 uppercase font-medium">vs {ghiEra5ShortLabel}</span>
                 </div>
-                <p className="text-[10px] text-slate-400 mt-1">MBE harian obs vs ERA5 DOY · Kt: {ktIndex.toFixed(2)} ({ktLabel})</p>
+                <p className="text-[10px] text-slate-400 mt-1">MBE harian obs vs {ghiEra5ShortLabel} · Kt: {ktIndex.toFixed(2)} ({ktLabel})</p>
               </div>
               <div className="bg-white dark:bg-card-dark rounded-xl p-4 border border-gray-200 dark:border-border-dark relative overflow-hidden group">
                 <div className="absolute right-0 top-0 p-3 opacity-10 group-hover:opacity-20 transition-opacity">
@@ -1152,8 +1232,8 @@ function AnalisisContent() {
                 <h3 className="text-sm font-bold text-slate-900 dark:text-white">Visualisasi Perbandingan Data</h3>
                 <p className="text-xs text-slate-500 dark:text-text-secondary">
                   {isWind
-                    ? `Deret Waktu (${chartGranularityLabel}): Kec. Angin Obs vs ${hasDailyBaseline ? 'ERA5 Harian (DOY)' : 'GWA 3.0'} — ${station.name}`
-                    : `Deret Waktu (${chartGranularityLabel}): GHI Obs vs ${hasDailyBaseline ? 'ERA5 Harian (DOY)' : 'GSA/Solargis'} — ${station.name}`}
+                    ? `Deret Waktu (${chartGranularityLabel}): Kec. Angin Obs vs ${era5ChartLabel} — ${station.name}`
+                    : `Deret Waktu (${chartGranularityLabel}): GHI Obs vs ${era5ChartLabel} — ${station.name}`}
                 </p>
               </div>
               <div className="flex items-center gap-3 text-xs font-medium">
@@ -1163,7 +1243,7 @@ function AnalisisContent() {
                 </div>
                 <div className="flex items-center gap-1.5">
                   <span className="w-2.5 h-2.5 rounded-full bg-slate-400" />
-                  <span className="text-slate-600 dark:text-slate-300">{hasDailyBaseline ? 'ERA5 Harian (DOY)' : isWind ? 'GWA 3.0' : 'GSA (Solargis)'}</span>
+                  <span className="text-slate-600 dark:text-slate-300">{era5ChartLabel}</span>
                 </div>
               </div>
             </div>
@@ -1197,7 +1277,7 @@ function AnalisisContent() {
                       }}
                     />
                     <Line type="monotone" dataKey="obs" name="Terukur (Obs)" stroke={isWind ? '#137fec' : '#f59e0b'} dot={{ r: 4, fill: isWind ? '#137fec' : '#f59e0b' }} strokeWidth={2.5} activeDot={{ r: 6 }} />
-                    <Line type="monotone" dataKey="baseline" name={hasDailyBaseline ? 'ERA5 Harian (DOY)' : isWind ? 'ERA5/GWA (LTA)' : 'ERA5/GSA (LTA)'} stroke="#94a3b8" strokeDasharray="5 3" dot={{ r: 3, fill: '#94a3b8' }} strokeWidth={2} activeDot={{ r: 5 }} />
+                    <Line type="monotone" dataKey="baseline" name={hasEra5Baseline ? era5ChartLabel : isWind ? 'ERA5/GWA (LTA)' : 'ERA5/GSA (LTA)'} stroke="#94a3b8" strokeDasharray="5 3" dot={{ r: 3, fill: '#94a3b8' }} strokeWidth={2} activeDot={{ r: 5 }} />
                   </LineChart>
                 </ResponsiveContainer>
               )}
@@ -1209,7 +1289,7 @@ function AnalisisContent() {
             <div className="mb-3">
               <h3 className="text-sm font-bold text-slate-900 dark:text-white">Analisis Deviasi</h3>
               <p className="text-xs text-slate-500 dark:text-text-secondary">
-                Deviasi obs dari referensi {hasDailyBaseline ? 'ERA5 Harian (DOY)' : isWind ? 'atlas GWA 3.0' : 'atlas GSA/Solargis'} (Y = obs − baseline)
+                Deviasi obs dari referensi {hasEra5Baseline ? era5ChartLabel : isWind ? 'atlas GWA 3.0' : 'atlas GSA/Solargis'} (Y = obs − baseline)
               </p>
             </div>
             <div className="w-full bg-gray-50 dark:bg-input-bg-dark rounded-lg border border-gray-200 dark:border-gray-800 mb-3" style={{ flex: '1 1 0', minHeight: '320px' }}>
@@ -1257,9 +1337,11 @@ function AnalisisContent() {
             </div>
             <div className="bg-gray-50 dark:bg-[#111a22] rounded-lg p-3 text-xs text-slate-500 dark:text-slate-400">
               <div className="flex justify-between mb-1.5">
-                <span>Baseline {hasDailyBaseline ? 'ERA5 (DOY)' : 'atlas'}:</span>
+                <span>Baseline {hasPeriodBaseline ? 'ERA5 aktual' : hasDailyBaseline ? 'ERA5 (DOY)' : 'atlas'}:</span>
                 <span className="font-mono">
-                {hasDailyBaseline
+                {hasPeriodBaseline
+                  ? `ERA5 aktual (${periodBaselineCoverage.count}/${periodBaselineCoverage.total} hari periode)`
+                  : hasDailyBaseline
                   ? `ERA5 per-DOY (${dailyBaselineCoverage.count}/${dailyBaselineCoverage.total} hari periode)`
                   : isWind
                     ? `${windLongTerm} m/s (${station.windBaselineGwa != null ? 'GWA 3.0' : 'ERA5 (ECMWF)'})`
@@ -1595,7 +1677,7 @@ function AnalisisContent() {
           </div>
           <div className="px-4 py-2 bg-blue-50/50 dark:bg-blue-900/10 border-t border-blue-100 dark:border-blue-900/30 text-[10px] text-slate-400 flex items-center gap-1.5">
             <span className="material-symbols-outlined text-[13px] text-blue-400">info</span>
-            GWA/GSA adalah baseline LTA atlas. ERA5 ditampilkan sebagai rata-rata periode jika DOY tanggal observasi tersedia; angkanya adalah rata-rata multi-tahun 2014-2025 untuk hari kalender yang sama.
+            GWA/GSA adalah baseline LTA atlas. Untuk validasi periode, sistem memprioritaskan ERA5 aktual pada tanggal observasi yang sama; jika belum tersedia, fallback ke ERA5 per-DOY 2014-2025.
           </div>
         </div>
 
@@ -1672,7 +1754,7 @@ function AnalisisContent() {
               <span className="material-symbols-outlined text-[17px] text-slate-400 mt-0.5 shrink-0">satellite_alt</span>
               <span>
                 <strong className="text-slate-800 dark:text-slate-200">Sumber referensi:</strong>{' '}
-                ERA5 (ECMWF), rata-rata 12 tahun 2014–2025 (IEC 61400-12).{' '}
+                {hasPeriodBaseline ? 'ERA5 aktual pada periode tanggal observasi.' : 'ERA5 (ECMWF), rata-rata 12 tahun 2014-2025 (IEC 61400-12).'}{' '}
                 {isWind ? 'Atlas angin: GWA 3.0 (resolusi 250m).' : 'Atlas surya: GSA (resolusi 1km), sumber SOLARGIS.'}
               </span>
             </div>

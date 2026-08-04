@@ -1,11 +1,11 @@
 """
 Celery tasks untuk RE-Valid.
 
-Analisis dibuat bertingkat agar sesuai dengan kampanye pengukuran 10 hari:
+Analisis dibuat bertingkat agar sesuai dengan kampanye pengukuran 7 hari:
 - quick_check: minimal 10 sampling mentah untuk memastikan sensor masuk.
 - daily_check: minimal 1 hari valid untuk membandingkan observasi harian vs ERA5 DOY/LTA.
 - preliminary: minimal 5 hari valid untuk MCP/GHI screening awal.
-- campaign_10_day: minimal 10 hari valid, target utama pengukuran per lokasi.
+- campaign_7_day: minimal 7 hari valid, target utama pengukuran per lokasi.
 
 Hasil ini tetap screening/pre-feasibility, bukan MCP/WRA/SRA final bankable.
 """
@@ -22,7 +22,7 @@ QUICK_CHECK_MIN_SAMPLES = 10
 VALID_DAY_MIN_SAMPLES = 360       # 6 jam data pada interval 1 menit
 SOLAR_FULL_DAY_MIN_SAMPLES = 720  # 12 jam data pada interval 1 menit
 PRELIMINARY_MIN_DAYS = 5
-CAMPAIGN_TARGET_DAYS = 10
+CAMPAIGN_TARGET_DAYS = 7
 
 
 def _compute_aep(variable: str, atlas_value: float) -> int:
@@ -82,7 +82,7 @@ def _date_filter_sql(start_date: str | None, end_date: str | None) -> tuple[str,
 
 def _analysis_level(valid_days: int) -> str:
     if valid_days >= CAMPAIGN_TARGET_DAYS:
-        return "campaign_10_day"
+        return "campaign_7_day"
     if valid_days >= PRELIMINARY_MIN_DAYS:
         return "preliminary"
     return "daily_check"
@@ -91,9 +91,9 @@ def _analysis_level(valid_days: int) -> str:
 def _analysis_warning(variable: str, valid_days: int, sample_quality: str | None = None) -> str | None:
     label = "MCP angin" if variable == "wind" else "validasi GHI"
     if valid_days >= CAMPAIGN_TARGET_DAYS:
-        return "Campaign 10 hari selesai. Hasil tetap screening/pre-feasibility, bukan analisis final bankable."
+        return "Campaign 7 hari selesai. Hasil tetap screening/pre-feasibility, bukan analisis final bankable."
     if valid_days >= PRELIMINARY_MIN_DAYS:
-        return f"{label} preliminary: {valid_days} hari valid. Target campaign adalah 10 hari valid per lokasi."
+        return f"{label} preliminary: {valid_days} hari valid. Target campaign adalah 7 hari valid per lokasi."
 
     if variable == "solar" and sample_quality == "partial":
         return (
@@ -120,7 +120,7 @@ def validate_station_mcp(
     self,
     station_id: str,
     variable: str = "wind",
-    n: int = 14400,
+    n: int = 10080,
     start_date: str | None = None,
     end_date: str | None = None,
 ):
@@ -157,6 +157,28 @@ def validate_station_mcp(
             for r in doy_rows
         }
         has_daily_baseline = len(doy_baseline) >= 300
+
+        period_baseline: dict[object, dict[str, float | None]] = {}
+        if start_date and end_date:
+            cur.execute(
+                """
+                SELECT baseline_date, ghi_era5_actual, wind_era5_actual
+                FROM station_period_baselines
+                WHERE station_id = %s
+                  AND baseline_date >= %s::date
+                  AND baseline_date <= %s::date
+                ORDER BY baseline_date
+                """,
+                (station_id, start_date, end_date),
+            )
+            period_rows = cur.fetchall()
+            period_baseline = {
+                r[0]: {
+                    "ghi": float(r[1]) if r[1] is not None else None,
+                    "wind": float(r[2]) if r[2] is not None else None,
+                }
+                for r in period_rows
+            }
 
         value_col = "wind_speed" if variable == "wind" else "ghi"
         value_expr = wind_speed_sql_expr() if variable == "wind" else value_col
@@ -222,7 +244,7 @@ def validate_station_mcp(
             )
             day_agg = cur.fetchall()
             valid_day_rows = [
-                (float(r[2]), int(r[3]), int(r[1]))
+                (float(r[2]), int(r[3]), int(r[1]), r[0])
                 for r in day_agg
                 if r[2] is not None and int(r[1]) >= VALID_DAY_MIN_SAMPLES
             ]
@@ -260,13 +282,27 @@ def validate_station_mcp(
                     "mcp_status": "pending",
                 }
 
-            obs = [v for v, _, _ in valid_day_rows]
+            obs = [v for v, _, _, _ in valid_day_rows]
             valid_days = len(obs)
 
-            if has_daily_baseline:
+            if period_baseline:
                 matched_obs: list[float] = []
                 matched_baseline: list[float] = []
-                for ws_val, doy, _ in valid_day_rows:
+                for ws_val, _, _, obs_day in valid_day_rows:
+                    b = period_baseline.get(obs_day, {}).get("wind")
+                    if b is not None and b > 0:
+                        matched_obs.append(ws_val)
+                        matched_baseline.append(b)
+                if len(matched_obs) == len(valid_day_rows):
+                    obs = matched_obs
+                    baseline = matched_baseline
+                    baseline_source = "era5_actual"
+                    valid_days = len(obs)
+
+            if baseline is None and has_daily_baseline:
+                matched_obs: list[float] = []
+                matched_baseline: list[float] = []
+                for ws_val, doy, _, _ in valid_day_rows:
                     b = doy_baseline.get(doy, {}).get("wind")
                     if b is not None and b > 0:
                         matched_obs.append(ws_val)
@@ -298,12 +334,12 @@ def validate_station_mcp(
             )
             day_agg = cur.fetchall()
             full_day_rows = [
-                (float(r[2]), int(r[3]), int(r[1]))
+                (float(r[2]), int(r[3]), int(r[1]), r[0])
                 for r in day_agg
                 if r[2] is not None and int(r[1]) >= SOLAR_FULL_DAY_MIN_SAMPLES
             ]
             partial_day_rows = [
-                (float(r[2]), int(r[3]), int(r[1]))
+                (float(r[2]), int(r[3]), int(r[1]), r[0])
                 for r in day_agg
                 if r[2] is not None and int(r[1]) >= VALID_DAY_MIN_SAMPLES
             ]
@@ -336,13 +372,27 @@ def validate_station_mcp(
                     "mcp_status": "pending",
                 }
 
-            obs = [v for v, _, _ in obs_with_doy]
+            obs = [v for v, _, _, _ in obs_with_doy]
             valid_days = len(obs)
 
-            if has_daily_baseline:
+            if period_baseline:
                 matched_obs = []
                 matched_baseline = []
-                for ghi_val, doy, _ in obs_with_doy:
+                for ghi_val, _, _, obs_day in obs_with_doy:
+                    b = period_baseline.get(obs_day, {}).get("ghi")
+                    if b is not None and b > 0:
+                        matched_obs.append(ghi_val)
+                        matched_baseline.append(b)
+                if len(matched_obs) == len(obs_with_doy):
+                    obs = matched_obs
+                    baseline = matched_baseline
+                    baseline_source = "era5_actual"
+                    valid_days = len(obs)
+
+            if baseline is None and has_daily_baseline:
+                matched_obs = []
+                matched_baseline = []
+                for ghi_val, doy, _, _ in obs_with_doy:
                     b = doy_baseline.get(doy, {}).get("ghi")
                     if b is not None and b > 0:
                         matched_obs.append(ghi_val)

@@ -167,6 +167,89 @@ async def fetch_era5_baseline(lat: float, lon: float) -> dict:
 
 # ─── ERA5 : daily climatology per DOY (1–366) ────────────────────────────────
 
+async def fetch_era5_actual_period(lat: float, lon: float, start_date, end_date) -> dict[str, dict]:
+    """Fetch actual ERA5 daily baseline for the selected measurement period.
+
+    This is different from long-term average / DOY climatology. It is used when
+    the baseline must match exact measurement dates, for example LOC-02
+    2026-06-08 through 2026-06-14.
+    """
+    from collections import defaultdict
+    from datetime import date as date_t, timedelta
+
+    start = date_t.fromisoformat(str(start_date))
+    end = date_t.fromisoformat(str(end_date))
+    if start > end:
+        return {}
+
+    url = "https://archive-api.open-meteo.com/v1/era5"
+    params = {
+        "latitude": lat,
+        "longitude": lon,
+        "start_date": start.isoformat(),
+        "end_date": end.isoformat(),
+        "daily": "shortwave_radiation_sum",
+        "hourly": "wind_speed_100m",
+        "wind_speed_unit": "ms",
+        "timezone": "Asia/Jakarta",
+    }
+
+    try:
+        async with httpx.AsyncClient(timeout=90.0) as client:
+            r = await client.get(url, params=params)
+            r.raise_for_status()
+            data = r.json()
+
+        result: dict[str, dict] = {
+            (start + timedelta(days=i)).isoformat(): {"wind": None, "ghi": None}
+            for i in range((end - start).days + 1)
+        }
+
+        daily_section = data.get("daily", {})
+        for date_str, ghi_val in zip(
+            daily_section.get("time", []),
+            daily_section.get("shortwave_radiation_sum", []),
+        ):
+            if date_str not in result or ghi_val is None:
+                continue
+            # Open-Meteo daily shortwave_radiation_sum is MJ/m2 -> kWh/m2.
+            ghi_kwh = float(ghi_val) / 3.6
+            if 0.0 <= ghi_kwh <= 15.0:
+                result[date_str]["ghi"] = round(ghi_kwh, 3)
+
+        hourly_section = data.get("hourly", {})
+        wind_by_day: dict[str, list[float]] = defaultdict(list)
+        for ts, w_val in zip(
+            hourly_section.get("time", []),
+            hourly_section.get("wind_speed_100m", []),
+        ):
+            if w_val is None:
+                continue
+            date_str = str(ts)[:10]
+            if date_str not in result:
+                continue
+            w = float(w_val)
+            if 0.0 <= w <= 50.0:
+                wind_by_day[date_str].append(w)
+
+        for date_str, values in wind_by_day.items():
+            if values:
+                result[date_str]["wind"] = round(sum(values) / len(values), 3)
+
+        logger.info(
+            "ERA5 actual period baseline berhasil untuk (%.4f, %.4f), %s s/d %s",
+            lat,
+            lon,
+            start.isoformat(),
+            end.isoformat(),
+        )
+        return result
+
+    except Exception as exc:
+        logger.warning("Gagal mengambil ERA5 actual period baseline: %s", exc)
+        return {}
+
+
 async def fetch_era5_daily_climatology(lat: float, lon: float) -> dict[int, dict]:
     """Ambil daily climatology ERA5 per DOY (1–366) dari Open-Meteo ERA5 Archive.
 

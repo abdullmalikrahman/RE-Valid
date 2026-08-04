@@ -34,7 +34,7 @@ export function useMeasurements(
   stationId: string | null,
   start = oneYearAgoStr(),
   end = todayStr(),
-  limit = 14400,
+  limit = 10080,
 ) {
   const params = new URLSearchParams();
   if (stationId) params.set('station_id', stationId);
@@ -47,7 +47,7 @@ export function useMeasurements(
   const { data, error, isLoading } = useSWR<Measurement[]>(
     stationId ? `/api/v1/measurements?${params.toString()}` : null,
     fetchMeasurements,
-    { refreshInterval: 300_000 }, // 5 menit — 14.400 baris per fetch terlalu berat untuk tiap 60s
+    { refreshInterval: 300_000 }, // 5 menit; 10.080 baris per fetch untuk kampanye 7 hari
   );
 
   return { measurements: data ?? [], isLoading, error };

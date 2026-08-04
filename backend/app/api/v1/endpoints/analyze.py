@@ -14,7 +14,7 @@ router = APIRouter()
 class AnalyzeRequest(BaseModel):
     station_id: str
     variable: str = "wind"  # "wind" | "solar"
-    n: int = Field(14400, ge=10, le=100_000)
+    n: int = Field(10080, ge=10, le=100_000)
     start: date | None = None
     end: date | None = None
 

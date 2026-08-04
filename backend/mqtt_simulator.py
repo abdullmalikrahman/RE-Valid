@@ -12,17 +12,17 @@ Kirim data ke broker MQTT setiap interval tertentu (timestamp = sekarang).
 
 ━━ MODE BACKFILL (data historis) ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 Insert data historis langsung ke DB (tanpa MQTT, tanpa menunggu real-time).
-Berguna untuk mensimulasikan kampanye pengukuran 10 hari sebelum sensor siap.
+Berguna untuk mensimulasikan kampanye pengukuran 7 hari sebelum sensor siap.
 
-    python mqtt_simulator.py --backfill --start 2026-05-23 --end 2026-06-02
-    python mqtt_simulator.py --backfill --start 2026-05-23 --end 2026-06-02 --measure-interval 10
+    python mqtt_simulator.py --backfill --start 2026-06-08 --end 2026-06-14
+    python mqtt_simulator.py --backfill --start 2026-06-08 --end 2026-06-14 --measure-interval 10
 
 Argumen backfill:
-  --start              Tanggal mulai (YYYY-MM-DD), default: hari ini - 10 hari
+  --start              Tanggal mulai (YYYY-MM-DD), default: 7 hari terakhir termasuk hari ini
   --end                Tanggal akhir  (YYYY-MM-DD), default: hari ini
   --measure-interval   Interval antar pembacaan dalam MENIT (default: 1 menit)
-                       1 menit → ~14 400 baris per 10 hari
-                       10 menit → ~1 440 baris per 10 hari
+                       1 menit → ~10 080 baris per 7 hari
+                       10 menit → ~1 008 baris per 7 hari
 """
 
 import argparse
@@ -175,7 +175,7 @@ def run_backfill(
 
     Berguna untuk:
     - Testing sistem sebelum sensor lapangan siap
-    - Mensimulasikan 10 hari kampanye pengukuran (misal: 23 Mei – 2 Juni 2026)
+    - Mensimulasikan 7 hari kampanye pengukuran (misal: 8-14 Juni 2026)
     - Validasi MCP dengan data yang merepresentasikan periode tertentu
 
     Timestamp setiap baris diset ke periode historis sehingga variasi musiman
@@ -304,8 +304,8 @@ if __name__ == "__main__":
     _today = date.today()
     parser.add_argument(
         "--start", type=date.fromisoformat,
-        default=(_today - timedelta(days=10)).isoformat(),
-        help="[Backfill] Tanggal mulai YYYY-MM-DD (default: hari ini - 10 hari)",
+        default=(_today - timedelta(days=6)).isoformat(),
+        help="[Backfill] Tanggal mulai YYYY-MM-DD (default: 7 hari terakhir termasuk hari ini)",
     )
     parser.add_argument(
         "--end", type=date.fromisoformat,
